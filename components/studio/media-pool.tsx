@@ -20,19 +20,38 @@ function handleFiles(files: FileList | File[]) {
 
   for (const file of Array.from(files)) {
     const type = trackTypeFromMime(file.type);
+    const kind = mediaKind(file.type);
     const previewUrl = URL.createObjectURL(file);
 
-    const item: MediaPoolItem = {
-      id: crypto.randomUUID(),
-      name: file.name,
-      type,
-      mediaKind: mediaKind(file.type),
-      relativePath: file.name,
-      durationMicros: 5_000_000,
-      previewUrl,
+    if (kind === "image") {
+      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, mediaKind: kind, relativePath: file.name, durationMicros: 5_000_000, previewUrl });
+      continue;
+    }
+
+    const el = document.createElement(kind === "audio" ? "audio" : "video");
+    el.preload = "metadata";
+    el.src = previewUrl;
+
+    const finish = (durationSec: number) => {
+      const durationMicros = Math.round(durationSec * 1_000_000);
+      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, mediaKind: kind, relativePath: file.name, durationMicros, previewUrl });
     };
 
-    addMediaItem(item);
+    el.onloadedmetadata = () => {
+      if (el.duration === Infinity || Number.isNaN(el.duration)) {
+        el.currentTime = 1e10;
+        el.ontimeupdate = () => {
+          el.ontimeupdate = null;
+          el.currentTime = 0;
+          finish(el.duration);
+        };
+      } else {
+        finish(el.duration);
+      }
+    };
+    el.onerror = () => {
+      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, mediaKind: kind, relativePath: file.name, durationMicros: 5_000_000, previewUrl });
+    };
   }
 }
 

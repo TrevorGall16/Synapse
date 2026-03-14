@@ -20,6 +20,7 @@ export interface ProjectState {
   setOpacityOrVolume: (trackId: string, value: number) => void;
   addMediaItem: (item: MediaPoolItem) => void;
   addClip: (trackId: string, clip: ClipEvent) => void;
+  updateClipStartTime: (clipId: string, startTime: number) => void;
 }
 
 const TRACK_COLORS: Record<TrackType, string> = {
@@ -101,9 +102,32 @@ export const useProjectStore = create<ProjectState>((set) => ({
     set((s) => ({ mediaPool: [...s.mediaPool, item] })),
 
   addClip: (trackId, clip) =>
-    set((s) => ({
-      tracks: s.tracks.map((t) =>
-        t.id === trackId ? { ...t, clips: [...t.clips, clip] } : t
-      ),
-    })),
+    set((s) => {
+      const clipEnd = clip.startTime + clip.duration;
+      const newDuration = clipEnd > s.duration ? clipEnd + 60_000_000 : s.duration;
+      return {
+        duration: newDuration,
+        tracks: s.tracks.map((t) =>
+          t.id === trackId ? { ...t, clips: [...t.clips, clip] } : t
+        ),
+      };
+    }),
+
+  updateClipStartTime: (clipId, startTime) =>
+    set((s) => {
+      let clipDuration = 0;
+      const tracks = s.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          if (c.id === clipId) {
+            clipDuration = c.duration;
+            return { ...c, startTime };
+          }
+          return c;
+        }),
+      }));
+      const clipEnd = startTime + clipDuration;
+      const newDuration = clipEnd > s.duration ? clipEnd + 60_000_000 : s.duration;
+      return { tracks, duration: newDuration };
+    }),
 }));

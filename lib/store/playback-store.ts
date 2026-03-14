@@ -8,7 +8,7 @@ import { useProjectStore } from "./project-store";
 export interface PlaybackState {
   playheadPosition: number; // microseconds, Math.round enforced
   isPlaying: boolean;
-  zoomLevel: number; // 0.1 to 10
+  zoomLevel: number; // 0.1 to 3
   loopRegion?: { in: number; out: number };
   setPlayhead: (time: number) => void;
   togglePlayback: () => void;
@@ -31,6 +31,6 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
 
   setZoom: (zoom) =>
     set(() => ({
-      zoomLevel: Math.max(0.1, Math.min(10, zoom)),
+      zoomLevel: Math.max(0.1, Math.min(3, zoom)),
     })),
 }));

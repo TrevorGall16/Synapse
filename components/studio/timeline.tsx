@@ -40,7 +40,7 @@ export function Timeline() {
           </button>
         </div>
         <div className="pr-3">
-          <ZoomSlider />
+          <ZoomSlider scrollContainerRef={scrollContainerRef} />
         </div>
       </div>
 

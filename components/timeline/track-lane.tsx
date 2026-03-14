@@ -91,7 +91,7 @@ export function TrackLane({ trackId }: TrackLaneProps) {
   return (
     <div
       ref={laneRef}
-      className="relative min-h-[48px] flex-1 cursor-pointer border-b border-white/5 bg-[#1e1e1e]"
+      className="relative h-24 cursor-pointer border-b border-white/5 bg-[#1e1e1e]"
       data-track={trackId}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -103,6 +103,7 @@ export function TrackLane({ trackId }: TrackLaneProps) {
         <ClipEventBlock
           key={clip.id}
           clip={clip}
+          trackId={trackId}
           pixelsPerSecond={pixelsPerSecond}
           trackColor={trackColor}
         />

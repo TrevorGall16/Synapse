@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useEffect } from "react";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import {
@@ -23,11 +24,33 @@ function formatTimecode(micros: number): string {
 }
 
 export function PreviewMonitor() {
+  const videoRef = useRef<HTMLVideoElement>(null);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const playheadPosition = usePlaybackStore((s) => s.playheadPosition);
   const togglePlayback = usePlaybackStore((s) => s.togglePlayback);
   const setPlayhead = usePlaybackStore((s) => s.setPlayhead);
   const duration = useProjectStore((s) => s.duration);
+  const tracks = useProjectStore((s) => s.tracks);
+  const mediaPool = useProjectStore((s) => s.mediaPool);
+
+  // Find the active clip on the first video track
+  const videoTrack = tracks.find((t) => t.type === "video");
+  const activeClip = videoTrack?.clips.find(
+    (c) => playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration
+  );
+  const activeMedia = activeClip
+    ? mediaPool.find((m) => m.id === activeClip.sourceId)
+    : undefined;
+
+  // Sync video element to playhead position
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !activeClip) return;
+    const localTime = (playheadPosition - activeClip.startTime) / MICROS_PER_SECOND;
+    if (Math.abs(video.currentTime - localTime) > 0.05) {
+      video.currentTime = localTime;
+    }
+  }, [playheadPosition, activeClip]);
 
   return (
     <div className="flex h-full flex-col border-t border-white/20 bg-[#1a1a1a]">
@@ -37,8 +60,20 @@ export function PreviewMonitor() {
         </h2>
       </div>
 
-      <div className="flex flex-1 items-center justify-center">
-        <div className="aspect-video w-full max-w-lg rounded bg-[#111111]" />
+      <div className="flex flex-1 items-center justify-center overflow-hidden bg-black">
+        {activeMedia?.previewUrl ? (
+          <video
+            ref={videoRef}
+            key={activeMedia.id}
+            src={activeMedia.previewUrl}
+            className="h-full w-full object-contain"
+            muted
+            playsInline
+            preload="auto"
+          />
+        ) : (
+          <div className="aspect-video w-full max-w-lg rounded bg-[#111111]" />
+        )}
       </div>
 
       {/* Transport toolbar */}
