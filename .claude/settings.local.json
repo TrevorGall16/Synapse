@@ -17,7 +17,9 @@
       "Bash(rm D:/Projects/Synapse/components/timeline/.gitkeep 2>/dev/null; cd D:/Projects/Synapse && npx next build 2>&1)",
       "Bash(cd D:/Projects/Synapse && npm install react-resizable-panels 2>&1)",
       "Bash(cd D:/Projects/Synapse && node -e \"const m = require\\('react-resizable-panels'\\); console.log\\(Object.keys\\(m\\)\\)\")",
-      "Bash(cd D:/Projects/Synapse && node -e \"\nconst m = require\\('react-resizable-panels'\\);\n// Check Group component props\nconsole.log\\('Group type:', typeof m.Group\\);\nconsole.log\\('Panel type:', typeof m.Panel\\);\nconsole.log\\('Separator type:', typeof m.Separator\\);\n\")"
+      "Bash(cd D:/Projects/Synapse && node -e \"\nconst m = require\\('react-resizable-panels'\\);\n// Check Group component props\nconsole.log\\('Group type:', typeof m.Group\\);\nconsole.log\\('Panel type:', typeof m.Panel\\);\nconsole.log\\('Separator type:', typeof m.Separator\\);\n\")",
+      "Bash(cd D:/Projects/Synapse && npm install zustand lucide-react 2>&1)",
+      "Bash(cd \"D:/Projects/Synapse\" && npm run build 2>&1 | tail -30)"
     ]
   }
 }

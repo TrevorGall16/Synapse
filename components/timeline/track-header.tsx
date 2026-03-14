@@ -1,24 +1,31 @@
+import type { TrackType } from "@/lib/store/types";
+
 interface TrackHeaderProps {
   label: string;
   color: string;
+  trackType: TrackType;
   isMuted: boolean;
   isSolo: boolean;
-  volume: number;
+  opacityOrVolume: number;
   onToggleMute: () => void;
   onToggleSolo: () => void;
-  onVolumeChange: (value: number) => void;
+  onOpacityOrVolumeChange: (value: number) => void;
 }
 
 export function TrackHeader({
   label,
   color,
+  trackType,
   isMuted,
   isSolo,
-  volume,
+  opacityOrVolume,
   onToggleMute,
   onToggleSolo,
-  onVolumeChange,
+  onOpacityOrVolumeChange,
 }: TrackHeaderProps) {
+  const sliderLabel =
+    trackType === "audio" ? `${label} volume` : `${label} opacity`;
+
   return (
     <div className="flex w-40 shrink-0 flex-col gap-1 border-r border-white/10 px-3 py-2">
       {/* Row 1: Color dot + label */}
@@ -57,14 +64,14 @@ export function TrackHeader({
         </button>
       </div>
 
-      {/* Row 3: Volume / Opacity slider */}
+      {/* Row 3: Opacity / Volume slider */}
       <input
         type="range"
         min={0}
         max={100}
-        defaultValue={volume}
-        onChange={(e) => onVolumeChange(Number(e.target.value))}
-        aria-label={`${label} volume`}
+        defaultValue={opacityOrVolume}
+        onChange={(e) => onOpacityOrVolumeChange(Number(e.target.value))}
+        aria-label={sliderLabel}
         className="h-1 w-full cursor-pointer"
         style={{ accentColor: color }}
       />
