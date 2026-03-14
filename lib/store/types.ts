@@ -62,6 +62,7 @@ export interface MediaPoolItem {
   id: string;
   name: string;
   type: TrackType;
+  mediaKind: "video" | "audio" | "image";
   relativePath: string;
   durationMicros: number;
   thumbnailUrl?: string;
