@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd D:/Projects/Synapse && npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir=false --import-alias=\"@/*\" --use-npm --no-turbopack 2>&1)",
+      "Bash(cd D:/Projects/Synapse && npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir=false --import-alias=\"@/*\" --use-npm --no-turbopack 2>&1 << 'EOF'\nsynapse\nEOF)",
+      "Bash(cd D:/Projects/Synapse && npx create-next-app@latest temp-init --typescript --tailwind --eslint --app --src-dir=false --import-alias=\"@/*\" --use-npm --no-turbopack 2>&1)",
+      "Bash(cd D:/Projects/Synapse && echo \"No\" | npx create-next-app@latest temp-init --typescript --tailwind --eslint --app --src-dir=false --import-alias=\"@/*\" --use-npm --no-turbopack 2>&1)",
+      "Bash(cd D:/Projects/Synapse && printf 'N\\\\nN\\\\n' | npx create-next-app@latest temp-init --typescript --tailwind --eslint --app --import-alias=\"@/*\" --use-npm --no-turbopack 2>&1)",
+      "Bash(cd D:/Projects/Synapse && yes \"N\" | npx create-next-app@latest temp-init --typescript --tailwind --eslint --app --import-alias=\"@/*\" --use-npm --no-turbopack 2>&1)",
+      "Bash(cd D:/Projects/Synapse && cp -r temp-init/app temp-init/public temp-init/node_modules . && cp temp-init/eslint.config.mjs temp-init/next-env.d.ts temp-init/next.config.ts temp-init/package-lock.json temp-init/package.json temp-init/postcss.config.mjs temp-init/tsconfig.json temp-init/.gitignore . 2>&1)",
+      "Bash(cd D:/Projects/Synapse && rm -rf temp-init 2>&1)",
+      "Bash(cd D:/Projects/Synapse && mkdir -p app/studio app/vault components/gpu components/timeline components/ui lib/engine lib/managers lib/protocols workers 2>&1)",
+      "Bash(cd D:/Projects/Synapse && npx next build 2>&1 | tail -20)",
+      "Bash(cd D:/Projects/Synapse && npx supabase init 2>&1)",
+      "Bash(cd D:/Projects/Synapse && npx supabase start 2>&1)",
+      "Bash(cd D:/Projects/Synapse && npx next build 2>&1)"
+    ]
+  }
+}
