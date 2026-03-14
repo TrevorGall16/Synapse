@@ -27,7 +27,7 @@ export function TrackHeader({
     trackType === "audio" ? `${label} volume` : `${label} opacity`;
 
   return (
-    <div className="flex w-40 shrink-0 flex-col gap-1 border-r border-white/10 px-3 py-2">
+    <div className="flex shrink-0 flex-col gap-1 px-3 py-2">
       {/* Row 1: Color dot + label */}
       <div className="flex items-center gap-2">
         <div

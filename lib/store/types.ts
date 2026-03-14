@@ -65,4 +65,5 @@ export interface MediaPoolItem {
   relativePath: string;
   durationMicros: number;
   thumbnailUrl?: string;
+  previewUrl?: string;
 }

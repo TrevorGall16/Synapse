@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Track, TrackType, MediaPoolItem, Marker } from "./types";
+import type { Track, TrackType, MediaPoolItem, Marker, ClipEvent } from "./types";
 
 // ── Structural Project Data ─────────────────────────────
 // Tracks, media pool, markers, duration. Subscribed to by
@@ -18,6 +18,8 @@ export interface ProjectState {
   toggleMute: (trackId: string) => void;
   toggleSolo: (trackId: string) => void;
   setOpacityOrVolume: (trackId: string, value: number) => void;
+  addMediaItem: (item: MediaPoolItem) => void;
+  addClip: (trackId: string, clip: ClipEvent) => void;
 }
 
 const TRACK_COLORS: Record<TrackType, string> = {
@@ -92,6 +94,16 @@ export const useProjectStore = create<ProjectState>((set) => ({
     set((s) => ({
       tracks: s.tracks.map((t) =>
         t.id === trackId ? { ...t, opacityOrVolume: value } : t
+      ),
+    })),
+
+  addMediaItem: (item) =>
+    set((s) => ({ mediaPool: [...s.mediaPool, item] })),
+
+  addClip: (trackId, clip) =>
+    set((s) => ({
+      tracks: s.tracks.map((t) =>
+        t.id === trackId ? { ...t, clips: [...t.clips, clip] } : t
       ),
     })),
 }));
