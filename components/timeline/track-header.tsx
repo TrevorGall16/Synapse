@@ -1,0 +1,73 @@
+interface TrackHeaderProps {
+  label: string;
+  color: string;
+  isMuted: boolean;
+  isSolo: boolean;
+  volume: number;
+  onToggleMute: () => void;
+  onToggleSolo: () => void;
+  onVolumeChange: (value: number) => void;
+}
+
+export function TrackHeader({
+  label,
+  color,
+  isMuted,
+  isSolo,
+  volume,
+  onToggleMute,
+  onToggleSolo,
+  onVolumeChange,
+}: TrackHeaderProps) {
+  return (
+    <div className="flex w-40 shrink-0 flex-col gap-1 border-r border-white/10 px-3 py-2">
+      {/* Row 1: Color dot + label */}
+      <div className="flex items-center gap-2">
+        <div
+          className="h-3 w-3 rounded-sm"
+          style={{ backgroundColor: color }}
+          aria-hidden
+        />
+        <span className="text-xs font-medium text-white/80">{label}</span>
+      </div>
+
+      {/* Row 2: Mute / Solo toggles */}
+      <div className="flex gap-1">
+        <button
+          onClick={onToggleMute}
+          aria-label={`${isMuted ? "Unmute" : "Mute"} ${label}`}
+          className={`rounded px-1.5 py-0.5 text-[10px] font-bold transition-colors focus-visible:ring-1 focus-visible:ring-white/40 ${
+            isMuted
+              ? "bg-red-500/80 text-white"
+              : "bg-white/10 text-white/50 hover:bg-white/15"
+          }`}
+        >
+          M
+        </button>
+        <button
+          onClick={onToggleSolo}
+          aria-label={`${isSolo ? "Unsolo" : "Solo"} ${label}`}
+          className={`rounded px-1.5 py-0.5 text-[10px] font-bold transition-colors focus-visible:ring-1 focus-visible:ring-white/40 ${
+            isSolo
+              ? "bg-yellow-500/80 text-white"
+              : "bg-white/10 text-white/50 hover:bg-white/15"
+          }`}
+        >
+          S
+        </button>
+      </div>
+
+      {/* Row 3: Volume / Opacity slider */}
+      <input
+        type="range"
+        min={0}
+        max={100}
+        defaultValue={volume}
+        onChange={(e) => onVolumeChange(Number(e.target.value))}
+        aria-label={`${label} volume`}
+        className="h-1 w-full cursor-pointer"
+        style={{ accentColor: color }}
+      />
+    </div>
+  );
+}

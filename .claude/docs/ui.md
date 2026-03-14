@@ -30,8 +30,13 @@ Because the UI will evolve, the codebase must be built using strict Atomic Desig
 * **Affiliate Links:** Prominent buttons linking to the creator's external monetization platforms.
 
 **D. The Studio (Upload Page / Vegas Pro Editor)**
-* **The Workspace:** The bottom half is a 5-track NLE timeline (Video, Audio, Strobe, Pulse, Text). The top half is the Preview Monitor and Media Pool.
-* **Timeline Controls:** Professional NLE mechanics. Dragging video splits it into linked Audio/Video tracks. Right-clicking allows adding Velocity Envelopes (speed ramps). Overlapping clips creates an automatic Crossfade.
+* **The Workspace:** Professional 3-panel layout (Media Pool, Preview Window, Timeline). All panels must be resizable via draggable borders.
+* **Timeline Architecture (Dynamic Tracks):** The timeline uses a dynamic layer system, not fixed tracks.
+    * *Standard Tracks:* Users can add unlimited stackable Video and Audio tracks (`Video 1`, `Video 2`, `Audio 1`). Higher video tracks visually override lower tracks (compositing/overlays).
+    * *Special Tracks:* The timeline also contains dedicated tracks for `Text`, `Pulse`, and `Strobe`.
+* **Track Controls:** The left side of every track (Track Header) must include standard NLE controls: `[M] Mute`, `[S] Solo`, `[FX]`, and a Volume/Opacity slider placeholder.
+* **Timeline Events (Clips):** Dragging an A/V file to the timeline creates linked Video and Audio events. Clips can be dragged, trimmed at the edges, split (using `S`), and grouped.
+* **Crossfades & Fades:** Overlapping two clips on the same track automatically generates a crossfade. Clips have fade-in/out handles at the top corners.
 * **Marker Heat-Maps:** Zooming out collapses thousands of beat markers into color-coded intensity clusters. Zooming in expands them.
 * **Fractional Loops:** Loop regions feature a sub-pixel indicator glow indicating timing between exact frames.
 
