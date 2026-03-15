@@ -1,187 +1,91 @@
-# **Data & Protocol Specification: Synapse Interactive Hub (Master Blueprint)**
+# **Data & Protocol Specification: Synapse Interactive Hub**
 
-> **CRITICAL INSTRUCTION FOR THE BUILDER AI:** This is a high-performance Non-Linear Editor (NLE). State management and re-renders are your biggest enemies. You must strictly follow the dual-store Zustand architecture and exact mathematical clamping rules outlined below to prevent 60FPS React tree collapses.
+> **CRITICAL INSTRUCTION FOR THE BUILDER AI:** The state management architecture detailed below is a strict requirement. If you put the Playhead in the same store as the Tracks, the 60FPS render loop will destroy React's performance. Follow these rules exactly.
 
-## **1. Code Modularity & Architecture Strict Rules**
-* **Zero Monoliths:** No single file may exceed 400 lines of code. Extract complex state mutators into separate utility files.
-* **Separation of Concerns:** UI rendering logic must be completely isolated from Engine/Sequencer logic.
-* **Zod Validation:** All incoming data (loading a `.synapse` file) must be strictly parsed and validated using Zod schemas before being injected into the Zustand store. Malicious values (e.g., Strobe `frequency` > 60Hz) must be clamped to safe boundaries. All user text must be HTML-escaped.
+## **1. The Dual-Store Law (Strict Isolation)**
+* **Store 1: `usePlaybackStore` (The 60FPS Engine)**
+  * Holds `playheadPosition` (microseconds), `isPlaying`, `zoomLevel`, and a derived `pixelsPerSecond` value.
+  * *Rule:* Because the playhead updates 60 times a second during playback, NO UI components (like tracks, headers, or menus) are allowed to subscribe to this store, except for the `<Playhead />` line itself and the `<PreviewMonitor />`.
+* **Store 2: `useProjectStore` (The Structural Database)**
+  * Holds `tracks`, `mediaPool`, and `markers`.
+  * *Rule:* This store only updates when the user drops, moves, or edits a clip. It must be perfectly immutable using Immer.
+  * *Undo/Redo:* You must implement Undo/Redo middleware (such as `zundo`) on this project store. Every structural action (move, split, delete) must be fully reversible.
 
-## **2. Runtime State Architecture (Dual Zustand Stores)**
+## **2. The Int64 Trap & Frame Quantization**
+* **Microsecond Integers:** All time values (`startTime`, `duration`, `mediaOffset`) must be stored as strict integers in microseconds (1 second = `1_000_000`).
+* **The Math.round Rule:** Because JavaScript uses floating-point numbers, every single time you multiply or divide time by a zoom level or framerate, you MUST wrap the final payload in `Math.round()`. If you allow decimals, frame-accurate editing will be destroyed by floating-point drift.
+* **Quantize to Frames:** To prevent sub-frame "black flashes" between clips, any action that moves a clip must mathematically snap the `startTime` to an exact frame boundary. Formula: `Math.round(timeUs / frameDurationUs) * frameDurationUs`.
 
-**CRITICAL RULE:** To prevent 60FPS React tree collapses, the state MUST be split into two distinct Zustand stores. The Playback engine state must never trigger re-renders of the Project UI state.
-
-### **Store 1: The Playback Engine (`usePlaybackStore`)**
-Handles highly volatile, 60fps data. UI components (like tracks/clips) MUST NOT subscribe to this store. Only the `<Playhead />`, `<TimelineRuler />`, and `<PreviewMonitor />` may subscribe to this.
-```typescript
-export interface PlaybackState {
-    playheadPosition: number;   // In microseconds (strictly enforced via Math.round)
-    isPlaying: boolean;
-    zoomLevel: number;          // 0.1 to 10
-    loopRegion?: { in: number; out: number };
-    
-    // Actions
-    setPlayhead: (time: number) => void;
-    togglePlayback: () => void;
-    setZoom: (zoom: number) => void;
-}
-
-```
-
-### **Store 2: The Project Data (`useProjectStore`)**
-
-Handles the structural timeline and media data. Mutations here are tracked by the Undo/Redo history.
+## **3. Strict TypeScript Interfaces**
+You must strictly adhere to these data structures:
 
 ```typescript
-export interface ProjectState {
-    tracks: Track[];
-    mediaPool: MediaPoolItem[];
-    markers: Marker[];
-    duration: number;           // Total timeline length in microseconds
-    selectedClipIds: string[];  // Multi-selection support
-    selectedTrackId: string | null;
-    snapEnabled: boolean;       // Global snapping toggle
-    
-    // Core Actions (Mutators)
-    addClip: (trackId: string, clip: ClipEvent) => void;
-    moveClip: (clipId: string, newTrackId: string, newStartTime: number) => void;
-    splitClip: (clipId: string, splitTime: number) => void;
-    deleteClip: (clipIds: string[]) => void;
-    updateClipProperties: (clipId: string, properties: Partial<ClipEvent>) => void;
-    addMedia: (item: MediaPoolItem) => void;
-}
-
-```
-
-### **State Mutation Rules for the Builder AI:**
-
-* **Immutability:** Zustand updates must use `immer` or strict spread operators to ensure deep immutability when updating nested clip properties.
-* **The TypeScript Int64 Trap:** JavaScript does not have a native Int64 type; it uses double-precision floats. Any action modifying `startTime`, `duration`, or `playheadPosition` MUST wrap the payload in `Math.round()` or `Math.floor()` to prevent floating-point microsecond drift over time.
-* **Command-Pattern Undo/Redo:** Do NOT save full copies of the Zustand store for Undo/Redo (this will blow up RAM). You must use `zundo` (or similar middleware) configured to store exact JSON patch diffs, capped at a 20-step history.
-
-## **3. Strict Data Interfaces**
-
-```typescript
-type TrackType = "video" | "audio" | "text" | "effect";
-
-export interface MediaPoolItem {
-    id: string;
-    name: string;
-    type: "video" | "audio" | "image" | "text" | "effect-preset";
-    fileHandle?: any;         // FileSystemFileHandle for OPFS or local access
-    url?: string;             // Blob URL for hover-scrub preview
-    duration: number;         // Microseconds
-    hash: string;             // xxHash for staleness check
-    proxyId?: string;         // Reference to OPFS proxy
-}
-
 export interface Track {
-    id: string;
-    type: TrackType;
-    name: string;
-    color?: string;          
-    height: number;          
-    collapsed: boolean;
-    locked: boolean;
-    clips: ClipEvent[];
-    isMuted: boolean;
-    isSolo: boolean;
-    opacityOrVolume: number; 
+  id: string;
+  name: string;
+  type: 'video' | 'audio' | 'text' | 'effect';
+  clips: ClipEvent[];
+  height: number; // e.g., 60 for video, 40 for audio
+  isMuted?: boolean;
+  isSolo?: boolean;
+  opacityOrVolume: number;
 }
 
 export interface ClipEvent {
-    id: string;
-    type: TrackType;
-    sourceId: string;         // References MediaPoolItem.id
-    startTime: number;        // Microseconds (Math.round)
-    duration: number;         // Microseconds (Math.round)
-    linkedClipIds?: string[]; // Moving this clip also moves linked Audio/Video clips
-    fadeIn?: number;          // Microseconds
-    fadeOut?: number;         // Microseconds
-    effects?: EffectInstance[];
-    keyframes?: Keyframe[];
-    panCrop?: PanCropData;
+  id: string;
+  trackId: string;
+  sourceId: string;         // Reference to MediaPool item
+  groupId?: string;         // The relationship link for Video/Audio pairs
+  startTime: number;        // The physical left-edge placement on the timeline (in microseconds)
+  duration: number;         // Total length of the clip window (in microseconds)
+  mediaOffset: number;      // "Slipping": Where inside the source file the clip begins playing
+  fadeInDuration?: number;  // Automatically populated if clips overlap
+  fadeOutDuration?: number; // Automatically populated if clips overlap
+}
+
+export interface MediaPoolItem {
+  id: string;
+  name: string;
+  type: 'video' | 'audio' | 'image';
+  duration: number;         // Total length of the raw file in microseconds
+  previewUrl?: string;      // Blob URL for rendering
+  peakManifest?: number[];  // The array of floats for the audio waveform
 }
 
 export interface Marker {
-    id: string;
-    time: number;             // Microseconds
-    color: string;
-    label?: string;
+  id: string;
+  time: number; // microseconds
+  color: string;
+  label?: string;
 }
-
-export interface EffectInstance {
-    id: string;
-    shaderId: string;         // Reference to WebGPU shader
-    type: "strobe" | "pulse" | "chroma" | "wave" | string;
-    // Strict schema, never just Record<string, any>
-    parameters: StrobeParams | PulseParams | any; 
-    keyframes?: Keyframe[];
-}
-
-export interface Keyframe {
-    time: number;             // Relative to Clip start time (Microseconds)
-    value: number | { x: number; y: number } | [number, number, number]; // Scalar, Vector, or Color
-    interpolation?: "linear" | "ease-in" | "ease-out" | "step";
-}
-
-export interface PanCropData {
-    position: { x: number; y: number };
-    scale: { x: number; y: number };
-    rotation: number;      
-}
-
 ```
 
-## **4. Core Object Structure (The Saved .SYNAPSE Protocol)**
+## **4. Relational Physics (Linked A/V Movement)**
+* When a user imports a standard video file, the Engine must create a Video Clip and an Audio Clip. Assign them both the identical `groupId` string.
+* **The Movement Algorithm:** Whenever the `moveClip` action is called (whether dragging horizontally in time, or vertically across tracks):
+  1. Find the target clip the user clicked.
+  2. Search the entire project for ALL clips that share its `groupId`.
+  3. Calculate the exact `deltaTime` (microseconds moved) and `deltaTrack` (number of tracks jumped up or down).
+  4. Apply those exact deltas to ALL clips in the group at the exact same time in a single transaction.
+* **Ungrouping:** Provide an action triggered by the 'U' key that deletes the `groupId` from selected clips, permanently breaking the physics link and allowing them to move independently.
 
-When a project is saved, the `ProjectState` is serialized into a lightweight JSON object with a strict **5MB size limit**.
+## **5. Auto-Track Generation (The Abyss)**
+* The timeline must feel infinitely expandable vertically.
+* Inside the `moveClip` action, after calculating the `newTrackIndex` for a clip based on how far down the user dragged it:
+  * Check: `if (newTrackIndex >= tracks.length)`
+  * If true, immediately generate a new Track object (matching the clip's type: Video or Audio). Give it a `crypto.randomUUID()`. Push it to the `tracks` array.
+  * Finally, place the moved clip into that newly generated track. 
 
-```json
-{
-  "id": "uuid-string",
-  "slug": "lowercase-hyphen-slug",
-  "version": "2026.1",
-  "metadata": {
-    "title": "Human-readable label",
-    "tags": ["trance", "15Hz", "sync"]
-  },
-  "creator_metadata": {
-    "author_id": "uuid-string",
-    "root_affiliate_link": "[https://onlyfans.com/creator](https://onlyfans.com/creator)", 
-    "remixer_link": "[https://fansly.com/remixer](https://fansly.com/remixer)"
-  },
-  "fuel": {
-    "remote_links": ["[https://redgifs.com/watch/id](https://redgifs.com/watch/id)"],
-    "local_requirements": ["./video1.mp4"] 
-  },
-  "engine_config": {
-    "global_bpm": 120
-  },
-  "project_state": {} // Serialized useProjectStore data
-}
+## **6. The .SFK Waveform Strategy (Web Worker & Chunks)**
+* You must NEVER run `AudioContext.decodeAudioData` on a full 1-hour audio file all at once on the main browser thread. This will crash the RAM.
+* **The Peak Proxy Approach:** When audio is imported, spawn a Web Worker. Have the worker fetch the audio in small chunks using `Blob.slice()` to avoid memory spikes.
+* Extract only the maximum absolute sample value for a given bucket (e.g., 1 peak for every 1024 samples).
+* Return an array of these normalized floats (0.0 to 1.0) and save it to the `mediaPool` item as `peakManifest`.
+* The timeline `<ClipWaveform />` will simply read this tiny array of numbers and draw vertical lines on a `<canvas>`, allowing a 2-hour audio waveform to render in milliseconds.
 
-```
-
-* **Migration Strategy:** The `version` field dictates how the file is parsed. If an older version is loaded, it must be passed through a version-migration transformer function before reaching Zod validation.
-
-## **5. Storage & Persistence Tiers**
-
-The application uses a tri-tier storage architecture to prevent browser crashes and save cloud costs.
-
-* **Tier 1: IndexedDB (Metadata & State)**
-* Stores the local `FileSystemFileHandle` (requiring user re-verification on page reload).
-* Performs **1-Minute Atomic Autosaves** (writing to a temp file before swapping) to prevent corruption.
-* Stores the `zundo` incremental JSON patch diffs for the Undo Stack.
-
-
-* **Tier 2: OPFS - Origin Private File System (Heavy Assets)**
-* Stores all low-res WebCodecs **Proxies** (generated asynchronously in a Web Worker for 8K video or files > 5 minutes).
-* **Staleness Check:** The engine uses **XXHash** on the first 5MB of a video file. If the hash mismatches, the proxy is flagged for async regeneration.
-
-
-* **Tier 3: Supabase (Cloud & Ecosystem)**
-* **The "First-In" Lock:** Projects opened from the cloud are locked to the first device. Uses a **15-minute heartbeat timeout**.
-* **Optimistic Locking (Diff Merging):** If two users edit offline and sync, a Visual Diff Tool highlights changes. Users can "Cherry-Pick" markers, generating a `Conflict` merge object.
-
-
+## **7. Media Slipping (The 3-Point Window)**
+* A clip is a window into a media file. It is defined by three points:
+  1. `startTime`: Where the window sits on the timeline.
+  2. `duration`: How wide the window is.
+  3. `mediaOffset`: How far into the source video the window begins looking.
+* **Interaction:** If a user holds a modifier key (e.g., `Alt`) and drags horizontally *inside* the clip, you must update the `mediaOffset` variable (clamping it to the source duration), but leave the `startTime` untouched. This changes what video frame plays without moving the clip block on the timeline.

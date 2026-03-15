@@ -3,6 +3,7 @@
 import { useRef, useEffect } from "react";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
+import type { ClipEvent } from "@/lib/store/types";
 import {
   SkipBack,
   SkipForward,
@@ -33,11 +34,17 @@ export function PreviewMonitor() {
   const tracks = useProjectStore((s) => s.tracks);
   const mediaPool = useProjectStore((s) => s.mediaPool);
 
-  // Find the active clip on the first video track
-  const videoTrack = tracks.find((t) => t.type === "video");
-  const activeClip = videoTrack?.clips.find(
-    (c) => playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration
-  );
+  // Top-down compositing: Track 1 (index 0) is topmost and obscures lower tracks
+  const videoTracks = tracks.filter((t) => t.type === "video");
+
+  let activeClip: ClipEvent | undefined;
+  for (const vt of videoTracks) {
+    activeClip = vt.clips.find(
+      (c) => playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration
+    );
+    if (activeClip) break;
+  }
+
   const activeMedia = activeClip
     ? mediaPool.find((m) => m.id === activeClip.sourceId)
     : undefined;

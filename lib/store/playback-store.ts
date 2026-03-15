@@ -6,19 +6,27 @@ import { useProjectStore } from "./project-store";
 // should subscribe to this store.
 
 export interface PlaybackState {
-  playheadPosition: number; // microseconds, Math.round enforced
+  playheadPosition: number;
   isPlaying: boolean;
-  zoomLevel: number; // 0.1 to 3
+  zoomLevel: number;
+  pixelsPerSecond: number;
+  scrollLeft: number;
+  containerWidth: number;
   loopRegion?: { in: number; out: number };
   setPlayhead: (time: number) => void;
   togglePlayback: () => void;
   setZoom: (zoom: number) => void;
+  setScrollLeft: (left: number) => void;
+  setContainerWidth: (width: number) => void;
 }
 
 export const usePlaybackStore = create<PlaybackState>((set) => ({
   playheadPosition: 0,
   isPlaying: false,
   zoomLevel: 1,
+  pixelsPerSecond: 100,
+  scrollLeft: 0,
+  containerWidth: 0,
   loopRegion: undefined,
 
   setPlayhead: (time) =>
@@ -30,7 +38,12 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   togglePlayback: () => set((s) => ({ isPlaying: !s.isPlaying })),
 
   setZoom: (zoom) =>
-    set(() => ({
-      zoomLevel: Math.max(0.1, Math.min(3, zoom)),
-    })),
+    set(() => {
+      const clamped = Math.max(0.001, Math.min(3, zoom));
+      return { zoomLevel: clamped, pixelsPerSecond: 100 * clamped };
+    }),
+
+  setScrollLeft: (left) => set({ scrollLeft: left }),
+
+  setContainerWidth: (width) => set({ containerWidth: width }),
 }));

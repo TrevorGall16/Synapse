@@ -25,13 +25,14 @@ export interface EffectInstance {
 
 export interface ClipEvent {
   id: string;
-  type: TrackType;
+  trackId: string;
   sourceId: string;
+  groupId?: string;
   startTime: number;
   duration: number;
-  linkedClipIds?: string[];
-  fadeIn?: number;
-  fadeOut?: number;
+  mediaOffset: number;
+  fadeInDuration?: number;
+  fadeOutDuration?: number;
   effects?: EffectInstance[];
   keyframes?: Keyframe[];
   panCrop?: PanCropData;
@@ -46,25 +47,23 @@ export interface Track {
   collapsed: boolean;
   locked: boolean;
   clips: ClipEvent[];
-  isMuted: boolean;
-  isSolo: boolean;
+  isMuted?: boolean;
+  isSolo?: boolean;
   opacityOrVolume: number;
 }
 
 export interface Marker {
   id: string;
   time: number;
-  label: string;
-  color?: string;
+  color: string;
+  label?: string;
 }
 
 export interface MediaPoolItem {
   id: string;
   name: string;
-  type: TrackType;
-  mediaKind: "video" | "audio" | "image";
-  relativePath: string;
-  durationMicros: number;
-  thumbnailUrl?: string;
+  type: "video" | "audio" | "image";
+  duration: number;
   previewUrl?: string;
+  peakManifest?: number[];
 }

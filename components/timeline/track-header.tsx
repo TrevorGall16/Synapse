@@ -1,41 +1,63 @@
+import { X } from "lucide-react";
 import type { TrackType } from "@/lib/store/types";
+
+const TYPE_BG: Record<TrackType, string> = {
+  video: "bg-blue-500/5",
+  audio: "bg-green-500/5",
+  effect: "bg-red-500/5",
+  text: "bg-yellow-500/5",
+};
 
 interface TrackHeaderProps {
   label: string;
   color: string;
   trackType: TrackType;
-  isMuted: boolean;
-  isSolo: boolean;
+  height: number;
+  isMuted?: boolean;
+  isSolo?: boolean;
   opacityOrVolume: number;
   onToggleMute: () => void;
   onToggleSolo: () => void;
   onOpacityOrVolumeChange: (value: number) => void;
+  onDelete: () => void;
 }
 
 export function TrackHeader({
   label,
   color,
   trackType,
+  height,
   isMuted,
   isSolo,
   opacityOrVolume,
   onToggleMute,
   onToggleSolo,
   onOpacityOrVolumeChange,
+  onDelete,
 }: TrackHeaderProps) {
   const sliderLabel =
     trackType === "audio" ? `${label} volume` : `${label} opacity`;
 
   return (
-    <div className="flex h-24 shrink-0 flex-col gap-1 px-3 py-2">
-      {/* Row 1: Color dot + label */}
+    <div
+      className={`group flex shrink-0 flex-col gap-1 border-b border-white/10 px-3 py-2 ${TYPE_BG[trackType]}`}
+      style={{ height }}
+    >
+      {/* Row 1: Color dot + label + delete */}
       <div className="flex items-center gap-2">
         <div
-          className="h-3 w-3 rounded-sm"
+          className="h-3 w-3 shrink-0 rounded-sm"
           style={{ backgroundColor: color }}
           aria-hidden
         />
-        <span className="text-xs font-medium text-white/80">{label}</span>
+        <span className="flex-1 truncate text-xs font-medium text-white/80">{label}</span>
+        <button
+          onClick={onDelete}
+          aria-label={`Delete ${label}`}
+          className="rounded p-0.5 text-white/0 transition-colors group-hover:text-white/40 hover:!bg-red-500/30 hover:!text-red-400 focus-visible:ring-1 focus-visible:ring-white/40"
+        >
+          <X size={12} />
+        </button>
       </div>
 
       {/* Row 2: Mute / Solo toggles */}

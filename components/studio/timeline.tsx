@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useCallback, useEffect } from "react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { usePlaybackLoop } from "@/lib/hooks/use-playback-loop";
@@ -13,18 +13,105 @@ import { ZoomSlider } from "@/components/timeline/zoom-slider";
 export function Timeline() {
   const tracks = useProjectStore((s) => s.tracks);
   const addTrack = useProjectStore((s) => s.addTrack);
+  const deleteTrack = useProjectStore((s) => s.deleteTrack);
   const toggleMute = useProjectStore((s) => s.toggleMute);
   const toggleSolo = useProjectStore((s) => s.toggleSolo);
   const setOpacityOrVolume = useProjectStore((s) => s.setOpacityOrVolume);
+  const ungroupClips = useProjectStore((s) => s.ungroupClips);
+  const selectedClipIds = useProjectStore((s) => s.selectedClipIds);
   const duration = useProjectStore((s) => s.duration);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const rafScrollId = useRef(0);
 
   usePlaybackLoop();
 
-  const zoomLevel = usePlaybackStore((s) => s.zoomLevel);
-  const pixelsPerSecond = 100 * zoomLevel;
+  const pixelsPerSecond = usePlaybackStore((s) => s.pixelsPerSecond);
+  const setZoom = usePlaybackStore((s) => s.setZoom);
+  const setScrollLeft = usePlaybackStore((s) => s.setScrollLeft);
+  const setContainerWidth = usePlaybackStore((s) => s.setContainerWidth);
+
   const contentWidth = (duration / 1_000_000) * pixelsPerSecond;
+
+  // ── Focal-Point Zooming (4-Step Algorithm) ────────────
+  const onWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
+      const container = scrollContainerRef.current;
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const { zoomLevel, pixelsPerSecond: oldPPS } = usePlaybackStore.getState();
+
+      // Step 1: Capture pre-zoom anchor
+      const mouseX = e.clientX - rect.left;
+      const timeAtMouse = (container.scrollLeft + mouseX) / oldPPS;
+
+      // Step 2: Change zoom level
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const newZoom = Math.max(0.001, Math.min(3, zoomLevel * factor));
+      const newPPS = 100 * newZoom;
+
+      // Step 3: Adjust scroll to keep mouse anchored
+      container.scrollLeft = timeAtMouse * newPPS - mouseX;
+
+      // Step 4: Save to store
+      setZoom(newZoom);
+    },
+    [setZoom]
+  );
+
+  // ── Scroll sync (rAF-throttled) ──────────────────────
+  const onScroll = useCallback(() => {
+    cancelAnimationFrame(rafScrollId.current);
+    rafScrollId.current = requestAnimationFrame(() => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+      setScrollLeft(container.scrollLeft);
+    });
+  }, [setScrollLeft]);
+
+  // ── ResizeObserver for containerWidth ─────────────────
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    setContainerWidth(container.clientWidth);
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [setContainerWidth]);
+
+  // ── Keyboard shortcuts ───────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore when typing in inputs
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      if (e.key === "u" || e.key === "U") {
+        if (selectedClipIds.length > 0) {
+          ungroupClips(selectedClipIds);
+        }
+      }
+
+      if (e.key === "s" || e.key === "S") {
+        if (e.ctrlKey || e.metaKey) return; // Don't hijack Ctrl+S
+        const { playheadPosition } = usePlaybackStore.getState();
+        const { selectedClipIds: ids, splitClip } = useProjectStore.getState();
+        for (const clipId of ids) {
+          splitClip(clipId, playheadPosition);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedClipIds, ungroupClips]);
 
   return (
     <section className="flex h-full w-full flex-col overflow-hidden min-w-0 min-h-0 border-t border-white/20 bg-[#1a1a1a]">
@@ -56,12 +143,14 @@ export function Timeline() {
               label={track.name}
               color={track.color ?? "#666"}
               trackType={track.type}
+              height={track.height}
               isMuted={track.isMuted}
               isSolo={track.isSolo}
               opacityOrVolume={track.opacityOrVolume}
               onToggleMute={() => toggleMute(track.id)}
               onToggleSolo={() => toggleSolo(track.id)}
               onOpacityOrVolumeChange={(v) => setOpacityOrVolume(track.id, v)}
+              onDelete={() => deleteTrack(track.id)}
             />
           ))}
         </div>
@@ -70,14 +159,16 @@ export function Timeline() {
         <div
           ref={scrollContainerRef}
           className="scrollbar-hidden flex-1 flex flex-col overflow-x-auto overflow-y-auto min-w-0 relative"
+          onWheel={onWheel}
+          onScroll={onScroll}
         >
-          {/* The 30,000px monster — ONLY this element is wide */}
+          {/* The Spacer Div — creates the scrollable Cartesian plane */}
           <div style={{ width: contentWidth }} className="flex flex-col min-h-full">
             {/* Ruler */}
             <TimelineRuler scrollContainerRef={scrollContainerRef} />
 
             {/* Track lanes + playhead overlay */}
-            <div className="relative flex-1">
+            <div className="relative">
               <div className="pointer-events-none absolute inset-0 z-10">
                 <Playhead />
               </div>

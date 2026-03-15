@@ -18,10 +18,8 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
   const rulerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const duration = useProjectStore((s) => s.duration);
-  const zoomLevel = usePlaybackStore((s) => s.zoomLevel);
+  const pixelsPerSecond = usePlaybackStore((s) => s.pixelsPerSecond);
   const setPlayhead = usePlaybackStore((s) => s.setPlayhead);
-
-  const pixelsPerSecond = 100 * zoomLevel;
   const totalWidth = (duration / 1_000_000) * pixelsPerSecond;
 
   // Dynamic tick interval based on zoom

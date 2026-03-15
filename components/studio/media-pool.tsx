@@ -2,14 +2,9 @@
 
 import { useRef, useState, useCallback } from "react";
 import { useProjectStore } from "@/lib/store/project-store";
-import type { TrackType, MediaPoolItem } from "@/lib/store/types";
+import type { MediaPoolItem } from "@/lib/store/types";
 
-function trackTypeFromMime(mime: string): TrackType {
-  if (mime.startsWith("audio/")) return "audio";
-  return "video";
-}
-
-function mediaKind(mime: string): "video" | "audio" | "image" {
+function mediaTypeFromMime(mime: string): "video" | "audio" | "image" {
   if (mime.startsWith("audio/")) return "audio";
   if (mime.startsWith("image/")) return "image";
   return "video";
@@ -19,22 +14,21 @@ function handleFiles(files: FileList | File[]) {
   const { addMediaItem } = useProjectStore.getState();
 
   for (const file of Array.from(files)) {
-    const type = trackTypeFromMime(file.type);
-    const kind = mediaKind(file.type);
+    const type = mediaTypeFromMime(file.type);
     const previewUrl = URL.createObjectURL(file);
 
-    if (kind === "image") {
-      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, mediaKind: kind, relativePath: file.name, durationMicros: 5_000_000, previewUrl });
+    if (type === "image") {
+      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, previewUrl });
       continue;
     }
 
-    const el = document.createElement(kind === "audio" ? "audio" : "video");
+    const el = document.createElement(type === "audio" ? "audio" : "video");
     el.preload = "metadata";
     el.src = previewUrl;
 
     const finish = (durationSec: number) => {
-      const durationMicros = Math.round(durationSec * 1_000_000);
-      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, mediaKind: kind, relativePath: file.name, durationMicros, previewUrl });
+      const duration = Math.round(durationSec * 1_000_000);
+      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, duration, previewUrl });
     };
 
     el.onloadedmetadata = () => {
@@ -50,7 +44,7 @@ function handleFiles(files: FileList | File[]) {
       }
     };
     el.onerror = () => {
-      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, mediaKind: kind, relativePath: file.name, durationMicros: 5_000_000, previewUrl });
+      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, previewUrl });
     };
   }
 }
@@ -150,7 +144,7 @@ function MediaPoolCard({ item }: { item: MediaPoolItem }) {
 }
 
 function MediaThumbnail({ item }: { item: MediaPoolItem }) {
-  if (item.mediaKind === "video" && item.previewUrl) {
+  if (item.type === "video" && item.previewUrl) {
     return (
       <video
         src={item.previewUrl}
@@ -167,7 +161,7 @@ function MediaThumbnail({ item }: { item: MediaPoolItem }) {
     );
   }
 
-  if (item.mediaKind === "image" && item.previewUrl) {
+  if (item.type === "image" && item.previewUrl) {
     return (
       <img
         src={item.previewUrl}
@@ -179,7 +173,7 @@ function MediaThumbnail({ item }: { item: MediaPoolItem }) {
 
   return (
     <div className="flex aspect-video w-full items-center justify-center rounded bg-white/5">
-      <span className="text-lg text-white/20">♪</span>
+      <span className="text-lg text-white/20">&#9835;</span>
     </div>
   );
 }

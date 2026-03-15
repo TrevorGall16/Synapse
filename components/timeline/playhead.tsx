@@ -6,8 +6,7 @@ const MICROS_PER_SECOND = 1_000_000;
 
 export function Playhead() {
   const playheadPosition = usePlaybackStore((s) => s.playheadPosition);
-  const zoomLevel = usePlaybackStore((s) => s.zoomLevel);
-  const pixelsPerSecond = 100 * zoomLevel;
+  const pixelsPerSecond = usePlaybackStore((s) => s.pixelsPerSecond);
   const leftPx = (playheadPosition / MICROS_PER_SECOND) * pixelsPerSecond;
 
   return (
