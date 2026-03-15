@@ -9,11 +9,14 @@ import { TrackLane } from "@/components/timeline/track-lane";
 import { TimelineRuler } from "@/components/timeline/timeline-ruler";
 import { Playhead } from "@/components/timeline/playhead";
 import { ZoomSlider } from "@/components/timeline/zoom-slider";
+import { TimelineToolbar } from "@/components/timeline/timeline-toolbar";
+import { TimelineGrid } from "@/components/timeline/timeline-grid";
 
 export function Timeline() {
   const tracks = useProjectStore((s) => s.tracks);
   const addTrack = useProjectStore((s) => s.addTrack);
   const deleteTrack = useProjectStore((s) => s.deleteTrack);
+  const reorderTrack = useProjectStore((s) => s.reorderTrack);
   const toggleMute = useProjectStore((s) => s.toggleMute);
   const toggleSolo = useProjectStore((s) => s.toggleSolo);
   const setOpacityOrVolume = useProjectStore((s) => s.setOpacityOrVolume);
@@ -94,6 +97,12 @@ export function Timeline() {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
+      if (e.key === "g" || e.key === "G") {
+        if (selectedClipIds.length > 1) {
+          useProjectStore.getState().groupClips(selectedClipIds);
+        }
+      }
+
       if (e.key === "u" || e.key === "U") {
         if (selectedClipIds.length > 0) {
           ungroupClips(selectedClipIds);
@@ -103,9 +112,16 @@ export function Timeline() {
       if (e.key === "s" || e.key === "S") {
         if (e.ctrlKey || e.metaKey) return; // Don't hijack Ctrl+S
         const { playheadPosition } = usePlaybackStore.getState();
-        const { selectedClipIds: ids, splitClip } = useProjectStore.getState();
-        for (const clipId of ids) {
-          splitClip(clipId, playheadPosition);
+        const { selectedClipIds: ids, splitSelectedClips } = useProjectStore.getState();
+        if (ids.length > 0) {
+          splitSelectedClips(ids, playheadPosition);
+        }
+      }
+
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const { selectedClipIds: ids, deleteSelectedClips } = useProjectStore.getState();
+        if (ids.length > 0) {
+          deleteSelectedClips(ids);
         }
       }
     };
@@ -117,7 +133,7 @@ export function Timeline() {
     <section className="flex h-full w-full flex-col overflow-hidden min-w-0 min-h-0 border-t border-white/20 bg-[#1a1a1a]">
       {/* Toolbar: Add Track + Zoom */}
       <div className="flex h-7 shrink-0 items-center justify-between border-b border-white/10">
-        <div className="flex w-48 shrink-0 items-center justify-center border-r border-white/10">
+        <div className="flex w-48 shrink-0 items-center border-r border-white/10">
           <button
             onClick={() => addTrack("video")}
             className="rounded px-2 py-0.5 text-[10px] font-medium text-white/50 transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-1 focus-visible:ring-white/40"
@@ -126,6 +142,7 @@ export function Timeline() {
             + Add Track
           </button>
         </div>
+        <TimelineToolbar />
         <div className="pr-3">
           <ZoomSlider scrollContainerRef={scrollContainerRef} />
         </div>
@@ -137,13 +154,14 @@ export function Timeline() {
         <div className="w-48 shrink-0 flex flex-col overflow-y-auto overflow-x-hidden border-r border-white/10">
           {/* Spacer aligned with ruler */}
           <div className="h-6 shrink-0 border-b border-white/10" />
-          {tracks.map((track) => (
+          {tracks.map((track, idx) => (
             <TrackHeader
               key={track.id}
               label={track.name}
               color={track.color ?? "#666"}
               trackType={track.type}
               height={track.height}
+              trackIndex={idx}
               isMuted={track.isMuted}
               isSolo={track.isSolo}
               opacityOrVolume={track.opacityOrVolume}
@@ -151,6 +169,7 @@ export function Timeline() {
               onToggleSolo={() => toggleSolo(track.id)}
               onOpacityOrVolumeChange={(v) => setOpacityOrVolume(track.id, v)}
               onDelete={() => deleteTrack(track.id)}
+              onReorder={reorderTrack}
             />
           ))}
         </div>
@@ -167,8 +186,9 @@ export function Timeline() {
             {/* Ruler */}
             <TimelineRuler scrollContainerRef={scrollContainerRef} />
 
-            {/* Track lanes + playhead overlay */}
+            {/* Track lanes + grid + playhead overlay */}
             <div className="relative">
+              <TimelineGrid />
               <div className="pointer-events-none absolute inset-0 z-10">
                 <Playhead />
               </div>

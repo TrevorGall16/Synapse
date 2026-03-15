@@ -11,7 +11,7 @@ interface ClipFilmstripProps {
 }
 
 export function ClipFilmstrip({ clip, media, clipWidthPx }: ClipFilmstripProps) {
-  const thumbCount = Math.max(1, Math.ceil(clipWidthPx / 80));
+  const thumbCount = Math.min(10, Math.max(1, Math.ceil(clipWidthPx / 80)));
   const thumbWidth = clipWidthPx / thumbCount;
 
   // Image clips: tile the source image

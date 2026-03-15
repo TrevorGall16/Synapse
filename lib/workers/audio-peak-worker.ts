@@ -1,9 +1,8 @@
 // ── Audio Peak Extraction Worker ─────────────────────────
-// Runs entirely off the main thread. Fetches audio, decodes
-// via OfflineAudioContext, and extracts a normalized peak
-// manifest (1 peak per 1024 samples).
+// Runs entirely off the main thread. Fetches entire audio file,
+// decodes via OfflineAudioContext, extracts normalized peaks.
 
-const SAMPLES_PER_PEAK = 1024;
+const SAMPLES_PER_PEAK = 10_000;
 
 interface ExtractPeaksMessage {
   type: "extract-peaks";
@@ -29,6 +28,7 @@ self.onmessage = async (e: MessageEvent<ExtractPeaksMessage>) => {
   const { audioUrl, mediaId } = e.data;
 
   try {
+    // Fetch entire file as ArrayBuffer (no Blob.slice — it corrupts headers)
     const response = await fetch(audioUrl);
     const arrayBuffer = await response.arrayBuffer();
 
@@ -36,7 +36,7 @@ self.onmessage = async (e: MessageEvent<ExtractPeaksMessage>) => {
     const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
     const channelData = audioBuffer.getChannelData(0);
 
-    const peakCount = Math.ceil(channelData.length / SAMPLES_PER_PEAK);
+    const peakCount = Math.max(1, Math.ceil(channelData.length / SAMPLES_PER_PEAK));
     const peaks = new Float32Array(peakCount);
     let globalMax = 0;
 
@@ -61,6 +61,7 @@ self.onmessage = async (e: MessageEvent<ExtractPeaksMessage>) => {
     const msg: PeaksReadyMessage = { type: "peaks-ready", mediaId, peakManifest };
     self.postMessage(msg);
   } catch (err) {
+    console.error("[audio-peak-worker] Failed to extract peaks:", err);
     const msg: PeaksErrorMessage = {
       type: "peaks-error",
       mediaId,

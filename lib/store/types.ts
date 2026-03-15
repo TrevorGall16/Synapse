@@ -36,6 +36,7 @@ export interface ClipEvent {
   effects?: EffectInstance[];
   keyframes?: Keyframe[];
   panCrop?: PanCropData;
+  fxParams?: Record<string, unknown>;
 }
 
 export interface Track {

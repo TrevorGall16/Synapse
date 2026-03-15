@@ -1,9 +1,11 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import type { ClipEvent } from "@/lib/store/types";
+
+type PreviewQuality = "Draft" | "Auto" | "Best";
 import {
   SkipBack,
   SkipForward,
@@ -26,6 +28,7 @@ function formatTimecode(micros: number): string {
 
 export function PreviewMonitor() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [quality, setQuality] = useState<PreviewQuality>("Auto");
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const playheadPosition = usePlaybackStore((s) => s.playheadPosition);
   const togglePlayback = usePlaybackStore((s) => s.togglePlayback);
@@ -49,38 +52,93 @@ export function PreviewMonitor() {
     ? mediaPool.find((m) => m.id === activeClip.sourceId)
     : undefined;
 
-  // Sync video element to playhead position
+  // Play/pause sync
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (isPlaying && activeClip) {
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  }, [isPlaying, activeClip]);
+
+  // Time sync: only force-seek when scrubbing or significant drift
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeClip) return;
     const localTime = (playheadPosition - activeClip.startTime) / MICROS_PER_SECOND;
-    if (Math.abs(video.currentTime - localTime) > 0.05) {
-      video.currentTime = localTime;
+    if (!isPlaying) {
+      // Scrubbing — always seek
+      if (Math.abs(video.currentTime - localTime) > 0.05) {
+        video.currentTime = localTime;
+      }
+    } else {
+      // Playing — only correct large drift
+      if (Math.abs(video.currentTime - localTime) > 0.25) {
+        video.currentTime = localTime;
+      }
     }
-  }, [playheadPosition, activeClip]);
+  }, [playheadPosition, activeClip, isPlaying]);
+
+  // Collect active text clips at playhead
+  const textTracks = tracks.filter((t) => t.type === "text");
+  const activeTextClips: ClipEvent[] = [];
+  for (const tt of textTracks) {
+    for (const c of tt.clips) {
+      if (playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration) {
+        activeTextClips.push(c);
+      }
+    }
+  }
 
   return (
     <div className="flex h-full flex-col border-t border-white/20 bg-[#1a1a1a]">
-      <div className="shrink-0 border-b border-white/10 px-4 py-2">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-white/60">
           Preview
         </h2>
+        <select
+          value={quality}
+          onChange={(e) => setQuality(e.target.value as PreviewQuality)}
+          aria-label="Preview quality"
+          className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/60 outline-none transition-colors hover:bg-white/15 focus-visible:ring-1 focus-visible:ring-white/40"
+        >
+          <option value="Draft" className="text-black">Draft</option>
+          <option value="Auto" className="text-black">Auto</option>
+          <option value="Best" className="text-black">Best</option>
+        </select>
       </div>
 
-      <div className="flex flex-1 items-center justify-center overflow-hidden bg-black">
+      <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
         {activeMedia?.previewUrl ? (
           <video
             ref={videoRef}
             key={activeMedia.id}
             src={activeMedia.previewUrl}
             className="h-full w-full object-contain"
-            muted
             playsInline
             preload="auto"
           />
         ) : (
           <div className="aspect-video w-full max-w-lg rounded bg-[#111111]" />
         )}
+
+        {/* Text clip overlays */}
+        {activeTextClips.map((tc) => {
+          const content = tc.fxParams?.content as string | undefined;
+          if (!content) return null;
+          return (
+            <div
+              key={tc.id}
+              className="pointer-events-none absolute inset-0 flex items-center justify-center"
+            >
+              <span className="text-3xl font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
+                {content}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Transport toolbar */}

@@ -3,6 +3,7 @@
 import { useRef, useCallback, type RefObject } from "react";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
+import { getGridInterval } from "@/lib/utils/grid";
 
 function formatTimecode(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -23,7 +24,7 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
   const totalWidth = (duration / 1_000_000) * pixelsPerSecond;
 
   // Dynamic tick interval based on zoom
-  const tickInterval = getTickInterval(pixelsPerSecond);
+  const tickInterval = getGridInterval(pixelsPerSecond);
   const totalSeconds = duration / 1_000_000;
 
   // Visible ticks only
@@ -53,9 +54,10 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
+      // Calculate and set playhead FIRST so single-clicks work
+      positionFromPointer(e.clientX);
       isDragging.current = true;
       e.currentTarget.setPointerCapture(e.pointerId);
-      positionFromPointer(e.clientX);
     },
     [positionFromPointer]
   );
@@ -101,9 +103,3 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
   );
 }
 
-function getTickInterval(pixelsPerSecond: number): number {
-  if (pixelsPerSecond > 500) return 1 / 60;
-  if (pixelsPerSecond > 50) return 1;
-  if (pixelsPerSecond > 5) return 10;
-  return 60;
-}

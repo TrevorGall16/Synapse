@@ -3,6 +3,7 @@
 import { useRef, useCallback } from "react";
 import type { ClipEvent } from "@/lib/store/types";
 import { useProjectStore } from "@/lib/store/project-store";
+import { Settings } from "lucide-react";
 import { ClipFilmstrip } from "./clip-filmstrip";
 import { ClipWaveform } from "./clip-waveform";
 
@@ -17,9 +18,11 @@ interface ClipEventBlockProps {
 export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, trackHeight }: ClipEventBlockProps) {
   const mediaPool = useProjectStore((s) => s.mediaPool);
   const tracks = useProjectStore((s) => s.tracks);
+  const selectedClipIds = useProjectStore((s) => s.selectedClipIds);
   const media = mediaPool.find((m) => m.id === clip.sourceId);
   const label = media?.name ?? clip.sourceId;
   const track = tracks.find((t) => t.id === trackId);
+  const isSelected = selectedClipIds.includes(clip.id);
 
   const isDragging = useRef(false);
   const startPos = useRef({ x: 0, y: 0, time: 0, trackId: "" });
@@ -35,12 +38,32 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       e.stopPropagation();
+
+      // Select this clip (+ all grouped clips)
+      const { setSelectedClipIds, tracks: allTracks } = useProjectStore.getState();
+      const groupIds: string[] = [clip.id];
+      if (clip.groupId) {
+        for (const t of allTracks) {
+          for (const c of t.clips) {
+            if (c.groupId === clip.groupId && c.id !== clip.id) {
+              groupIds.push(c.id);
+            }
+          }
+        }
+      }
+      if (e.shiftKey) {
+        const existing = useProjectStore.getState().selectedClipIds;
+        setSelectedClipIds([...existing, ...groupIds]);
+      } else {
+        setSelectedClipIds(groupIds);
+      }
+
       e.currentTarget.setPointerCapture(e.pointerId);
       isDragging.current = true;
       accumY.current = 0;
       startPos.current = { x: e.clientX, y: e.clientY, time: clip.startTime, trackId };
     },
-    [clip.startTime, trackId]
+    [clip.id, clip.groupId, clip.startTime, trackId]
   );
 
   const onPointerMove = useCallback(
@@ -76,7 +99,9 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
 
   return (
     <div
-      className="absolute top-0 flex h-full cursor-grab items-center overflow-hidden rounded active:cursor-grabbing"
+      className={`absolute top-0 flex h-full cursor-grab select-none items-center overflow-hidden rounded active:cursor-grabbing ${
+        isSelected ? "ring-2 ring-white" : ""
+      }`}
       style={{
         transform: `translate3d(${xPx}px, 0, 0)`,
         width: wPx,
@@ -125,6 +150,20 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       <span className="relative z-10 truncate px-1.5 text-[10px] font-medium text-white/80 drop-shadow-sm">
         {label}
       </span>
+
+      {/* Settings gear for text/effect clips */}
+      {(track?.type === "text" || track?.type === "effect") && (
+        <button
+          className="absolute right-1 top-1 z-20 rounded p-0.5 text-white/40 transition-colors hover:bg-white/15 hover:text-white"
+          aria-label="Clip settings"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            useProjectStore.getState().setInspectingClipId(clip.id);
+          }}
+        >
+          <Settings size={12} />
+        </button>
+      )}
     </div>
   );
 }

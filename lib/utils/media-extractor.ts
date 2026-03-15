@@ -24,8 +24,8 @@ export async function extractVideoFrames(
     });
 
     const canvas = document.createElement("canvas");
-    canvas.width = 120;
-    canvas.height = 68;
+    canvas.width = 64;
+    canvas.height = 36;
     const ctx = canvas.getContext("2d")!;
 
     const frames: string[] = [];
@@ -50,25 +50,43 @@ export async function extractVideoFrames(
   }
 }
 
-// ── Audio Peak Extraction (off main thread via Web Worker) ──
+// ── Audio Peak Extraction (main thread, no Worker) ──────
 
-let peakWorker: Worker | null = null;
+const SAMPLES_PER_PEAK = 10_000;
 
-function getPeakWorker(): Worker {
-  if (!peakWorker) {
-    peakWorker = new Worker(
-      new URL("../workers/audio-peak-worker.ts", import.meta.url)
-    );
-    peakWorker.onmessage = (e: MessageEvent) => {
-      if (e.data.type === "peaks-ready") {
-        useProjectStore.getState().updateMediaPeaks(e.data.mediaId, e.data.peakManifest);
+export async function requestAudioPeaks(audioUrl: string, mediaId: string): Promise<void> {
+  try {
+    const response = await fetch(audioUrl);
+    const arrayBuffer = await response.arrayBuffer();
+
+    const audioCtx = new AudioContext();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    await audioCtx.close();
+
+    const channelData = audioBuffer.getChannelData(0);
+    const peakCount = Math.max(1, Math.ceil(channelData.length / SAMPLES_PER_PEAK));
+    const peaks = new Float32Array(peakCount);
+    let globalMax = 0;
+
+    for (let i = 0; i < peakCount; i++) {
+      const start = i * SAMPLES_PER_PEAK;
+      const end = Math.min(start + SAMPLES_PER_PEAK, channelData.length);
+      let peak = 0;
+      for (let j = start; j < end; j++) {
+        const abs = Math.abs(channelData[j]);
+        if (abs > peak) peak = abs;
       }
-    };
-  }
-  return peakWorker;
-}
+      peaks[i] = peak;
+      if (peak > globalMax) globalMax = peak;
+    }
 
-export function requestAudioPeaks(audioUrl: string, mediaId: string): void {
-  const worker = getPeakWorker();
-  worker.postMessage({ type: "extract-peaks", audioUrl, mediaId });
+    const peakManifest: number[] = new Array(peakCount);
+    for (let i = 0; i < peakCount; i++) {
+      peakManifest[i] = globalMax > 0 ? peaks[i] / globalMax : 0;
+    }
+
+    useProjectStore.getState().updateMediaPeaks(mediaId, peakManifest);
+  } catch (err) {
+    console.error("[audio-peaks] Peak extraction failed:", err);
+  }
 }
