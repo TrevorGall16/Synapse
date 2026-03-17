@@ -43,7 +43,9 @@ class AudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private trackChains = new Map<string, TrackAudioChain>();
+  private elementRegistry = new WeakMap<HTMLMediaElement, MediaElementAudioSourceNode>();
   private soloTracks = new Set<string>();
+  private mutedTracks = new Set<string>();
   private storedVolumes = new Map<string, number>();
   private lastRoomSize = new Map<string, number>();
 
@@ -65,7 +67,15 @@ class AudioEngine {
     if (!this.ctx || !this.masterGain) return null;
     if (this.trackChains.has(trackId)) return this.trackChains.get(trackId)!;
 
-    const source = this.ctx.createMediaElementSource(element);
+    // Reuse existing source node if element was already bound (permanent per Web Audio spec)
+    let source: MediaElementAudioSourceNode;
+    const existingSource = this.elementRegistry.get(element);
+    if (existingSource) {
+      source = existingSource;
+    } else {
+      source = this.ctx.createMediaElementSource(element);
+      this.elementRegistry.set(element, source);
+    }
     const clipGain = this.ctx.createGain();
     const trackGain = this.ctx.createGain();
     const panner = this.ctx.createStereoPanner();
@@ -128,6 +138,7 @@ class AudioEngine {
     this.storedVolumes.delete(trackId);
     this.lastRoomSize.delete(trackId);
     this.soloTracks.delete(trackId);
+    this.mutedTracks.delete(trackId);
   }
 
   setMasterVolume(gain: number) {
@@ -173,15 +184,21 @@ class AudioEngine {
   }
 
   private updateSoloState() {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
     for (const [id, chain] of this.trackChains) {
+      // Never restore gain for muted tracks
+      if (this.mutedTracks.has(id)) {
+        chain.trackGain.gain.setTargetAtTime(0, now, 0.01);
+        continue;
+      }
       if (this.soloTracks.size === 0) {
-        // No solo active — restore all to stored volume
-        chain.trackGain.gain.value = this.storedVolumes.get(id) ?? 1;
+        chain.trackGain.gain.setTargetAtTime(this.storedVolumes.get(id) ?? 1, now, 0.01);
       } else {
-        // Solo active — only soloed tracks get their volume
-        chain.trackGain.gain.value = this.soloTracks.has(id)
-          ? (this.storedVolumes.get(id) ?? 1)
-          : 0;
+        chain.trackGain.gain.setTargetAtTime(
+          this.soloTracks.has(id) ? (this.storedVolumes.get(id) ?? 1) : 0,
+          now, 0.005,
+        );
       }
     }
   }
@@ -213,17 +230,43 @@ class AudioEngine {
 
   /** Sync all audio params for a track in one call */
   syncTrackState(trackId: string, state: TrackAudioState) {
-    this.setTrackVolume(trackId, state.volume);
-    this.setClipLevel(trackId, state.clipLevel);
-    this.setTrackPan(trackId, state.pan);
+    const chain = this.trackChains.get(trackId);
+    if (!chain) return;
+
+    // Store the desired volume
+    const vol = state.volume / 100;
+    this.storedVolumes.set(trackId, vol);
+
+    // Set clip level
+    chain.clipGain.gain.value = state.clipLevel / 100;
+
+    // Pan
+    chain.panner.pan.value = Math.max(-1, Math.min(1, state.pan / 100));
+
+    // Track muted state persistently
+    if (state.muted) this.mutedTracks.add(trackId);
+    else this.mutedTracks.delete(trackId);
+
+    // Solo state (affects who gets muted)
+    const prevSoloSize = this.soloTracks.size;
+    if (state.solo) this.soloTracks.add(trackId);
+    else this.soloTracks.delete(trackId);
+    const soloChanged = prevSoloSize !== this.soloTracks.size;
+
+    // Compute effective gain: mute → 0, solo logic, else stored volume
+    let effectiveGain = vol;
     if (state.muted) {
-      this.setTrackMute(trackId, true);
+      effectiveGain = 0;
     } else if (this.soloTracks.size > 0 && !this.soloTracks.has(trackId)) {
-      // Keep muted by solo logic
-    } else {
-      this.setTrackMute(trackId, false);
+      effectiveGain = 0;
     }
-    this.setTrackSolo(trackId, state.solo);
+    // Use setTargetAtTime for instant, click-free transitions
+    chain.trackGain.gain.setTargetAtTime(effectiveGain, this.ctx!.currentTime, 0.01);
+
+    // Only update other tracks' solo state if solo membership changed
+    if (soloChanged) this.updateSoloState();
+
+    // Delay & reverb
     this.setTrackDelay(trackId, state.delayMs, state.delayFeedback);
     this.setTrackReverb(trackId, state.reverbWet, state.reverbRoomSize);
   }
@@ -235,6 +278,7 @@ class AudioEngine {
   destroy() {
     this.trackChains.clear();
     this.soloTracks.clear();
+    this.mutedTracks.clear();
     this.storedVolumes.clear();
     this.lastRoomSize.clear();
     if (this.ctx) {

@@ -46,7 +46,24 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
       if (!el || !scrollEl) return;
       const rect = el.getBoundingClientRect();
       const rawX = clientX - rect.left + scrollEl.scrollLeft;
-      const micros = Math.round((rawX / pixelsPerSecond) * 1_000_000);
+      let micros = Math.round((rawX / pixelsPerSecond) * 1_000_000);
+
+      // Snap to clip edges within 8px threshold
+      const snapThresholdMicros = Math.round((8 / pixelsPerSecond) * 1_000_000);
+      const tracks = useProjectStore.getState().tracks;
+      let bestDist = snapThresholdMicros;
+      for (const t of tracks) {
+        for (const c of t.clips) {
+          for (const edge of [c.startTime, c.startTime + c.duration]) {
+            const d = Math.abs(micros - edge);
+            if (d < bestDist) {
+              bestDist = d;
+              micros = edge;
+            }
+          }
+        }
+      }
+
       setPlayhead(micros);
     },
     [pixelsPerSecond, setPlayhead, scrollContainerRef]

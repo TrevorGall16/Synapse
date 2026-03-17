@@ -1,6 +1,6 @@
 "use client";
 
-import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine, ArrowRightLeft } from "lucide-react";
+import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine, ArrowRightLeft, Music } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import type { ClipEvent } from "@/lib/store/types";
@@ -9,6 +9,7 @@ import type { ClipEvent } from "@/lib/store/types";
 export function TimelineToolbar() {
   const selectedClipIds = useProjectStore((s) => s.selectedClipIds);
   const rippleMode = usePlaybackStore((s) => s.rippleMode);
+  const globalBpm = usePlaybackStore((s) => s.globalBpm);
   const hasSelection = selectedClipIds.length > 0;
 
   const onSplit = () => {
@@ -132,6 +133,25 @@ export function TimelineToolbar() {
       >
         <ArrowRightLeft size={12} />
       </button>
+
+      <div className="mx-1 h-4 w-px bg-white/10" />
+
+      {/* BPM input */}
+      <div className="flex items-center gap-1">
+        <Music size={10} className="text-purple-400/70" />
+        <input
+          type="number"
+          min={20}
+          max={300}
+          value={globalBpm}
+          onChange={(e) => usePlaybackStore.getState().setGlobalBpm(Number(e.target.value))}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="BPM"
+          title="BPM (beats per minute)"
+          className="w-10 rounded bg-white/10 px-1 py-0.5 text-center text-[10px] tabular-nums text-white/70 outline-none transition-colors hover:bg-white/15 focus:ring-1 focus:ring-purple-400/40"
+        />
+        <span className="text-[9px] text-white/30">BPM</span>
+      </div>
     </div>
   );
 }

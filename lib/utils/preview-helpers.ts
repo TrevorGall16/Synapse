@@ -20,10 +20,20 @@ function pseudoRandom(seed: number): number {
 export function buildPanCropStyle(
   pc: PanCropData | undefined,
   clipId?: string,
-): { style: React.CSSProperties; svgMask?: string } {
+): { style: React.CSSProperties; svgMask?: string; useFeatheredMask?: boolean } {
   if (!pc) return { style: {} };
   const s = pc.scale ?? 1;
   const transform = `translate(${pc.x ?? 0}%, ${pc.y ?? 0}%) scale(${s}) rotate(${pc.rotation ?? 0}deg)`;
+  const feather = pc.maskFeather ?? 0;
+
+  // When feather > 0, skip clipPath — caller will generate SVG mask
+  if (feather > 0 && pc.maskType && pc.maskType !== "none") {
+    const featherMaskId = `feather-mask-${clipId}`;
+    return {
+      style: { transform, mask: `url(#${featherMaskId})` },
+      useFeatheredMask: true,
+    };
+  }
 
   let clipPath: string | undefined;
   let svgMask: string | undefined;
@@ -50,11 +60,25 @@ export function buildPanCropStyle(
       clipPath = `circle(${radius}% at ${pc.maskX ?? 50}% ${pc.maskY ?? 50}%)`;
     }
   } else if (pc.maskType === "polygon" && pc.maskPoints && pc.maskPoints.length >= 3) {
-    const pts = pc.maskPoints.map((p) => `${p.x}% ${p.y}%`).join(", ");
-    if (invert) {
-      clipPath = `polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, ${pts})`;
+    // Combine primary mask + additional mask layers (if any)
+    const allPolygonParts: string[] = [];
+    const primaryPts = pc.maskPoints.map((p) => `${p.x}% ${p.y}%`).join(", ");
+    allPolygonParts.push(primaryPts);
+
+    if (pc.masks?.length) {
+      for (const m of pc.masks) {
+        if (m.points.length >= 3) {
+          allPolygonParts.push(m.points.map((p) => `${p.x}% ${p.y}%`).join(", "));
+        }
+      }
+    }
+
+    const hasSubtract = pc.masks?.some((m) => m.type === "subtract" && m.points.length >= 3);
+    if (invert || hasSubtract) {
+      // evenodd: outer boundary + all polygon holes
+      clipPath = `polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, ${allPolygonParts.join(", ")})`;
     } else {
-      clipPath = `polygon(${pts})`;
+      clipPath = `polygon(${allPolygonParts.join(", ")})`;
     }
   }
 
@@ -71,6 +95,8 @@ export interface FxResult {
   glitchTransform?: string;
   pixelateBlockSize?: number;
   chromaticId?: string;
+  mirrorTransform?: string;
+  hypnoTunnel?: { spacing: number; width: number; intensity: number };
 }
 
 export function buildFxFilter(clips: ClipEvent[], playheadPosition: number): FxResult {
@@ -78,8 +104,11 @@ export function buildFxFilter(clips: ClipEvent[], playheadPosition: number): FxR
   let glitchTransform: string | undefined;
   let pixelateBlockSize: number | undefined;
   let chromaticId: string | undefined;
+  let mirrorTransform: string | undefined;
+  let hypnoTunnel: FxResult["hypnoTunnel"];
 
   for (const c of clips) {
+    if (c.fxParams?.effectDisabled) continue;
     const effectType = String(c.fxParams?.effectType ?? "none");
     const rawIntensity = Number(c.fxParams?.intensity ?? 50) / 100;
     const levelScale = (c.level ?? 100) / 100;
@@ -105,17 +134,18 @@ export function buildFxFilter(clips: ClipEvent[], playheadPosition: number): FxR
       case "strobe": {
         const hz = speed / 10;
         const periodMicros = Math.round(MICROS_PER_SECOND / hz);
-        const halfPeriod = Math.floor(periodMicros / 2);
+        const dutyCycle = Number(c.fxParams?.strobeDutyCycle ?? 50);
+        const onDuration = Math.floor(periodMicros * (dutyCycle / 100));
         const elapsed = playheadPosition - c.startTime;
-        const isBlack = Math.floor(elapsed / halfPeriod) % 2 === 0;
+        const isBlack = (elapsed % periodMicros) >= onDuration;
         filters.push(isBlack ? "brightness(0)" : `brightness(${1 + intensity * 2})`);
         break;
       }
 
       case "flash": {
-        const progress = (playheadPosition - c.startTime) / c.duration;
-        const flashIntensity = Math.max(0, 1 - progress) * intensity * 3;
-        filters.push(`brightness(${1 + flashIntensity})`);
+        const progress = Math.max(0, (playheadPosition - c.startTime) / c.duration);
+        const flashIntensity = 1 + intensity * Math.exp(-progress * speed);
+        filters.push(`brightness(${flashIntensity})`);
         break;
       }
 
@@ -154,6 +184,21 @@ export function buildFxFilter(clips: ClipEvent[], playheadPosition: number): FxR
         if (flicker !== 1) filters.push(`brightness(${flicker})`);
         break;
       }
+
+      case "mirror": {
+        const mode = String(c.fxParams?.mirrorMode ?? "horizontal");
+        if (mode === "vertical") mirrorTransform = "scaleY(-1)";
+        else mirrorTransform = "scaleX(-1)";
+        break;
+      }
+
+      case "hypno-tunnel": {
+        const elapsed = (playheadPosition - c.startTime) / MICROS_PER_SECOND;
+        const spacing = Math.sin(elapsed * speed * 0.1) * 20 + 30;
+        const ringWidth = 8 * intensity;
+        hypnoTunnel = { spacing, width: ringWidth, intensity };
+        break;
+      }
     }
   }
 
@@ -162,6 +207,8 @@ export function buildFxFilter(clips: ClipEvent[], playheadPosition: number): FxR
     glitchTransform,
     pixelateBlockSize,
     chromaticId,
+    mirrorTransform,
+    hypnoTunnel,
   };
 }
 
@@ -227,6 +274,8 @@ export function buildTextStyle(tc: ClipEvent, playheadPosition: number) {
     color,
     fontWeight: "bold",
     textShadow: textShadows.join(", "),
+    textAlign: "center",
+    maxWidth: "90%",
     whiteSpace: "nowrap",
   };
 

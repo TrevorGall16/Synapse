@@ -12,17 +12,15 @@ interface PreviewVideoLayerProps {
   clip: ClipEvent;
   trackId: string;
   opacity: number;
-  filter: string;
   trackFilter: string;
   panCropStyle: React.CSSProperties;
-  qualityStyle: React.CSSProperties;
   isPlaying: boolean;
   playheadPosition: number;
 }
 
 export function PreviewVideoLayer({
-  media, clip, trackId, opacity, filter, trackFilter, panCropStyle,
-  qualityStyle, isPlaying, playheadPosition,
+  media, clip, trackId, opacity, trackFilter, panCropStyle,
+  isPlaying, playheadPosition,
 }: PreviewVideoLayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const connectedRef = useRef(false);
@@ -37,6 +35,10 @@ export function PreviewVideoLayer({
       audioEngine.connectSource(trackId, video);
     }
     connectedRef.current = true;
+    return () => {
+      audioEngine.disconnectTrack(trackId);
+      connectedRef.current = false;
+    };
   }, [trackId]);
 
   // Play/pause sync
@@ -77,13 +79,10 @@ export function PreviewVideoLayer({
       ref={videoRef}
       key={media.id}
       src={media.previewUrl}
-      className="absolute inset-0 h-full w-full object-contain"
-      style={{
-        filter: [filter, trackFilter].filter(Boolean).join(" ") || undefined,
-        opacity: visualOpacity,
-        ...panCropStyle,
-        ...qualityStyle,
-      }}
+      className="h-full w-full object-contain"
+      style={{ opacity: visualOpacity, ...panCropStyle }}
+      data-track-filter={trackFilter || ""}
+      data-pancrop-transform={panCropStyle.transform ?? ""}
       playsInline
       preload="auto"
     />

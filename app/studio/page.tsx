@@ -39,7 +39,7 @@ export default function StudioPage() {
         {/* Top half: Media Pool/Inspector + Preview Monitor */}
         <Panel defaultSize={50} minSize={25} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
           <Group orientation="horizontal">
-            <Panel defaultSize={40} minSize={20} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
+            <Panel defaultSize={45} minSize={20} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
               {/* Tab bar */}
               <div className="flex shrink-0 border-b border-white/10">
                 <button

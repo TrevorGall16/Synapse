@@ -8,6 +8,15 @@ import { Settings, Crop, Volume2 } from "lucide-react";
 import { ClipFilmstrip } from "./clip-filmstrip";
 import { ClipWaveform } from "./clip-waveform";
 
+function snapToBpmGrid(micros: number, pps: number): number {
+  const { globalBpm } = usePlaybackStore.getState();
+  if (globalBpm <= 0) return micros;
+  const beatMicros = Math.round(60_000_000 / globalBpm);
+  const snapThresholdMicros = Math.round((6 / pps) * 1_000_000);
+  const nearest = Math.round(micros / beatMicros) * beatMicros;
+  return Math.abs(micros - nearest) < snapThresholdMicros ? nearest : micros;
+}
+
 interface ClipEventBlockProps {
   clip: ClipEvent;
   trackId: string;
@@ -91,7 +100,9 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       if (!isDragging.current) return;
 
       const deltaX = e.clientX - startPos.current.x;
-      const deltaTime = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
+      const rawDelta = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
+      const newStart = snapToBpmGrid(startPos.current.time + rawDelta, pixelsPerSecond);
+      const deltaTime = newStart - clip.startTime;
 
       accumY.current += e.movementY;
       const trackJumps = Math.trunc(accumY.current / trackHeight);
@@ -132,7 +143,15 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       if (!isEdgeDragging.current) return;
       const deltaX = e.clientX - edgeStartX.current;
-      const deltaMicros = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
+      const rawDelta = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
+      // Snap the resulting edge to BPM grid
+      const edge = isEdgeDragging.current === "left"
+        ? clip.startTime + rawDelta
+        : clip.startTime + clip.duration + rawDelta;
+      const snappedEdge = snapToBpmGrid(edge, pixelsPerSecond);
+      const deltaMicros = isEdgeDragging.current === "left"
+        ? snappedEdge - clip.startTime
+        : snappedEdge - (clip.startTime + clip.duration);
       useProjectStore.getState().trimClip(clip.id, isEdgeDragging.current, deltaMicros);
       edgeStartX.current = e.clientX;
     },

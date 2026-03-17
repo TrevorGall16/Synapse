@@ -12,8 +12,9 @@ import {
   buildVideoClipFilter,
   buildTextStyle,
   buildPanCropStyle,
+  MICROS_PER_SECOND,
 } from "@/lib/utils/preview-helpers";
-import { collectSvgDefs } from "@/lib/utils/svg-filters";
+import { collectSvgDefs, buildFeatheredMask } from "@/lib/utils/svg-filters";
 import {
   SkipBack, SkipForward, ChevronLeft, ChevronRight, Play, Pause,
 } from "lucide-react";
@@ -21,13 +22,6 @@ import {
 type PreviewQuality = "Draft" | "Auto" | "Good" | "Best";
 
 const FRAME_MICROS = 16_666;
-
-const QUALITY_STYLES: Record<PreviewQuality, React.CSSProperties> = {
-  Draft: { maxWidth: 480, imageRendering: "pixelated" as const },
-  Auto: { maxWidth: 720 },
-  Good: { maxWidth: 1080 },
-  Best: {},
-};
 
 // ── PreviewMonitor Component ──────────────────────────────
 export function PreviewMonitor() {
@@ -59,66 +53,75 @@ export function PreviewMonitor() {
     }
   }
 
-  // ── Compute crossfade opacity per layer ──────────────────
-  const layersWithOpacity = useMemo(() => {
-    // Group by track to detect same-track overlaps
+  // ── Compute crossfade opacity per layer (no memo — must see fresh clip data) ──
+  const layersWithOpacity: { clip: ClipEvent; track: Track; media: (typeof mediaPool)[number]; opacity: number }[] = [];
+  {
     const byTrack = new Map<string, typeof activeVideoLayers>();
     for (const layer of activeVideoLayers) {
       const arr = byTrack.get(layer.track.id) ?? [];
       arr.push(layer);
       byTrack.set(layer.track.id, arr);
     }
-
-    const result: { clip: ClipEvent; track: Track; media: (typeof mediaPool)[number]; opacity: number }[] = [];
-
     for (const [, layers] of byTrack) {
       if (layers.length === 1) {
-        result.push({ ...layers[0], opacity: 1 });
+        layersWithOpacity.push({ ...layers[0], opacity: 1 });
       } else {
-        // Two clips overlapping — compute crossfade
         const sorted = [...layers].sort((a, b) => a.clip.startTime - b.clip.startTime);
         const outgoing = sorted[0];
         const incoming = sorted[1];
         const overlapStart = incoming.clip.startTime;
         const overlapEnd = outgoing.clip.startTime + outgoing.clip.duration;
         const overlapDuration = overlapEnd - overlapStart;
-
         if (overlapDuration > 0) {
           const progress = Math.max(0, Math.min(1,
             (playheadPosition - overlapStart) / overlapDuration
           ));
-          result.push({ ...outgoing, opacity: 1 - progress });
-          result.push({ ...incoming, opacity: progress });
+          layersWithOpacity.push({ ...outgoing, opacity: 1 - progress });
+          layersWithOpacity.push({ ...incoming, opacity: progress });
         } else {
-          result.push({ ...outgoing, opacity: 1 });
-          result.push({ ...incoming, opacity: 1 });
+          layersWithOpacity.push({ ...outgoing, opacity: 1 });
+          layersWithOpacity.push({ ...incoming, opacity: 1 });
         }
       }
     }
-
-    return result;
-  }, [activeVideoLayers.map((l) => `${l.clip.id}:${l.clip.startTime}`).join(","), playheadPosition]);
+  }
 
   // ── Sync AudioEngine with track state ───────────────────
+  // Build a key that captures ALL audio-relevant track state so changes trigger sync
+  const audioSyncKey = tracks.map((t) =>
+    `${t.id}:${t.isMuted}:${t.isSolo}:${t.opacityOrVolume}:${t.audioPan ?? 0}:${t.reverbWet ?? 0}:${t.reverbRoomSize ?? 30}:${t.delayMs ?? 0}:${t.delayFeedback ?? 0}`
+  ).join("|");
+
   useEffect(() => {
     audioEngine.setMasterVolume(masterVolume);
-    for (const layer of activeVideoLayers) {
-      const t = layer.track;
-      if (audioEngine.hasTrack(t.id)) {
-        audioEngine.syncTrackState(t.id, {
-          volume: t.opacityOrVolume,
-          muted: t.isMuted ?? false,
-          solo: t.isSolo ?? false,
-          pan: t.audioPan ?? 0,
-          clipLevel: layer.clip.level ?? 100,
-          reverbWet: t.reverbWet ?? 0,
-          reverbRoomSize: t.reverbRoomSize ?? 30,
-          delayMs: t.delayMs ?? 0,
-          delayFeedback: t.delayFeedback ?? 0,
-        });
+    // Build opacity map from crossfade layers for audio ducking
+    const opacityMap = new Map<string, number>();
+    for (const l of layersWithOpacity) opacityMap.set(l.clip.id, l.opacity);
+
+    // Sync ALL tracks that have audio chains (video+audio tracks)
+    for (const t of tracks) {
+      if (!audioEngine.hasTrack(t.id)) continue;
+      // Find the active clip level for this track (use first active clip, else 100)
+      let clipLevel = 100;
+      for (const c of t.clips) {
+        if (playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration) {
+          clipLevel = (c.level ?? 100) * (opacityMap.get(c.id) ?? 1);
+          break;
+        }
       }
+      audioEngine.syncTrackState(t.id, {
+        volume: t.opacityOrVolume,
+        muted: t.isMuted ?? false,
+        solo: t.isSolo ?? false,
+        pan: t.audioPan ?? 0,
+        clipLevel,
+        reverbWet: t.reverbWet ?? 0,
+        reverbRoomSize: t.reverbRoomSize ?? 30,
+        delayMs: t.delayMs ?? 0,
+        delayFeedback: t.delayFeedback ?? 0,
+      });
     }
-  }, [masterVolume, activeVideoLayers.length, playheadPosition]);
+  }, [masterVolume, audioSyncKey, playheadPosition]);
 
   // ── Collect active text clips ───────────────────────────
   const textTracks = tracks.filter((t) => t.type === "text");
@@ -142,68 +145,124 @@ export function PreviewMonitor() {
     }
   }
 
-  // ── 60fps FX animation loop (bypasses React state) ──────
+  // ── 60fps FX animation loop (direct DOM writes, bypasses React) ──
   const fxKey = activeEffectClips.map((c) => c.id).join(",");
   const hasTimedFx = activeEffectClips.some((c) => {
     const t = String(c.fxParams?.effectType ?? "none");
-    return t === "strobe" || t === "flash" || t === "hue-rotate" || t === "glitch";
+    return t === "strobe" || t === "flash" || t === "hue-rotate" || t === "glitch" || t === "hypno-tunnel";
   });
 
+  // Apply FX via direct DOM manipulation — NOT via React style props.
+  // This prevents React re-renders from overwriting 60fps filter updates.
   useEffect(() => {
     const container = videoContainerRef.current;
     if (!container) return;
 
     const applyFilter = (pos: number) => {
-      const fxResult = buildFxFilter(activeEffectClips, pos);
-      // Combine effect-track FX with per-clip video FX for the top layer
-      const topClip = layersWithOpacity[layersWithOpacity.length - 1]?.clip;
-      const clipFx = buildVideoClipFilter(topClip);
-      const draftBlur = quality === "Draft" ? "blur(1px)" : "";
-      const parts = [fxResult.filter !== "none" ? fxResult.filter : "", clipFx, draftBlur].filter(Boolean);
-      fxFilterRef.current = parts.join(" ") || "none";
+      // Read fresh effect clips from store (closure may be stale during rAF)
+      const freshTracks = useProjectStore.getState().tracks;
+      const freshEffects: ClipEvent[] = [];
+      for (const et of freshTracks.filter((t) => t.type === "effect")) {
+        for (const c of et.clips) {
+          if (pos >= c.startTime && pos < c.startTime + c.duration) {
+            freshEffects.push(c);
+          }
+        }
+      }
 
-      // Apply glitch transform
+      // Draft mode: skip expensive FX pipeline, just apply blur
+      let combined: string;
+      let glitchTransform: string | undefined;
+      let mirrorTransform: string | undefined;
+      if (quality === "Draft") {
+        combined = "blur(1px)";
+      } else {
+        const fxResult = buildFxFilter(freshEffects, pos);
+        glitchTransform = fxResult.glitchTransform;
+        mirrorTransform = fxResult.mirrorTransform;
+        const topClip = layersWithOpacity[layersWithOpacity.length - 1]?.clip;
+        const clipFx = buildVideoClipFilter(topClip);
+        const parts = [fxResult.filter !== "none" ? fxResult.filter : "", clipFx].filter(Boolean);
+        combined = parts.join(" ") || "none";
+      }
+
       const videos = container.querySelectorAll("video");
       videos.forEach((v) => {
-        (v as HTMLElement).style.filter = fxFilterRef.current;
-        if (fxResult.glitchTransform) {
-          (v as HTMLElement).style.transform = fxResult.glitchTransform;
+        const el = v as HTMLElement;
+        // Merge our FX filter with existing trackFilter (from data attr)
+        const trackF = el.dataset.trackFilter || "";
+        el.style.filter = [combined, trackF].filter(Boolean).join(" ") || "none";
+        // Build transform: panCrop base → mirror → glitch
+        const base = el.dataset.pancropTransform || "";
+        if (glitchTransform) {
+          el.style.transform = [base, glitchTransform].filter(Boolean).join(" ");
+        } else if (mirrorTransform) {
+          el.style.transform = [base, mirrorTransform].filter(Boolean).join(" ");
+        } else {
+          el.style.transform = base;
         }
       });
     };
 
-    if (activeEffectClips.length === 0 && !layersWithOpacity.some((l) => l.clip.fxParams)) {
-      // No FX at all — just apply quality blur if needed
-      const draftBlur = quality === "Draft" ? "blur(1px)" : "";
-      fxFilterRef.current = draftBlur || "none";
-      const videos = container.querySelectorAll("video");
-      videos.forEach((v) => { (v as HTMLElement).style.filter = fxFilterRef.current; });
-      return;
-    }
+    // Always apply once for the current frame (covers paused state + static FX)
+    applyFilter(playheadPosition);
 
-    if (!hasTimedFx || !isPlaying) {
-      applyFilter(playheadPosition);
-      return;
-    }
-
-    // 60fps rAF loop for temporal FX
-    const tick = () => {
-      const pos = usePlaybackStore.getState().playheadPosition;
-      applyFilter(pos);
+    // If temporal FX are active and playing, run a high-freq rAF loop
+    if (hasTimedFx && isPlaying) {
+      const tick = () => {
+        const pos = usePlaybackStore.getState().playheadPosition;
+        applyFilter(pos);
+        fxRafRef.current = requestAnimationFrame(tick);
+      };
       fxRafRef.current = requestAnimationFrame(tick);
-    };
-    fxRafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(fxRafRef.current);
-  }, [fxKey, hasTimedFx, isPlaying, playheadPosition, quality]);
+      return () => cancelAnimationFrame(fxRafRef.current);
+    }
+  }, [fxKey, hasTimedFx, isPlaying, playheadPosition, quality,
+      layersWithOpacity.map((l) => `${l.clip.id}:${JSON.stringify(l.clip.fxParams)}:${JSON.stringify(l.clip.panCrop)}`).join(",")]);
 
-  // ── SVG defs for advanced FX ────────────────────────────
+  // ── SVG defs for advanced FX + feathered masks ─────────
+  const featheredMaskDefs = useMemo(() => {
+    const defs: string[] = [];
+    for (const layer of layersWithOpacity) {
+      const pc = layer.clip.panCrop;
+      if (!pc || !pc.maskType || pc.maskType === "none") continue;
+      const feather = pc.maskFeather ?? 0;
+      if (feather <= 0) continue;
+      const maskId = `feather-mask-${layer.clip.id}`;
+      defs.push(buildFeatheredMask(maskId, pc.maskType, {
+        x: pc.maskX ?? (pc.maskType === "rect" ? (pc.maskX ?? 50) - (pc.maskWidth ?? 100) / 2 : 0),
+        y: pc.maskY ?? (pc.maskType === "rect" ? (pc.maskY ?? 50) - (pc.maskHeight ?? 100) / 2 : 0),
+        width: pc.maskWidth ?? 100,
+        height: pc.maskHeight ?? 100,
+        featherPx: feather / 100,
+        points: pc.maskPoints,
+        invert: pc.maskInvert,
+      }));
+    }
+    return defs.join("\n");
+  }, [layersWithOpacity.map((l) => `${l.clip.id}:${JSON.stringify(l.clip.panCrop)}`).join(",")]);
+
   const svgDefs = useMemo(
     () => collectSvgDefs(activeEffectClips),
     [fxKey]
   );
+  const combinedSvgDefs = [svgDefs, featheredMaskDefs].filter(Boolean).join("\n");
 
-  // ── Quality style ───────────────────────────────────────
-  const qualityStyle = QUALITY_STYLES[quality];
+  // ── Compute hypno-tunnel overlay for active effects ────
+  const hypnoOverlay = useMemo(() => {
+    for (const c of activeEffectClips) {
+      if (c.fxParams?.effectDisabled) continue;
+      if (String(c.fxParams?.effectType) === "hypno-tunnel") {
+        const intensity = (Number(c.fxParams?.intensity ?? 50) / 100) * ((c.level ?? 100) / 100);
+        const speed = Number(c.fxParams?.speed ?? 50);
+        const elapsed = (playheadPosition - c.startTime) / MICROS_PER_SECOND;
+        const spacing = Math.sin(elapsed * speed * 0.1) * 20 + 30;
+        const ringWidth = 8 * intensity;
+        return { spacing, width: ringWidth, intensity };
+      }
+    }
+    return null;
+  }, [activeEffectClips, playheadPosition]);
 
   return (
     <div className="flex h-full flex-col border-t border-white/20 bg-[#1a1a1a]">
@@ -222,11 +281,11 @@ export function PreviewMonitor() {
         </select>
       </div>
 
-      <div ref={videoContainerRef} className="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
-        {/* SVG defs for advanced FX (chromatic aberration, inverted masks) */}
-        {svgDefs && (
+      <div ref={videoContainerRef} className="flex flex-1 items-center justify-center overflow-hidden bg-black">
+        {/* SVG defs for advanced FX (chromatic aberration, inverted masks, feathered masks) */}
+        {combinedSvgDefs && (
           <svg className="absolute h-0 w-0" aria-hidden>
-            <defs dangerouslySetInnerHTML={{ __html: svgDefs }} />
+            <defs dangerouslySetInnerHTML={{ __html: combinedSvgDefs }} />
           </svg>
         )}
 
@@ -247,10 +306,8 @@ export function PreviewMonitor() {
                 clip={layer.clip}
                 trackId={layer.track.id}
                 opacity={layer.opacity}
-                filter={fxFilterRef.current}
                 trackFilter={tFilters.join(" ")}
                 panCropStyle={pcResult.style}
-                qualityStyle={qualityStyle}
                 isPlaying={isPlaying}
                 playheadPosition={playheadPosition}
               />
@@ -270,6 +327,17 @@ export function PreviewMonitor() {
             </div>
           );
         })}
+
+        {/* Hypno-tunnel overlay */}
+        {hypnoOverlay && (
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background: `repeating-radial-gradient(circle at 50% 50%, transparent 0px, transparent ${hypnoOverlay.spacing}px, rgba(0,0,0,${hypnoOverlay.intensity}) ${hypnoOverlay.spacing}px, rgba(0,0,0,${hypnoOverlay.intensity}) ${hypnoOverlay.spacing + hypnoOverlay.width}px)`,
+              mixBlendMode: "multiply",
+            }}
+          />
+        )}
       </div>
 
       {/* Transport toolbar */}

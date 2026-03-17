@@ -4,6 +4,12 @@
 
 export type TrackType = "video" | "audio" | "text" | "effect";
 
+export interface MaskLayer {
+  id: string;
+  points: { x: number; y: number }[];
+  type: "add" | "subtract";
+}
+
 export interface PanCropData {
   x: number;
   y: number;
@@ -17,6 +23,7 @@ export interface PanCropData {
   maskPoints?: { x: number; y: number }[];
   maskFeather?: number;
   maskInvert?: boolean;
+  masks?: MaskLayer[];
 }
 
 export interface Keyframe {

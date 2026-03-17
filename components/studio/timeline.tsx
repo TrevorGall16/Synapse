@@ -116,12 +116,22 @@ export function Timeline() {
         }
       }
 
+      if (e.key === "m" || e.key === "M") {
+        if (e.ctrlKey || e.metaKey) return;
+        const { selectedTrackId } = useProjectStore.getState();
+        if (selectedTrackId) {
+          useProjectStore.getState().toggleMute(selectedTrackId);
+        }
+      }
+
       if (e.key === "s" || e.key === "S") {
         if (e.ctrlKey || e.metaKey) return; // Don't hijack Ctrl+S
-        const { playheadPosition } = usePlaybackStore.getState();
-        const { selectedClipIds: ids, splitSelectedClips } = useProjectStore.getState();
+        const { selectedClipIds: ids, splitSelectedClips, selectedTrackId } = useProjectStore.getState();
         if (ids.length > 0) {
+          const { playheadPosition } = usePlaybackStore.getState();
           splitSelectedClips(ids, playheadPosition);
+        } else if (selectedTrackId) {
+          useProjectStore.getState().toggleSolo(selectedTrackId);
         }
       }
 
