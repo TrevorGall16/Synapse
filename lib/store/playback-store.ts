@@ -18,6 +18,12 @@ export interface PlaybackState {
   setZoom: (zoom: number) => void;
   setScrollLeft: (left: number) => void;
   setContainerWidth: (width: number) => void;
+  masterVolume: number;
+  setMasterVolume: (vol: number) => void;
+  globalBpm: number;
+  setGlobalBpm: (bpm: number) => void;
+  rippleMode: boolean;
+  toggleRippleMode: () => void;
 }
 
 export const usePlaybackStore = create<PlaybackState>((set) => ({
@@ -46,4 +52,13 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   setScrollLeft: (left) => set({ scrollLeft: left }),
 
   setContainerWidth: (width) => set({ containerWidth: width }),
+
+  masterVolume: 100,
+  setMasterVolume: (vol) => set({ masterVolume: Math.max(0, Math.min(100, Math.round(vol))) }),
+
+  globalBpm: 120,
+  setGlobalBpm: (bpm) => set({ globalBpm: Math.max(20, Math.min(300, Math.round(bpm))) }),
+
+  rippleMode: false,
+  toggleRippleMode: () => set((s) => ({ rippleMode: !s.rippleMode })),
 }));

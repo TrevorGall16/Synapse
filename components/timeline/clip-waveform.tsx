@@ -40,20 +40,46 @@ export function ClipWaveform({ sourceId, clipWidthPx, trackColor, trackHeight }:
     ctx.scale(dpr, dpr);
 
     ctx.clearRect(0, 0, drawWidth, drawHeight);
-    ctx.fillStyle = trackColor;
 
-    const barWidth = drawWidth / peaks.length;
     const midY = drawHeight / 2;
 
-    for (let i = 0; i < peaks.length; i++) {
-      const barHeight = peaks[i] * drawHeight * 0.8;
-      ctx.fillRect(
-        i * barWidth,
-        midY - barHeight / 2,
-        Math.max(1, barWidth - 1),
-        barHeight
-      );
+    // 1px precision: iterate by pixel column, interpolate peaks
+    ctx.beginPath();
+    ctx.moveTo(0, midY);
+
+    for (let px = 0; px < drawWidth; px++) {
+      const peakIdx = (px / drawWidth) * peaks.length;
+      const lo = Math.floor(peakIdx);
+      const hi = Math.min(lo + 1, peaks.length - 1);
+      const frac = peakIdx - lo;
+      const amp = (peaks[lo] * (1 - frac) + peaks[hi] * frac) * midY * 0.9;
+      ctx.lineTo(px, midY - amp);
     }
+    ctx.lineTo(drawWidth, midY);
+
+    for (let px = drawWidth - 1; px >= 0; px--) {
+      const peakIdx = (px / drawWidth) * peaks.length;
+      const lo = Math.floor(peakIdx);
+      const hi = Math.min(lo + 1, peaks.length - 1);
+      const frac = peakIdx - lo;
+      const amp = (peaks[lo] * (1 - frac) + peaks[hi] * frac) * midY * 0.9;
+      ctx.lineTo(px, midY + amp);
+    }
+
+    ctx.closePath();
+    ctx.fillStyle = trackColor;
+    ctx.globalAlpha = 0.6;
+    ctx.fill();
+
+    // Center line
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = trackColor;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, midY);
+    ctx.lineTo(drawWidth, midY);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   }, [peaks, clipWidthPx, trackColor, trackHeight]);
 
   if (!peaks || peaks.length === 0) {

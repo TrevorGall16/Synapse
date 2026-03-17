@@ -1,12 +1,14 @@
 "use client";
 
-import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine } from "lucide-react";
+import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine, ArrowRightLeft } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import type { ClipEvent } from "@/lib/store/types";
 
+
 export function TimelineToolbar() {
   const selectedClipIds = useProjectStore((s) => s.selectedClipIds);
+  const rippleMode = usePlaybackStore((s) => s.rippleMode);
   const hasSelection = selectedClipIds.length > 0;
 
   const onSplit = () => {
@@ -115,6 +117,21 @@ export function TimelineToolbar() {
         disabled={false}
         onClick={onAddFx}
       />
+
+      <div className="mx-1 h-4 w-px bg-white/10" />
+
+      <button
+        onClick={() => usePlaybackStore.getState().toggleRippleMode()}
+        aria-label="Ripple Edit"
+        title={`Ripple Edit ${rippleMode ? "(On)" : "(Off)"}`}
+        className={`rounded p-1 transition-colors focus-visible:ring-1 focus-visible:ring-white/40 ${
+          rippleMode
+            ? "bg-orange-500/20 text-orange-400"
+            : "text-white/50 hover:bg-white/10 hover:text-white"
+        }`}
+      >
+        <ArrowRightLeft size={12} />
+      </button>
     </div>
   );
 }

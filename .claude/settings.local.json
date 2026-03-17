@@ -22,7 +22,8 @@
       "Bash(cd \"D:/Projects/Synapse\" && npm run build 2>&1 | tail -30)",
       "Bash(cd \"D:/Projects/Synapse\" && npm run build 2>&1 | tail -25)",
       "Bash(cd D:/Projects/Synapse && npm run build 2>&1 | tail -40)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

@@ -3,6 +3,7 @@
 import { useRef, useCallback, useEffect } from "react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
+import { audioEngine } from "@/lib/audio/audio-engine";
 import { usePlaybackLoop } from "@/lib/hooks/use-playback-loop";
 import { TrackHeader } from "@/components/timeline/track-header";
 import { TrackLane } from "@/components/timeline/track-lane";
@@ -97,6 +98,12 @@ export function Timeline() {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
+      if (e.code === "Space") {
+        e.preventDefault();
+        usePlaybackStore.getState().togglePlayback();
+        return;
+      }
+
       if (e.key === "g" || e.key === "G") {
         if (selectedClipIds.length > 1) {
           useProjectStore.getState().groupClips(selectedClipIds);
@@ -124,6 +131,16 @@ export function Timeline() {
           deleteSelectedClips(ids);
         }
       }
+
+      // Master volume: Arrow Up/Down ±5%
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const { masterVolume, setMasterVolume } = usePlaybackStore.getState();
+        const delta = e.key === "ArrowUp" ? 5 : -5;
+        const newVol = Math.max(0, Math.min(100, masterVolume + delta));
+        setMasterVolume(newVol);
+        audioEngine.setMasterVolume(newVol);
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -134,13 +151,23 @@ export function Timeline() {
       {/* Toolbar: Add Track + Zoom */}
       <div className="flex h-7 shrink-0 items-center justify-between border-b border-white/10">
         <div className="flex w-48 shrink-0 items-center border-r border-white/10">
-          <button
-            onClick={() => addTrack("video")}
-            className="rounded px-2 py-0.5 text-[10px] font-medium text-white/50 transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-1 focus-visible:ring-white/40"
+          <select
+            defaultValue=""
+            onChange={(e) => {
+              if (e.target.value) {
+                addTrack(e.target.value as "video" | "audio" | "text" | "effect");
+                e.target.value = "";
+              }
+            }}
+            className="rounded bg-transparent px-2 py-0.5 text-[10px] font-medium text-white/50 outline-none transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-1 focus-visible:ring-white/40"
             aria-label="Add new track"
           >
-            + Add Track
-          </button>
+            <option value="" disabled className="text-black">+ Add Track</option>
+            <option value="video" className="text-black">Video</option>
+            <option value="audio" className="text-black">Audio</option>
+            <option value="text" className="text-black">Text</option>
+            <option value="effect" className="text-black">Effect</option>
+          </select>
         </div>
         <TimelineToolbar />
         <div className="pr-3">
@@ -160,6 +187,7 @@ export function Timeline() {
               label={track.name}
               color={track.color ?? "#666"}
               trackType={track.type}
+              trackId={track.id}
               height={track.height}
               trackIndex={idx}
               isMuted={track.isMuted}

@@ -1,9 +1,13 @@
 import { create } from "zustand";
-import type { Track, TrackType, MediaPoolItem, Marker, ClipEvent } from "./types";
+import type { Track, TrackType, MediaPoolItem, Marker, ClipEvent, PanCropData } from "./types";
 import { getGridInterval } from "../utils/grid";
-// NOTE: circular import with playback-store is safe — both stores use
-// getState() inside action callbacks, never at module init time.
 import { usePlaybackStore } from "./playback-store";
+import {
+  TRACK_COLORS, TRACK_HEIGHTS,
+  createTrack, findClipLocation,
+  findClipsByGroupId, computeMove,
+  performSplitClip, performBulkSplit,
+} from "./project-helpers";
 
 // ── Structural Project Data ─────────────────────────────
 
@@ -15,6 +19,8 @@ export interface ProjectState {
   selectedClipIds: string[];
   selectedTrackId: string | null;
   inspectingClipId: string | null;
+  activeUISection: "pool" | "inspector";
+  inspectorSubTab: "pancrop" | "videofx" | "audiofx";
   snapEnabled: boolean;
   addTrack: (type: TrackType) => void;
   deleteTrack: (trackId: string) => void;
@@ -32,102 +38,18 @@ export interface ProjectState {
   deleteSelectedClips: (clipIds: string[]) => void;
   updateMediaPeaks: (mediaId: string, peaks: number[]) => void;
   groupClips: (clipIds: string[]) => void;
+  trimClip: (clipId: string, edge: "left" | "right", deltaMicros: number) => void;
+  timeStretchClip: (clipId: string, newDuration: number) => void;
   joinClips: (clipIds: string[]) => void;
   setInspectingClipId: (id: string | null) => void;
+  setActiveUISection: (section: "pool" | "inspector") => void;
+  setInspectorSubTab: (tab: "pancrop" | "videofx" | "audiofx") => void;
+  setTrackAudioParam: (trackId: string, params: Partial<Pick<Track, "audioPan" | "reverbWet" | "reverbRoomSize" | "delayMs" | "delayFeedback">>) => void;
+  setClipLevel: (clipId: string, level: number) => void;
+  setClipFade: (clipId: string, edge: "in" | "out", durationMicros: number) => void;
+  setTrackColorCorrection: (trackId: string, params: Partial<Pick<Track, "trackBrightness" | "trackContrast" | "trackSaturate" | "trackHueRotate">>) => void;
+  updateClipPanCrop: (clipId: string, panCrop: Partial<PanCropData>) => void;
   updateClipFxParams: (clipId: string, params: Record<string, unknown>) => void;
-}
-
-// ── Constants ───────────────────────────────────────────
-
-const TRACK_COLORS: Record<TrackType, string> = {
-  video: "#3b82f6",
-  audio: "#22c55e",
-  effect: "#ef4444",
-  text: "#eab308",
-};
-
-const TRACK_LABELS: Record<TrackType, string> = {
-  video: "Video",
-  audio: "Audio",
-  effect: "Effect",
-  text: "Text",
-};
-
-const TRACK_HEIGHTS: Record<TrackType, number> = {
-  video: 60,
-  audio: 40,
-  effect: 48,
-  text: 48,
-};
-
-// ── Helpers ─────────────────────────────────────────────
-
-function quantizeToFrame(timeUs: number, fps: number = 30): number {
-  const frameDurationUs = Math.round(1_000_000 / fps);
-  return Math.round(timeUs / frameDurationUs) * frameDurationUs;
-}
-
-function createTrack(type: TrackType, count: number): Track {
-  return {
-    id: crypto.randomUUID(),
-    type,
-    name: `${TRACK_LABELS[type]} ${count}`,
-    color: TRACK_COLORS[type],
-    height: TRACK_HEIGHTS[type],
-    collapsed: false,
-    locked: false,
-    clips: [],
-    isMuted: false,
-    isSolo: false,
-    opacityOrVolume: 100,
-  };
-}
-
-function findClipLocation(tracks: Track[], clipId: string): { clip: ClipEvent; trackIndex: number } | undefined {
-  for (let i = 0; i < tracks.length; i++) {
-    const clip = tracks[i].clips.find((c) => c.id === clipId);
-    if (clip) return { clip, trackIndex: i };
-  }
-  return undefined;
-}
-
-function findClipsByGroupId(tracks: Track[], groupId: string): { clip: ClipEvent; trackIndex: number }[] {
-  const results: { clip: ClipEvent; trackIndex: number }[] = [];
-  for (let i = 0; i < tracks.length; i++) {
-    for (const clip of tracks[i].clips) {
-      if (clip.groupId === groupId) {
-        results.push({ clip, trackIndex: i });
-      }
-    }
-  }
-  return results;
-}
-
-/** Build ordered list of track indices matching a given type. */
-function sameTypeIndices(tracks: Track[], type: TrackType): number[] {
-  const indices: number[] = [];
-  for (let i = 0; i < tracks.length; i++) {
-    if (tracks[i].type === type) indices.push(i);
-  }
-  return indices;
-}
-
-/** Auto-crossfade: detect overlaps on a single track, set fade durations. */
-function computeCrossfades(clips: ClipEvent[]): ClipEvent[] {
-  const sorted = [...clips]
-    .map((c) => ({ ...c, fadeInDuration: undefined, fadeOutDuration: undefined }) as ClipEvent)
-    .sort((a, b) => a.startTime - b.startTime);
-
-  for (let i = 1; i < sorted.length; i++) {
-    const prevEnd = sorted[i - 1].startTime + sorted[i - 1].duration;
-    if (sorted[i].startTime < prevEnd) {
-      const overlap = prevEnd - sorted[i].startTime;
-      sorted[i - 1] = { ...sorted[i - 1], fadeOutDuration: overlap };
-      sorted[i] = { ...sorted[i], fadeInDuration: overlap };
-    }
-  }
-
-  return sorted;
 }
 
 // ── Default State ───────────────────────────────────────
@@ -149,6 +71,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
   selectedClipIds: [],
   selectedTrackId: null,
   inspectingClipId: null,
+  activeUISection: "pool",
+  inspectorSubTab: "pancrop",
   snapEnabled: true,
 
   addTrack: (type) =>
@@ -201,212 +125,18 @@ export const useProjectStore = create<ProjectState>((set) => ({
   // ── Vegas Physics: Unified Move with groupId + same-type jumping ──
   moveClip: (clipId, deltaTime, deltaTrack) =>
     set((s) => {
-      if (deltaTime === 0 && deltaTrack === 0) return s;
-
-      const target = findClipLocation(s.tracks, clipId);
-      if (!target) return s;
-
-      // Collect all clips in the group (or just the single clip)
-      const groupMembers = target.clip.groupId
-        ? findClipsByGroupId(s.tracks, target.clip.groupId)
-        : [target];
-
-      // Deep-copy tracks for mutation
-      const tracks = s.tracks.map((t) => ({ ...t, clips: [...t.clips] }));
-
-      // Build move plan using same-type track indices
-      const moves: { clipId: string; fromIdx: number; toIdx: number; newStartTime: number }[] = [];
-      const affectedTrackIndices = new Set<number>();
-
-      // Snap calculation (lazy — only compute once for the group)
-      let snappedDeltaTime = deltaTime;
-      if (s.snapEnabled && deltaTime !== 0) {
-        const { pixelsPerSecond } = usePlaybackStore.getState();
-        const rawStart = Math.max(0, Math.round(target.clip.startTime + deltaTime));
-        const intervalSec = getGridInterval(pixelsPerSecond);
-        const gridMicros = Math.round(intervalSec * 1_000_000);
-        const nearestGrid = Math.round(rawStart / gridMicros) * gridMicros;
-        const thresholdMicros = Math.round((10 / pixelsPerSecond) * 1_000_000);
-        if (Math.abs(rawStart - nearestGrid) < thresholdMicros) {
-          snappedDeltaTime = nearestGrid - target.clip.startTime;
-        }
-      }
-
-      for (const member of groupMembers) {
-        const newStartTime = quantizeToFrame(Math.max(0, Math.round(member.clip.startTime + snappedDeltaTime)));
-        const clipType = s.tracks[member.trackIndex].type;
-
-        // Find same-type tracks and resolve target
-        const sameType = sameTypeIndices(tracks, clipType);
-        const currentSameTypeIdx = sameType.indexOf(member.trackIndex);
-        if (currentSameTypeIdx === -1) return s;
-
-        const targetSameTypeIdx = currentSameTypeIdx + deltaTrack;
-
-        // Can't move above first same-type track
-        if (targetSameTypeIdx < 0) return s;
-
-        let toIdx: number;
-        if (targetSameTypeIdx < sameType.length) {
-          // Target exists
-          toIdx = sameType[targetSameTypeIdx];
-        } else {
-          // Auto-generate new track(s) of this type
-          while (sameTypeIndices(tracks, clipType).length <= targetSameTypeIdx) {
-            const count = tracks.filter((t) => t.type === clipType).length + 1;
-            tracks.push(createTrack(clipType, count));
-          }
-          toIdx = sameTypeIndices(tracks, clipType)[targetSameTypeIdx];
-        }
-
-        moves.push({ clipId: member.clip.id, fromIdx: member.trackIndex, toIdx, newStartTime });
-        affectedTrackIndices.add(member.trackIndex);
-        affectedTrackIndices.add(toIdx);
-      }
-
-      if (moves.length === 0) return s;
-
-      // Remove clips from source tracks
-      for (const move of moves) {
-        tracks[move.fromIdx] = {
-          ...tracks[move.fromIdx],
-          clips: tracks[move.fromIdx].clips.filter((c) => c.id !== move.clipId),
-        };
-      }
-
-      // Insert clips into destination tracks
-      let maxEnd = 0;
-      for (const move of moves) {
-        const originalClip = groupMembers.find((gm) => gm.clip.id === move.clipId)!.clip;
-        const updatedClip: ClipEvent = {
-          ...originalClip,
-          startTime: move.newStartTime,
-          trackId: tracks[move.toIdx].id,
-        };
-        tracks[move.toIdx] = {
-          ...tracks[move.toIdx],
-          clips: [...tracks[move.toIdx].clips, updatedClip],
-        };
-        maxEnd = Math.max(maxEnd, move.newStartTime + updatedClip.duration);
-      }
-
-      // Auto-crossfade on affected tracks
-      for (const idx of affectedTrackIndices) {
-        if (idx < tracks.length) {
-          tracks[idx] = { ...tracks[idx], clips: computeCrossfades(tracks[idx].clips) };
-        }
-      }
-
-      const newDuration = maxEnd > s.duration ? maxEnd + 60_000_000 : s.duration;
-      return { tracks, duration: newDuration };
+      const result = computeMove(s, clipId, deltaTime, deltaTrack, usePlaybackStore.getState, getGridInterval);
+      return result ?? s;
     }),
 
-  // ── Split clip at playhead (group-aware) ─────────────
   splitClip: (clipId, splitTime) =>
     set((s) => {
-      const location = findClipLocation(s.tracks, clipId);
-      if (!location) return s;
-
-      const { clip } = location;
-      if (splitTime <= clip.startTime || splitTime >= clip.startTime + clip.duration) return s;
-
-      // Collect all clips to split: the whole group, or just the single clip
-      const targets = clip.groupId
-        ? findClipsByGroupId(s.tracks, clip.groupId)
-        : [location];
-
-      // One new groupId for ALL right halves
-      const newGroupId = clip.groupId ? crypto.randomUUID() : undefined;
-
-      // Build a set of clip IDs to split for fast lookup
-      const splitMap = new Map<string, { trackIndex: number; clip: ClipEvent }>();
-      for (const t of targets) {
-        // Only split if the playhead is actually inside this clip
-        if (splitTime > t.clip.startTime && splitTime < t.clip.startTime + t.clip.duration) {
-          splitMap.set(t.clip.id, t);
-        }
-      }
-
-      if (splitMap.size === 0) return s;
-
-      return {
-        tracks: s.tracks.map((t, i) => {
-          const hasAny = t.clips.some((c) => splitMap.has(c.id));
-          if (!hasAny) return t;
-
-          return {
-            ...t,
-            clips: t.clips.flatMap((c) => {
-              const entry = splitMap.get(c.id);
-              if (!entry) return [c];
-
-              const durationA = Math.round(splitTime - c.startTime);
-              const durationB = Math.round(c.duration - durationA);
-
-              const clipA: ClipEvent = { ...c, duration: durationA };
-              const clipB: ClipEvent = {
-                ...c,
-                id: crypto.randomUUID(),
-                startTime: Math.round(splitTime),
-                duration: durationB,
-                mediaOffset: Math.round(c.mediaOffset + durationA),
-                groupId: newGroupId,
-              };
-
-              return [clipA, clipB];
-            }),
-          };
-        }),
-      };
+      const result = performSplitClip(s.tracks, clipId, splitTime);
+      return result ? { tracks: result } : s;
     }),
 
-  // ── Bulk split with group-aware right-half linking ───
   splitSelectedClips: (clipIds, splitTime) =>
-    set((s) => {
-      // Map old groupId -> new groupId for the right halves
-      const newGroupMap = new Map<string, string>();
-
-      let tracks = s.tracks.map((t) => ({ ...t, clips: [...t.clips] }));
-
-      for (const clipId of clipIds) {
-        const location = findClipLocation(tracks, clipId);
-        if (!location) continue;
-
-        const { clip, trackIndex } = location;
-        if (splitTime <= clip.startTime || splitTime >= clip.startTime + clip.duration) continue;
-
-        const durationA = Math.round(splitTime - clip.startTime);
-        const durationB = Math.round(clip.duration - durationA);
-
-        // Left half keeps original groupId
-        const clipA: ClipEvent = { ...clip, duration: durationA };
-
-        // Right half gets a new shared groupId (mapped from original)
-        let rightGroupId: string | undefined;
-        if (clip.groupId) {
-          if (!newGroupMap.has(clip.groupId)) {
-            newGroupMap.set(clip.groupId, crypto.randomUUID());
-          }
-          rightGroupId = newGroupMap.get(clip.groupId);
-        }
-
-        const clipB: ClipEvent = {
-          ...clip,
-          id: crypto.randomUUID(),
-          startTime: Math.round(splitTime),
-          duration: durationB,
-          mediaOffset: Math.round(clip.mediaOffset + durationA),
-          groupId: rightGroupId,
-        };
-
-        tracks = tracks.map((t, i) => {
-          if (i !== trackIndex) return t;
-          return { ...t, clips: t.clips.flatMap((c) => (c.id === clipId ? [clipA, clipB] : [c])) };
-        });
-      }
-
-      return { tracks };
-    }),
+    set((s) => ({ tracks: performBulkSplit(s.tracks, clipIds, splitTime) })),
 
   setSelectedClipIds: (ids) => set({ selectedClipIds: ids }),
 
@@ -430,13 +160,26 @@ export const useProjectStore = create<ProjectState>((set) => ({
     }),
 
   deleteSelectedClips: (clipIds) =>
-    set((s) => ({
-      tracks: s.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.filter((c) => !clipIds.includes(c.id)),
-      })),
-      selectedClipIds: [],
-    })),
+    set((s) => {
+      const { rippleMode } = usePlaybackStore.getState();
+      const idSet = new Set(clipIds);
+      const tracks = s.tracks.map((t) => {
+        const deleted = t.clips.filter((c) => idSet.has(c.id));
+        let remaining = t.clips.filter((c) => !idSet.has(c.id));
+        // Ripple: close gaps left by deleted clips
+        if (rippleMode && deleted.length > 0) {
+          for (const d of deleted) {
+            remaining = remaining.map((c) =>
+              c.startTime > d.startTime
+                ? { ...c, startTime: Math.max(0, c.startTime - d.duration) }
+                : c
+            );
+          }
+        }
+        return { ...t, clips: remaining };
+      });
+      return { tracks, selectedClipIds: [] };
+    }),
 
   updateMediaPeaks: (mediaId, peaks) =>
     set((s) => ({
@@ -455,6 +198,49 @@ export const useProjectStore = create<ProjectState>((set) => ({
           clips: t.clips.map((c) =>
             clipIds.includes(c.id) ? { ...c, groupId } : c
           ),
+        })),
+      };
+    }),
+
+  trimClip: (clipId, edge, deltaMicros) =>
+    set((s) => {
+      const MIN_DURATION = 33_333; // 1 frame at 30fps
+      return {
+        tracks: s.tracks.map((t) => ({
+          ...t,
+          clips: t.clips.map((c) => {
+            if (c.id !== clipId) return c;
+            if (edge === "right") {
+              const newDuration = Math.max(MIN_DURATION, Math.round(c.duration + deltaMicros));
+              return { ...c, duration: newDuration };
+            } else {
+              // Left edge: shift start, adjust duration and mediaOffset
+              const maxDelta = c.duration - MIN_DURATION;
+              const clampedDelta = Math.min(maxDelta, Math.max(-c.startTime, Math.round(deltaMicros)));
+              return {
+                ...c,
+                startTime: c.startTime + clampedDelta,
+                duration: c.duration - clampedDelta,
+                mediaOffset: c.mediaOffset + clampedDelta,
+              };
+            }
+          }),
+        })),
+      };
+    }),
+
+  timeStretchClip: (clipId, newDuration) =>
+    set((s) => {
+      const MIN_DURATION = 33_333;
+      const clamped = Math.max(MIN_DURATION, Math.round(newDuration));
+      return {
+        tracks: s.tracks.map((t) => ({
+          ...t,
+          clips: t.clips.map((c) => {
+            if (c.id !== clipId) return c;
+            const rate = c.duration / clamped;
+            return { ...c, duration: clamped, playbackRate: Math.round(rate * 100) / 100 };
+          }),
         })),
       };
     }),
@@ -487,10 +273,14 @@ export const useProjectStore = create<ProjectState>((set) => ({
           const newStartTime = earliest.startTime;
           const newEnd = Math.max(...group.map((c) => c.startTime + c.duration));
 
+          const mergedFx = group.reduce<Record<string, unknown>>((acc, gc) => gc.fxParams ? { ...acc, ...gc.fxParams } : acc, {});
+          const avgLevel = Math.round(group.reduce((sum, gc) => sum + (gc.level ?? 100), 0) / group.length);
           const merged: ClipEvent = {
             ...earliest,
             startTime: newStartTime,
             duration: newEnd - newStartTime,
+            fxParams: Object.keys(mergedFx).length > 0 ? mergedFx : earliest.fxParams,
+            level: avgLevel,
           };
 
           // Remove all group clips, insert the merged one
@@ -506,6 +296,54 @@ export const useProjectStore = create<ProjectState>((set) => ({
     }),
 
   setInspectingClipId: (id) => set({ inspectingClipId: id }),
+  setActiveUISection: (section) => set({ activeUISection: section }),
+  setInspectorSubTab: (tab) => set({ inspectorSubTab: tab }),
+
+  setTrackAudioParam: (trackId, params) =>
+    set((s) => ({
+      tracks: s.tracks.map((t) => t.id === trackId ? { ...t, ...params } : t),
+    })),
+
+  setClipLevel: (clipId, level) =>
+    set((s) => ({
+      tracks: s.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) =>
+          c.id === clipId ? { ...c, level: Math.max(0, Math.min(100, Math.round(level))) } : c
+        ),
+      })),
+    })),
+
+  setClipFade: (clipId, edge, durationMicros) =>
+    set((s) => ({
+      tracks: s.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          if (c.id !== clipId) return c;
+          if (edge === "in") {
+            return { ...c, fadeInDuration: Math.max(0, Math.round(durationMicros)), manualFadeIn: true };
+          }
+          return { ...c, fadeOutDuration: Math.max(0, Math.round(durationMicros)), manualFadeOut: true };
+        }),
+      })),
+    })),
+
+  setTrackColorCorrection: (trackId, params) =>
+    set((s) => ({
+      tracks: s.tracks.map((t) => t.id === trackId ? { ...t, ...params } : t),
+    })),
+
+  updateClipPanCrop: (clipId, panCrop) =>
+    set((s) => ({
+      tracks: s.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) =>
+          c.id === clipId
+            ? { ...c, panCrop: { x: 0, y: 0, scale: 1, rotation: 0, ...c.panCrop, ...panCrop } }
+            : c
+        ),
+      })),
+    })),
 
   updateClipFxParams: (clipId, params) =>
     set((s) => ({

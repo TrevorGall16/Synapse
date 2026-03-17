@@ -50,27 +50,44 @@ export async function extractVideoFrames(
   }
 }
 
-// ── Audio Peak Extraction (main thread, no Worker) ──────
-
-const SAMPLES_PER_PEAK = 10_000;
+// ── Audio Peak Extraction (main thread, adaptive resolution + cache) ──
 
 export async function requestAudioPeaks(audioUrl: string, mediaId: string): Promise<void> {
   try {
+    // Check IndexedDB cache first
+    const cached = await getCachedPeaks(mediaId);
+    if (cached) {
+      useProjectStore.getState().updateMediaPeaks(mediaId, cached);
+      return;
+    }
+
     const response = await fetch(audioUrl);
     const arrayBuffer = await response.arrayBuffer();
 
     const audioCtx = new AudioContext();
-    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    let audioBuffer: AudioBuffer;
+    try {
+      audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    } catch (decodeErr) {
+      console.warn("[audio-peaks] decodeAudioData failed (likely .mp4 container):", decodeErr);
+      useProjectStore.getState().updateMediaPeaks(mediaId, [0.1, 0.1]);
+      await audioCtx.close();
+      return;
+    }
     await audioCtx.close();
 
     const channelData = audioBuffer.getChannelData(0);
-    const peakCount = Math.max(1, Math.ceil(channelData.length / SAMPLES_PER_PEAK));
+
+    // Adaptive: ~200 peaks per second for 1px fidelity at common zoom levels
+    const targetPeakCount = Math.max(1000, Math.ceil(audioBuffer.duration * 200));
+    const samplesPerPeak = Math.max(1, Math.floor(channelData.length / targetPeakCount));
+    const peakCount = Math.max(1, Math.ceil(channelData.length / samplesPerPeak));
     const peaks = new Float32Array(peakCount);
     let globalMax = 0;
 
     for (let i = 0; i < peakCount; i++) {
-      const start = i * SAMPLES_PER_PEAK;
-      const end = Math.min(start + SAMPLES_PER_PEAK, channelData.length);
+      const start = i * samplesPerPeak;
+      const end = Math.min(start + samplesPerPeak, channelData.length);
       let peak = 0;
       for (let j = start; j < end; j++) {
         const abs = Math.abs(channelData[j]);
@@ -85,8 +102,51 @@ export async function requestAudioPeaks(audioUrl: string, mediaId: string): Prom
       peakManifest[i] = globalMax > 0 ? peaks[i] / globalMax : 0;
     }
 
+    // Cache to IndexedDB before updating store
+    await setCachedPeaks(mediaId, peakManifest);
     useProjectStore.getState().updateMediaPeaks(mediaId, peakManifest);
   } catch (err) {
     console.error("[audio-peaks] Peak extraction failed:", err);
+  }
+}
+
+// ── IndexedDB Waveform Cache ────────────────────────────
+
+const DB_NAME = "synapse-waveform-cache";
+const STORE_NAME = "peaks";
+const DB_VERSION = 1;
+
+function openCacheDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE_NAME);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function getCachedPeaks(mediaId: string): Promise<number[] | null> {
+  try {
+    const db = await openCacheDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).get(mediaId);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function setCachedPeaks(mediaId: string, peaks: number[]): Promise<void> {
+  try {
+    const db = await openCacheDB();
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).put(peaks, mediaId);
+  } catch {
+    // Cache write failure is non-critical
   }
 }
