@@ -2,7 +2,9 @@
 
 import { useRef, useEffect } from "react";
 import type { ClipEvent, MediaPoolItem } from "@/lib/store/types";
+import type { FxResult } from "@/lib/utils/preview-helpers";
 import { usePlaybackStore } from "@/lib/store/playback-store";
+import { useProjectStore } from "@/lib/store/project-store";
 import { audioEngine } from "@/lib/audio/audio-engine";
 
 const MICROS_PER_SECOND = 1_000_000;
@@ -12,18 +14,23 @@ interface PreviewVideoLayerProps {
   clip: ClipEvent;
   trackId: string;
   opacity: number;
+  zIndex: number;
   trackFilter: string;
   panCropStyle: React.CSSProperties;
   isPlaying: boolean;
   playheadPosition: number;
+  hypnoTunnel?: FxResult["hypnoTunnel"];
+  tunnelClipPath?: string;
 }
 
 export function PreviewVideoLayer({
-  media, clip, trackId, opacity, trackFilter, panCropStyle,
-  isPlaying, playheadPosition,
+  media, clip, trackId, opacity, zIndex, trackFilter, panCropStyle,
+  isPlaying, playheadPosition, hypnoTunnel, tunnelClipPath,
 }: PreviewVideoLayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const connectedRef = useRef(false);
+  const projectResolution = useProjectStore((s) => s.projectResolution);
+  const aspectRatio = projectResolution === "vertical" ? "9/16" : "16/9";
 
   // Connect to AudioEngine once video element mounts
   useEffect(() => {
@@ -75,16 +82,41 @@ export function PreviewVideoLayer({
   const visualOpacity = opacity * ((clip.level ?? 100) / 100);
 
   return (
-    <video
-      ref={videoRef}
-      key={media.id}
-      src={media.previewUrl}
-      className="h-full w-full object-contain"
-      style={{ opacity: visualOpacity, ...panCropStyle }}
-      data-track-filter={trackFilter || ""}
-      data-pancrop-transform={panCropStyle.transform ?? ""}
-      playsInline
-      preload="auto"
-    />
+    <div
+      className="absolute inset-0 flex items-center justify-center"
+      style={{ zIndex, opacity: visualOpacity }}
+    >
+      {/* aspect wrapper clips tunnel and video to the display area,
+          preventing spill onto pillarbox/letterbox bars */}
+      <div className="relative h-full max-w-full overflow-hidden" style={{ aspectRatio }}>
+        <video
+          ref={videoRef}
+          key={media.id}
+          src={media.previewUrl}
+          className="absolute inset-0 h-full w-full"
+          style={panCropStyle}
+          data-track-filter={trackFilter || ""}
+          data-pancrop-transform={panCropStyle.transform ?? ""}
+          playsInline
+          preload="auto"
+        />
+
+        {/* Hypno-tunnel overlay — circular (border-radius:50%) so rotation shows no corners.
+            300%/300% at -100%/-100% offset covers the full 16:9 area at any rotation angle. */}
+        {hypnoTunnel && (
+          <div
+            className="pointer-events-none absolute"
+            style={{
+              width: "300%", height: "300%", top: "-100%", left: "-100%",
+              borderRadius: "50%",
+              background: `repeating-radial-gradient(circle at 50% 50%, transparent 0px, transparent ${hypnoTunnel.spacing}px, rgba(255,255,255,${hypnoTunnel.opacity}) ${hypnoTunnel.spacing}px, rgba(255,255,255,${hypnoTunnel.opacity}) ${hypnoTunnel.spacing + hypnoTunnel.width}px)`,
+              mixBlendMode: "screen",
+              transform: `rotate(${hypnoTunnel.rotation}deg)`,
+              clipPath: tunnelClipPath,
+            }}
+          />
+        )}
+      </div>
+    </div>
   );
 }

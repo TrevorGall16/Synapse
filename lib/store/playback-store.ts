@@ -13,11 +13,15 @@ export interface PlaybackState {
   scrollLeft: number;
   containerWidth: number;
   loopRegion?: { in: number; out: number };
+  selectionStart: number | null;
+  selectionEnd: number | null;
   setPlayhead: (time: number) => void;
   togglePlayback: () => void;
   setZoom: (zoom: number) => void;
   setScrollLeft: (left: number) => void;
   setContainerWidth: (width: number) => void;
+  setSelection: (start: number | null, end: number | null) => void;
+  clearSelection: () => void;
   masterVolume: number;
   setMasterVolume: (vol: number) => void;
   globalBpm: number;
@@ -34,6 +38,8 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   scrollLeft: 0,
   containerWidth: 0,
   loopRegion: undefined,
+  selectionStart: null,
+  selectionEnd: null,
 
   setPlayhead: (time) =>
     set(() => {
@@ -52,6 +58,9 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   setScrollLeft: (left) => set({ scrollLeft: left }),
 
   setContainerWidth: (width) => set({ containerWidth: width }),
+
+  setSelection: (start, end) => set({ selectionStart: start, selectionEnd: end }),
+  clearSelection: () => set({ selectionStart: null, selectionEnd: null }),
 
   masterVolume: 100,
   setMasterVolume: (vol) => set({ masterVolume: Math.max(0, Math.min(100, Math.round(vol))) }),

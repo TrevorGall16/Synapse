@@ -20,6 +20,7 @@ export default function StudioPage() {
   const inspectorSubTab = useProjectStore((s) => s.inspectorSubTab);
   const setInspectorSubTab = useProjectStore((s) => s.setInspectorSubTab);
   const tracks = useProjectStore((s) => s.tracks);
+  const fxMaskEditingClipId = useProjectStore((s) => s.fxMaskEditingClipId);
 
   // Derive the track type of the inspecting clip
   let inspectingTrackType: string | null = null;
@@ -99,7 +100,9 @@ export default function StudioPage() {
                 )}
                 {leftTab === "inspector" && inspectingTrackType === "audio" && <AudioInspector />}
                 {leftTab === "inspector" && inspectingTrackType === "text" && <TextInspector />}
-                {leftTab === "inspector" && inspectingTrackType === "effect" && <FxInspector />}
+                {leftTab === "inspector" && inspectingTrackType === "effect" && (
+                  fxMaskEditingClipId ? <PanCropWindow /> : <FxInspector />
+                )}
                 {leftTab === "inspector" && !inspectingTrackType && (
                   <div className="flex h-full flex-col items-center justify-center bg-[#1a1a1a] p-4">
                     <span className="text-xs text-white/30">Select a clip to inspect</span>

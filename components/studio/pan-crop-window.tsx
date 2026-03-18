@@ -22,15 +22,22 @@ export function PanCropWindow() {
   const inspectingClipId = useProjectStore((s) => s.inspectingClipId);
   const tracks = useProjectStore((s) => s.tracks);
   const updateClipPanCrop = useProjectStore((s) => s.updateClipPanCrop);
+  const fxMaskEditingClipId = useProjectStore((s) => s.fxMaskEditingClipId);
+  const setFxMaskEditingClipId = useProjectStore((s) => s.setFxMaskEditingClipId);
+  const updateFxMask = useProjectStore((s) => s.updateFxMask);
   const [polygonClosed, setPolygonClosed] = useState(false);
   const [draggingVertex, setDraggingVertex] = useState<number | null>(null);
   const [isDraggingMask, setIsDraggingMask] = useState(false);
   const maskDragStart = useRef({ x: 0, y: 0 });
 
+  // In FX mask mode we operate on the FX clip; otherwise on the inspected video clip.
+  const isFxMaskMode = !!fxMaskEditingClipId;
+  const activeClipId = isFxMaskMode ? fxMaskEditingClipId : inspectingClipId;
+
   let clip: ClipEvent | undefined;
-  if (inspectingClipId) {
+  if (activeClipId) {
     for (const t of tracks) {
-      const found = t.clips.find((c) => c.id === inspectingClipId);
+      const found = t.clips.find((c) => c.id === activeClipId);
       if (found) { clip = found; break; }
     }
   }
@@ -38,13 +45,21 @@ export function PanCropWindow() {
   if (!clip) {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[#1a1a1a] p-4">
-        <span className="text-xs text-white/30">Select a video clip to edit Pan/Crop</span>
+        <span className="text-xs text-white/30">
+          {isFxMaskMode ? "FX clip not found" : "Select a video clip to edit Pan/Crop"}
+        </span>
       </div>
     );
   }
 
-  const pc = clip.panCrop ?? DEFAULT_PC;
-  const onPC = (updates: Partial<PanCropData>) => updateClipPanCrop(clip!.id, updates);
+  // In FX mask mode read/write from fxParams.fxMask, else from clip.panCrop
+  const pc = isFxMaskMode
+    ? ((clip.fxParams?.fxMask as PanCropData | undefined) ?? DEFAULT_PC)
+    : (clip.panCrop ?? DEFAULT_PC);
+  const onPC = (updates: Partial<PanCropData>) =>
+    isFxMaskMode
+      ? updateFxMask(clip!.id, updates)
+      : updateClipPanCrop(clip!.id, updates);
 
   const maskType = pc.maskType ?? "none";
   const maskX = pc.maskX ?? 50;
@@ -67,8 +82,12 @@ export function PanCropWindow() {
       if (!rect) return;
       const px = ((e.clientX - rect.left) / rect.width) * 100;
       const py = ((e.clientY - rect.top) / rect.height) * 100;
-      // Check if near a vertex (vertex drag handled by SVG circle events)
-      const nearVertex = maskPoints.some((p) => Math.hypot(px - p.x, py - p.y) < 5);
+      // Check if near a vertex — use pixel-space distance for consistent circular hit zone
+      const nearVertex = maskPoints.some((p) => {
+        const dxPx = ((px - p.x) / 100) * rect.width;
+        const dyPx = ((py - p.y) / 100) * rect.height;
+        return Math.hypot(dxPx, dyPx) < 15;
+      });
       if (!nearVertex && isInsidePolygon(px, py, maskPoints)) {
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -168,8 +187,22 @@ export function PanCropWindow() {
 
   return (
     <div className="flex h-full min-h-[400px] flex-col bg-[#1a1a1a]">
-      <div className="flex items-center border-b border-white/10 px-3 py-2">
-        <span className="truncate text-xs font-semibold text-white/80">Pan / Crop / Mask</span>
+      <div className={`flex items-center gap-2 border-b border-white/10 px-3 py-2 ${isFxMaskMode ? "bg-purple-900/30" : ""}`}>
+        {isFxMaskMode ? (
+          <>
+            <span className="rounded bg-purple-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white">
+              Editing FX Mask
+            </span>
+            <button
+              onClick={() => setFxMaskEditingClipId(null)}
+              className="ml-auto rounded bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-200 transition-colors hover:bg-purple-500/40"
+            >
+              Done
+            </button>
+          </>
+        ) : (
+          <span className="truncate text-xs font-semibold text-white/80">Pan / Crop / Mask</span>
+        )}
       </div>
 
       {/* Interactive 16:9 canvas preview */}

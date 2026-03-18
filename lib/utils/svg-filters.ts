@@ -10,8 +10,9 @@ export function buildChromaticAberrationFilter(
   levelScale: number,
 ): string {
   const dx = offset * levelScale;
+  // x/y/width/height extend the filter region so shifted channels aren't clipped
   return `
-    <filter id="${id}" color-interpolation-filters="sRGB">
+    <filter id="${id}" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
       <feColorMatrix type="matrix"
         values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"
         result="r"/>
@@ -25,6 +26,25 @@ export function buildChromaticAberrationFilter(
       <feOffset in="b" dx="${-dx}" dy="0" result="bs"/>
       <feBlend in="rs" in2="g" mode="screen" result="rg"/>
       <feBlend in="rg" in2="bs" mode="screen"/>
+    </filter>`;
+}
+
+/** Pixelate filter: Gaussian blur averages pixels into blocks, then feComponentTransfer
+ *  type="discrete" quantizes colors to N levels — clean, high-contrast digital mosaic. */
+export function buildPixelateFilter(id: string, blockSize: number): string {
+  const blur = (blockSize * 0.6).toFixed(1);
+  const steps = Math.max(4, Math.round(24 / blockSize));
+  const tableValues = Array.from({ length: steps + 1 }, (_, i) =>
+    (i / steps).toFixed(3)
+  ).join(" ");
+  return `
+    <filter id="${id}" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="${blur}" in="SourceGraphic" result="avg"/>
+      <feComponentTransfer in="avg">
+        <feFuncR type="discrete" tableValues="${tableValues}"/>
+        <feFuncG type="discrete" tableValues="${tableValues}"/>
+        <feFuncB type="discrete" tableValues="${tableValues}"/>
+      </feComponentTransfer>
     </filter>`;
 }
 
@@ -98,12 +118,18 @@ export function collectSvgDefs(
   const defs: string[] = [];
 
   for (const c of effectClips) {
+    if (c.fxParams?.effectDisabled) continue;
     const effectType = String(c.fxParams?.effectType ?? "none");
     const levelScale = (c.level ?? 100) / 100;
 
     if (effectType === "chromatic-aberration") {
       const offset = Number(c.fxParams?.caOffset ?? 3);
       defs.push(buildChromaticAberrationFilter(`ca-${c.id}`, offset, levelScale));
+    }
+
+    if (effectType === "pixelate") {
+      const blockSize = Math.max(2, Math.round(Number(c.fxParams?.blockSize ?? 8) * levelScale));
+      defs.push(buildPixelateFilter(`pix-${c.id}`, blockSize));
     }
   }
 

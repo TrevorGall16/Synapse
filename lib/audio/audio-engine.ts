@@ -65,6 +65,7 @@ class AudioEngine {
 
   connectSource(trackId: string, element: HTMLMediaElement): TrackAudioChain | null {
     if (!this.ctx || !this.masterGain) return null;
+    this.ensureResumed();
     if (this.trackChains.has(trackId)) return this.trackChains.get(trackId)!;
 
     // Reuse existing source node if element was already bound (permanent per Web Audio spec)
@@ -142,6 +143,7 @@ class AudioEngine {
   }
 
   setMasterVolume(gain: number) {
+    this.ensureResumed();
     if (this.masterGain) {
       this.masterGain.gain.value = gain / 100;
     }
@@ -187,17 +189,17 @@ class AudioEngine {
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     for (const [id, chain] of this.trackChains) {
-      // Never restore gain for muted tracks
+      // Never restore gain for muted tracks — use 0.0001 to keep node alive but silent
       if (this.mutedTracks.has(id)) {
-        chain.trackGain.gain.setTargetAtTime(0, now, 0.01);
+        chain.trackGain.gain.setTargetAtTime(0.0001, now, 0.01);
         continue;
       }
       if (this.soloTracks.size === 0) {
         chain.trackGain.gain.setTargetAtTime(this.storedVolumes.get(id) ?? 1, now, 0.01);
       } else {
         chain.trackGain.gain.setTargetAtTime(
-          this.soloTracks.has(id) ? (this.storedVolumes.get(id) ?? 1) : 0,
-          now, 0.005,
+          this.soloTracks.has(id) ? (this.storedVolumes.get(id) ?? 1) : 0.0001,
+          now, 0.01,
         );
       }
     }
@@ -230,7 +232,9 @@ class AudioEngine {
 
   /** Sync all audio params for a track in one call */
   syncTrackState(trackId: string, state: TrackAudioState) {
+    this.ensureResumed();
     const chain = this.trackChains.get(trackId);
+    console.log("Syncing Track:", trackId, "Exists:", this.trackChains.has(trackId));
     if (!chain) return;
 
     // Store the desired volume
@@ -253,12 +257,12 @@ class AudioEngine {
     else this.soloTracks.delete(trackId);
     const soloChanged = prevSoloSize !== this.soloTracks.size;
 
-    // Compute effective gain: mute → 0, solo logic, else stored volume
+    // Compute effective gain: mute → 0.0001 (keeps node alive but silent), solo logic, else stored volume
     let effectiveGain = vol;
     if (state.muted) {
-      effectiveGain = 0;
+      effectiveGain = 0.0001;
     } else if (this.soloTracks.size > 0 && !this.soloTracks.has(trackId)) {
-      effectiveGain = 0;
+      effectiveGain = 0.0001;
     }
     // Use setTargetAtTime for instant, click-free transitions
     chain.trackGain.gain.setTargetAtTime(effectiveGain, this.ctx!.currentTime, 0.01);

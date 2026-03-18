@@ -22,6 +22,10 @@ export interface ProjectState {
   activeUISection: "pool" | "inspector";
   inspectorSubTab: "pancrop" | "videofx" | "audiofx";
   snapEnabled: boolean;
+  projectResolution: "1080p" | "4k" | "vertical";
+  projectFps: 24 | 30 | 60;
+  setProjectResolution: (res: "1080p" | "4k" | "vertical") => void;
+  setProjectFps: (fps: 24 | 30 | 60) => void;
   addTrack: (type: TrackType) => void;
   deleteTrack: (trackId: string) => void;
   toggleMute: (trackId: string) => void;
@@ -50,6 +54,9 @@ export interface ProjectState {
   setTrackColorCorrection: (trackId: string, params: Partial<Pick<Track, "trackBrightness" | "trackContrast" | "trackSaturate" | "trackHueRotate">>) => void;
   updateClipPanCrop: (clipId: string, panCrop: Partial<PanCropData>) => void;
   updateClipFxParams: (clipId: string, params: Record<string, unknown>) => void;
+  fxMaskEditingClipId: string | null;
+  setFxMaskEditingClipId: (id: string | null) => void;
+  updateFxMask: (clipId: string, mask: Partial<PanCropData>) => void;
 }
 
 // ── Default State ───────────────────────────────────────
@@ -74,6 +81,9 @@ export const useProjectStore = create<ProjectState>((set) => ({
   activeUISection: "pool",
   inspectorSubTab: "pancrop",
   snapEnabled: true,
+  fxMaskEditingClipId: null,
+  projectResolution: "1080p",
+  projectFps: 30,
 
   addTrack: (type) =>
     set((s) => {
@@ -298,6 +308,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setInspectingClipId: (id) => set({ inspectingClipId: id }),
   setActiveUISection: (section) => set({ activeUISection: section }),
   setInspectorSubTab: (tab) => set({ inspectorSubTab: tab }),
+  setProjectResolution: (res) => set({ projectResolution: res }),
+  setProjectFps: (fps) => set({ projectFps: fps }),
 
   setTrackAudioParam: (trackId, params) =>
     set((s) => ({
@@ -351,6 +363,20 @@ export const useProjectStore = create<ProjectState>((set) => ({
         ...t,
         clips: t.clips.map((c) =>
           c.id === clipId ? { ...c, fxParams: { ...c.fxParams, ...params } } : c
+        ),
+      })),
+    })),
+
+  setFxMaskEditingClipId: (id) => set({ fxMaskEditingClipId: id }),
+
+  updateFxMask: (clipId, mask) =>
+    set((s) => ({
+      tracks: s.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) =>
+          c.id === clipId
+            ? { ...c, fxParams: { ...c.fxParams, fxMask: { x: 0, y: 0, scale: 1, rotation: 0, ...((c.fxParams?.fxMask as object) ?? {}), ...mask } } }
+            : c
         ),
       })),
     })),

@@ -98,7 +98,9 @@ export function PreviewMonitor() {
     const opacityMap = new Map<string, number>();
     for (const l of layersWithOpacity) opacityMap.set(l.clip.id, l.opacity);
 
-    // Sync ALL tracks that have audio chains (video+audio tracks)
+    // Sync ALL tracks that have audio chains.
+    // Video tracks own the <video> element (and thus the audio chain), but the mixer
+    // controls the PAIRED audio track. Derive audio params from the paired audio track.
     for (const t of tracks) {
       if (!audioEngine.hasTrack(t.id)) continue;
       // Find the active clip level for this track (use first active clip, else 100)
@@ -109,16 +111,22 @@ export function PreviewMonitor() {
           break;
         }
       }
+      // For video tracks, read audio params from the paired audio track (same index suffix).
+      // e.g. "default-video-1" pairs with "default-audio-1".
+      const pairedAudioTrack = t.type === "video"
+        ? tracks.find((a) => a.type === "audio" && a.id === t.id.replace("video", "audio"))
+        : null;
+      const at = pairedAudioTrack ?? t;
       audioEngine.syncTrackState(t.id, {
-        volume: t.opacityOrVolume,
-        muted: t.isMuted ?? false,
-        solo: t.isSolo ?? false,
-        pan: t.audioPan ?? 0,
+        volume: at.opacityOrVolume,
+        muted: at.isMuted ?? false,
+        solo: at.isSolo ?? false,
+        pan: at.audioPan ?? 0,
         clipLevel,
-        reverbWet: t.reverbWet ?? 0,
-        reverbRoomSize: t.reverbRoomSize ?? 30,
-        delayMs: t.delayMs ?? 0,
-        delayFeedback: t.delayFeedback ?? 0,
+        reverbWet: at.reverbWet ?? 0,
+        reverbRoomSize: at.reverbRoomSize ?? 30,
+        delayMs: at.delayMs ?? 0,
+        delayFeedback: at.delayFeedback ?? 0,
       });
     }
   }, [masterVolume, audioSyncKey, playheadPosition]);
@@ -146,7 +154,10 @@ export function PreviewMonitor() {
   }
 
   // ── 60fps FX animation loop (direct DOM writes, bypasses React) ──
-  const fxKey = activeEffectClips.map((c) => c.id).join(",");
+  // Include SVG-filter params so CA/pixelate defs regenerate when params change
+  const fxKey = activeEffectClips.map((c) =>
+    `${c.id}:${c.fxParams?.effectType}:${c.fxParams?.blockSize ?? ""}:${c.fxParams?.caOffset ?? ""}:${c.fxParams?.effectDisabled ?? ""}`
+  ).join(",");
   const hasTimedFx = activeEffectClips.some((c) => {
     const t = String(c.fxParams?.effectType ?? "none");
     return t === "strobe" || t === "flash" || t === "hue-rotate" || t === "glitch" || t === "hypno-tunnel";
@@ -183,6 +194,9 @@ export function PreviewMonitor() {
         const topClip = layersWithOpacity[layersWithOpacity.length - 1]?.clip;
         const clipFx = buildVideoClipFilter(topClip);
         const parts = [fxResult.filter !== "none" ? fxResult.filter : "", clipFx].filter(Boolean);
+        // Append SVG filter references (chromatic aberration, pixelate)
+        if (fxResult.chromaticId) parts.push(`url(#${fxResult.chromaticId})`);
+        if (fxResult.pixelateId) parts.push(`url(#${fxResult.pixelateId})`);
         combined = parts.join(" ") || "none";
       }
 
@@ -194,13 +208,10 @@ export function PreviewMonitor() {
         el.style.filter = [combined, trackF].filter(Boolean).join(" ") || "none";
         // Build transform: panCrop base → mirror → glitch
         const base = el.dataset.pancropTransform || "";
-        if (glitchTransform) {
-          el.style.transform = [base, glitchTransform].filter(Boolean).join(" ");
-        } else if (mirrorTransform) {
-          el.style.transform = [base, mirrorTransform].filter(Boolean).join(" ");
-        } else {
-          el.style.transform = base;
-        }
+        const transforms: string[] = base ? [base] : [];
+        if (glitchTransform) transforms.push(glitchTransform);
+        else if (mirrorTransform) transforms.push(mirrorTransform);
+        el.style.transform = transforms.join(" ") || "none";
       });
     };
 
@@ -248,21 +259,37 @@ export function PreviewMonitor() {
   );
   const combinedSvgDefs = [svgDefs, featheredMaskDefs].filter(Boolean).join("\n");
 
-  // ── Compute hypno-tunnel overlay for active effects ────
-  const hypnoOverlay = useMemo(() => {
+  // ── Compute hypno-tunnel for passing into video layers ─
+  // Tunnel renders inside each PreviewVideoLayer (clipped to aspect-video area)
+  const hypnoTunnel = useMemo(() => {
+    const fxResult = buildFxFilter(activeEffectClips, playheadPosition);
+    return fxResult.hypnoTunnel ?? undefined;
+  }, [activeEffectClips, playheadPosition]);
+
+  // Compute CSS clip-path from fxMask on the active hypno-tunnel clip (if set)
+  const tunnelClipPath = useMemo(() => {
     for (const c of activeEffectClips) {
       if (c.fxParams?.effectDisabled) continue;
-      if (String(c.fxParams?.effectType) === "hypno-tunnel") {
-        const intensity = (Number(c.fxParams?.intensity ?? 50) / 100) * ((c.level ?? 100) / 100);
-        const speed = Number(c.fxParams?.speed ?? 50);
-        const elapsed = (playheadPosition - c.startTime) / MICROS_PER_SECOND;
-        const spacing = Math.sin(elapsed * speed * 0.1) * 20 + 30;
-        const ringWidth = 8 * intensity;
-        return { spacing, width: ringWidth, intensity };
+      if (String(c.fxParams?.effectType) !== "hypno-tunnel") continue;
+      const mask = c.fxParams?.fxMask as { maskType?: string; maskX?: number; maskY?: number; maskWidth?: number; maskHeight?: number } | undefined;
+      if (!mask || !mask.maskType || mask.maskType === "none") return undefined;
+      const mx = mask.maskX ?? 0;
+      const my = mask.maskY ?? 0;
+      const mw = mask.maskWidth ?? 100;
+      const mh = mask.maskHeight ?? 100;
+      if (mask.maskType === "rect") {
+        const t = my, r = 100 - mx - mw, b = 100 - my - mh, l = mx;
+        return `inset(${t}% ${r}% ${b}% ${l}%)`;
+      }
+      if (mask.maskType === "circle") {
+        const cx = mx + mw / 2;
+        const cy = my + mh / 2;
+        const r = Math.min(mw, mh) / 2;
+        return `circle(${r}% at ${cx}% ${cy}%)`;
       }
     }
-    return null;
-  }, [activeEffectClips, playheadPosition]);
+    return undefined;
+  }, [activeEffectClips]);
 
   return (
     <div className="flex h-full flex-col border-t border-white/20 bg-[#1a1a1a]">
@@ -281,19 +308,22 @@ export function PreviewMonitor() {
         </select>
       </div>
 
-      <div ref={videoContainerRef} className="flex flex-1 items-center justify-center overflow-hidden bg-black">
-        {/* SVG defs for advanced FX (chromatic aberration, inverted masks, feathered masks) */}
+      <div ref={videoContainerRef} className="relative flex-1 overflow-hidden bg-black">
+        {/* SVG defs for advanced FX (chromatic aberration, inverted masks, feathered masks).
+            Must use explicit style (not Tailwind h-0/w-0) so overflow:visible keeps filters active. */}
         {combinedSvgDefs && (
-          <svg className="absolute h-0 w-0" aria-hidden>
+          <svg style={{ position: "absolute", width: 0, height: 0, overflow: "visible" }} aria-hidden>
             <defs dangerouslySetInnerHTML={{ __html: combinedSvgDefs }} />
           </svg>
         )}
 
-        {/* Video layers with crossfade */}
+        {/* Video layers with crossfade — sorted so Track 1 is on top */}
         {layersWithOpacity.length > 0 ? (
           layersWithOpacity.map((layer) => {
             const pcResult = buildPanCropStyle(layer.clip.panCrop, layer.clip.id);
             const t = layer.track;
+            const trackIdx = videoTracks.indexOf(t);
+            const zIndex = videoTracks.length - trackIdx;
             const tFilters: string[] = [];
             if (t.trackBrightness != null && t.trackBrightness !== 100) tFilters.push(`brightness(${t.trackBrightness / 100})`);
             if (t.trackContrast != null && t.trackContrast !== 100) tFilters.push(`contrast(${t.trackContrast / 100})`);
@@ -306,15 +336,20 @@ export function PreviewMonitor() {
                 clip={layer.clip}
                 trackId={layer.track.id}
                 opacity={layer.opacity}
+                zIndex={zIndex}
                 trackFilter={tFilters.join(" ")}
                 panCropStyle={pcResult.style}
                 isPlaying={isPlaying}
                 playheadPosition={playheadPosition}
+                hypnoTunnel={hypnoTunnel}
+                tunnelClipPath={tunnelClipPath}
               />
             );
           })
         ) : (
-          <div className="aspect-video w-full max-w-lg rounded bg-[#111111]" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="aspect-video w-full max-w-lg rounded bg-[#111111]" />
+          </div>
         )}
 
         {/* Text clip overlays */}
@@ -328,16 +363,7 @@ export function PreviewMonitor() {
           );
         })}
 
-        {/* Hypno-tunnel overlay */}
-        {hypnoOverlay && (
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{
-              background: `repeating-radial-gradient(circle at 50% 50%, transparent 0px, transparent ${hypnoOverlay.spacing}px, rgba(0,0,0,${hypnoOverlay.intensity}) ${hypnoOverlay.spacing}px, rgba(0,0,0,${hypnoOverlay.intensity}) ${hypnoOverlay.spacing + hypnoOverlay.width}px)`,
-              mixBlendMode: "multiply",
-            }}
-          />
-        )}
+        {/* Hypno-tunnel is now rendered inside PreviewVideoLayer (clipped to aspect-video area) */}
       </div>
 
       {/* Transport toolbar */}

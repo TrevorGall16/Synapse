@@ -2,12 +2,13 @@
 
 import { useProjectStore } from "@/lib/store/project-store";
 import type { ClipEvent } from "@/lib/store/types";
-import { Eye, EyeOff } from "lucide-react";
 
 export function FxInspector() {
   const inspectingClipId = useProjectStore((s) => s.inspectingClipId);
   const tracks = useProjectStore((s) => s.tracks);
   const updateClipFxParams = useProjectStore((s) => s.updateClipFxParams);
+  const fxMaskEditingClipId = useProjectStore((s) => s.fxMaskEditingClipId);
+  const setFxMaskEditingClipId = useProjectStore((s) => s.setFxMaskEditingClipId);
 
   let clip: ClipEvent | undefined;
   if (inspectingClipId) {
@@ -64,8 +65,10 @@ export function FxInspector() {
           </select>
         </label>
 
-        <SliderField label="Intensity" value={intensity} onChange={(v) => onParam("intensity", v)} />
-        {["strobe", "flash", "hue-rotate", "glitch"].includes(effectType) && (
+        {effectType !== "mirror" && effectType !== "hypno-tunnel" && (
+          <SliderField label="Intensity" value={intensity} onChange={(v) => onParam("intensity", v)} />
+        )}
+        {["strobe", "flash", "hue-rotate", "glitch", "hypno-tunnel"].includes(effectType) && (
           <SliderField label="Speed" value={speed} onChange={(v) => onParam("speed", v)} />
         )}
 
@@ -109,34 +112,54 @@ export function FxInspector() {
           <SliderField label="CA Offset" value={Number(clip.fxParams?.caOffset ?? 3)} min={1} max={20} onChange={(v) => onParam("caOffset", v)} />
         )}
 
-        {/* Mirror controls */}
+        {/* Mirror controls — 4-way toggle */}
         {effectType === "mirror" && (
-          <label className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1">
             <span className="text-[10px] font-medium uppercase tracking-wider text-white/50">Mirror Mode</span>
-            <select
-              value={String(clip.fxParams?.mirrorMode ?? "horizontal")}
-              onChange={(e) => onParam("mirrorMode", e.target.value)}
-              className="rounded bg-white/10 px-2 py-1 text-xs text-white outline-none transition-colors hover:bg-white/15"
-            >
-              <option value="horizontal" className="text-black">Horizontal</option>
-              <option value="vertical" className="text-black">Vertical</option>
-            </select>
-          </label>
+            <div className="flex gap-1">
+              {(["none", "horizontal", "vertical", "both"] as const).map((mode) => {
+                const label = mode === "none" ? "Off" : mode === "horizontal" ? "H" : mode === "vertical" ? "V" : "Both";
+                const active = String(clip.fxParams?.mirrorMode ?? "horizontal") === mode;
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => onParam("mirrorMode", mode)}
+                    className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${
+                      active ? "bg-white/20 text-white" : "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Hypno-Tunnel controls */}
+        {effectType === "hypno-tunnel" && (
+          <>
+            <SliderField label="Tunnel Opacity" value={Number(clip.fxParams?.tunnelOpacity ?? 50)} min={0} max={100} onChange={(v) => onParam("tunnelOpacity", v)} />
+            <SliderField label="Ring Count" value={Number(clip.fxParams?.tunnelCount ?? 10)} min={1} max={50} onChange={(v) => onParam("tunnelCount", v)} />
+            <SliderField label="Tunnel Speed" value={Number(clip.fxParams?.tunnelSpeed ?? 50)} min={1} max={100} onChange={(v) => onParam("tunnelSpeed", v)} />
+            <SliderField label="Rotation" value={Number(clip.fxParams?.tunnelRotation ?? 0)} min={0} max={360} onChange={(v) => onParam("tunnelRotation", v)} />
+          </>
         )}
 
         {/* Active effects stack */}
         {effectType !== "none" && (
           <div className="flex flex-wrap items-center gap-1">
-            <button
-              onClick={() => onParam("effectDisabled", !clip.fxParams?.effectDisabled)}
-              className="rounded p-0.5 text-white/40 transition-colors hover:text-white"
-              title={clip.fxParams?.effectDisabled ? "Enable effect" : "Disable effect"}
-            >
-              {clip.fxParams?.effectDisabled ? <EyeOff size={12} /> : <Eye size={12} />}
-            </button>
-            <span className={`rounded-full bg-purple-500/20 px-2 py-0.5 text-[9px] font-medium text-purple-300 ${clip.fxParams?.effectDisabled ? "opacity-40 line-through" : ""}`}>
-              {effectType}
-            </span>
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={!clip.fxParams?.effectDisabled}
+                onChange={() => onParam("effectDisabled", !clip.fxParams?.effectDisabled)}
+                className="h-3 w-3 accent-purple-400"
+              />
+              <span className={`rounded-full bg-purple-500/20 px-2 py-0.5 text-[9px] font-medium text-purple-300 ${clip.fxParams?.effectDisabled ? "opacity-40 line-through" : ""}`}>
+                {effectType}
+              </span>
+            </label>
             {brightness !== 100 && (
               <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-[9px] text-yellow-300">
                 Brightness: {brightness}
@@ -153,6 +176,22 @@ export function FxInspector() {
               </span>
             )}
           </div>
+        )}
+
+        {/* Mask FX — opens Pan/Crop window in FX mask editing mode */}
+        {effectType !== "none" && (
+          <button
+            onClick={() => setFxMaskEditingClipId(
+              fxMaskEditingClipId === clip!.id ? null : clip!.id
+            )}
+            className={`w-full rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+              fxMaskEditingClipId === clip!.id
+                ? "bg-purple-500/30 text-purple-200 ring-1 ring-purple-400/50"
+                : "bg-white/10 text-white/50 hover:bg-white/15 hover:text-white"
+            }`}
+          >
+            {fxMaskEditingClipId === clip!.id ? "✦ Editing FX Mask" : "Mask FX Area"}
+          </button>
         )}
 
         {/* Reset buttons */}
