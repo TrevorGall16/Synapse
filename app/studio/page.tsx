@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { MediaPool } from "@/components/studio/media-pool";
 import { PreviewMonitor } from "@/components/studio/preview-monitor";
@@ -11,9 +12,38 @@ import { VideoFxInspector } from "@/components/studio/video-fx-inspector";
 import { AudioInspector } from "@/components/studio/audio-inspector";
 import { AudioMixer } from "@/components/studio/audio-mixer";
 import { VolumeHud } from "@/components/studio/volume-hud";
+import { ProjectSettingsModal } from "@/components/studio/project-settings-modal";
+import { HistoryPanel } from "@/components/studio/history-panel";
 import { useProjectStore } from "@/lib/store/project-store";
+import { Film, Plus } from "lucide-react";
+
+// ── Studio Splash Screen ───────────────────────────────
+function StudioSplash({ onCreateProject }: { onCreateProject: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-6 bg-[#141414]">
+      <Film size={56} className="text-white/15" />
+      <div className="text-center">
+        <h2 className="text-lg font-bold text-white">No Project Open</h2>
+        <p className="mt-1 text-xs text-white/40">Create a new project to begin editing</p>
+      </div>
+      <button
+        onClick={onCreateProject}
+        className="flex items-center gap-2 rounded-lg bg-white/10 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/20"
+      >
+        <Plus size={16} />
+        Create New Project
+      </button>
+    </div>
+  );
+}
 
 export default function StudioPage() {
+  // projectStarted: true once the user explicitly clicks "Create New Project"
+  // showSplash is false whenever: the user started a project OR any track already has clips
+  // (the latter covers Remix navigation — loadProject populates tracks before route change)
+  const [projectStarted, setProjectStarted] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
   const leftTab = useProjectStore((s) => s.activeUISection);
   const setLeftTab = useProjectStore((s) => s.setActiveUISection);
   const inspectingClipId = useProjectStore((s) => s.inspectingClipId);
@@ -21,6 +51,10 @@ export default function StudioPage() {
   const setInspectorSubTab = useProjectStore((s) => s.setInspectorSubTab);
   const tracks = useProjectStore((s) => s.tracks);
   const fxMaskEditingClipId = useProjectStore((s) => s.fxMaskEditingClipId);
+
+  // Auto-detect loaded content (Remix, opened project, or any dropped clips)
+  const hasContent = tracks.some((t) => t.clips.length > 0);
+  const showSplash = !projectStarted && !hasContent;
 
   // Derive the track type of the inspecting clip
   let inspectingTrackType: string | null = null;
@@ -33,8 +67,20 @@ export default function StudioPage() {
     }
   }
 
+  if (showSplash) {
+    return (
+      <>
+        <StudioSplash onCreateProject={() => { setProjectStarted(true); setShowSettings(true); }} />
+        {showSettings && (
+          <ProjectSettingsModal onClose={() => setShowSettings(false)} />
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#1a1a1a] text-white">
+      {showSettings && <ProjectSettingsModal onClose={() => setShowSettings(false)} />}
       <VolumeHud />
       <Group orientation="vertical">
         {/* Top half: Media Pool/Inspector + Preview Monitor */}
@@ -62,6 +108,16 @@ export default function StudioPage() {
                   }`}
                 >
                   Inspector
+                </button>
+                <button
+                  onClick={() => setLeftTab("history")}
+                  className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                    leftTab === "history"
+                      ? "border-b-2 border-white/60 text-white/80"
+                      : "text-white/40 hover:text-white/60"
+                  }`}
+                >
+                  History
                 </button>
               </div>
               {/* Tab content */}
@@ -108,6 +164,7 @@ export default function StudioPage() {
                     <span className="text-xs text-white/30">Select a clip to inspect</span>
                   </div>
                 )}
+                {leftTab === "history" && <HistoryPanel />}
               </div>
             </Panel>
             <Separator className="w-1 bg-white/10 transition-colors hover:bg-white/30" />

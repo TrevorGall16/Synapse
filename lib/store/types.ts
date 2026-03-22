@@ -2,6 +2,21 @@
 // No store logic — just types used across playback-store,
 // project-store, and UI components.
 
+export interface ProjectSettings {
+  width: number;
+  height: number;
+  fps: 23.976 | 24 | 29.97 | 30 | 60;
+  pixelAspectRatio: 1.0 | 1.333;
+  gammaTag: "sRGB" | "rec709";
+}
+
+export const PROJECT_PRESETS = {
+  "1080p HD":  { width: 1920, height: 1080, fps: 30,    pixelAspectRatio: 1.0, gammaTag: "sRGB"   },
+  "4K UHD":    { width: 3840, height: 2160, fps: 30,    pixelAspectRatio: 1.0, gammaTag: "rec709" },
+  "Vertical":  { width: 1080, height: 1920, fps: 30,    pixelAspectRatio: 1.0, gammaTag: "sRGB"   },
+  "Cinema 4K": { width: 4096, height: 2160, fps: 24,    pixelAspectRatio: 1.0, gammaTag: "rec709" },
+} satisfies Record<string, ProjectSettings>;
+
 export type TrackType = "video" | "audio" | "text" | "effect";
 
 export interface MaskLayer {
@@ -87,6 +102,13 @@ export interface Marker {
   time: number;
   color: string;
   label?: string;
+}
+
+export interface HistorySnapshot {
+  tracks: Track[];
+  duration: number;
+  markers: Marker[];
+  label: string;
 }
 
 export interface MediaPoolItem {

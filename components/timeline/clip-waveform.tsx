@@ -7,22 +7,24 @@ import { requestAudioPeaks } from "@/lib/utils/media-extractor";
 interface ClipWaveformProps {
   sourceId: string;
   clipWidthPx: number;
-  trackColor: string;
   trackHeight: number;
 }
 
-export function ClipWaveform({ sourceId, clipWidthPx, trackColor, trackHeight }: ClipWaveformProps) {
+/** Neon cyan→purple waveform rendered at 1px column precision.
+ *  Hot peaks (amplitude > 70%) receive an extra bright-cyan highlight pass,
+ *  giving a "beat detector" visual effect for BPM sync. */
+export function ClipWaveform({ sourceId, clipWidthPx, trackHeight }: ClipWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const media = useProjectStore((s) => s.mediaPool.find((m) => m.id === sourceId));
   const peaks = media?.peakManifest;
 
-  // Trigger worker extraction if peaks not yet available
+  // Trigger peak extraction if not yet computed
   useEffect(() => {
     if (!media?.previewUrl || peaks) return;
     requestAudioPeaks(media.previewUrl, media.id);
   }, [media?.previewUrl, media?.id, peaks]);
 
-  // Draw waveform from peakManifest
+  // Draw waveform whenever peaks, size, or theme changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !peaks || peaks.length === 0 || clipWidthPx < 1) return;
@@ -30,66 +32,97 @@ export function ClipWaveform({ sourceId, clipWidthPx, trackColor, trackHeight }:
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const drawWidth = Math.round(clipWidthPx);
-    const drawHeight = trackHeight;
+    const W = Math.round(clipWidthPx);
+    const H = trackHeight;
 
-    canvas.width = drawWidth * dpr;
-    canvas.height = drawHeight * dpr;
-    canvas.style.width = `${drawWidth}px`;
-    canvas.style.height = `${drawHeight}px`;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = `${W}px`;
+    canvas.style.height = `${H}px`;
     ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, W, H);
 
-    ctx.clearRect(0, 0, drawWidth, drawHeight);
+    const midY = H / 2;
+    const HOT_THRESH = 0.7; // peaks above 70% get bright-cyan highlight
 
-    const midY = drawHeight / 2;
+    // ── Main waveform body (filled polygon, cyan→purple gradient) ──
+    const bodyGrad = ctx.createLinearGradient(0, 0, 0, H);
+    bodyGrad.addColorStop(0,   "rgba(0,229,255,0.85)");  // neon cyan top
+    bodyGrad.addColorStop(0.5, "rgba(168,85,247,0.60)"); // purple mid
+    bodyGrad.addColorStop(1,   "rgba(0,229,255,0.85)");  // neon cyan bottom
 
-    // 1px precision: iterate by pixel column, interpolate peaks
     ctx.beginPath();
     ctx.moveTo(0, midY);
-
-    for (let px = 0; px < drawWidth; px++) {
-      const peakIdx = (px / drawWidth) * peaks.length;
-      const lo = Math.floor(peakIdx);
-      const hi = Math.min(lo + 1, peaks.length - 1);
-      const frac = peakIdx - lo;
-      const amp = (peaks[lo] * (1 - frac) + peaks[hi] * frac) * midY * 0.9;
+    for (let px = 0; px < W; px++) {
+      const amp = samplePeak(peaks, px, W) * midY * 0.88;
       ctx.lineTo(px, midY - amp);
     }
-    ctx.lineTo(drawWidth, midY);
-
-    for (let px = drawWidth - 1; px >= 0; px--) {
-      const peakIdx = (px / drawWidth) * peaks.length;
-      const lo = Math.floor(peakIdx);
-      const hi = Math.min(lo + 1, peaks.length - 1);
-      const frac = peakIdx - lo;
-      const amp = (peaks[lo] * (1 - frac) + peaks[hi] * frac) * midY * 0.9;
+    ctx.lineTo(W, midY);
+    for (let px = W - 1; px >= 0; px--) {
+      const amp = samplePeak(peaks, px, W) * midY * 0.88;
       ctx.lineTo(px, midY + amp);
     }
-
     ctx.closePath();
-    ctx.fillStyle = trackColor;
-    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = bodyGrad;
     ctx.fill();
 
-    // Center line
-    ctx.globalAlpha = 0.3;
-    ctx.strokeStyle = trackColor;
+    // ── Hot-peak scanlines (bright cyan hairlines on transients) ──
+    ctx.globalCompositeOperation = "screen";
+    const hotGrad = ctx.createLinearGradient(0, 0, 0, H);
+    hotGrad.addColorStop(0,   "rgba(0,255,255,0.9)");
+    hotGrad.addColorStop(0.5, "rgba(255,255,255,0.4)");
+    hotGrad.addColorStop(1,   "rgba(0,255,255,0.9)");
+
+    ctx.strokeStyle = hotGrad;
+    ctx.lineWidth = 1;
+    for (let px = 0; px < W; px++) {
+      const norm = samplePeak(peaks, px, W);
+      if (norm >= HOT_THRESH) {
+        const amp = norm * midY * 0.88;
+        const glowAlpha = (norm - HOT_THRESH) / (1 - HOT_THRESH); // 0→1 above threshold
+        ctx.globalAlpha = glowAlpha * 0.9;
+        ctx.beginPath();
+        ctx.moveTo(px, midY - amp);
+        ctx.lineTo(px, midY + amp);
+        ctx.stroke();
+      }
+    }
+
+    // ── Center line ──
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = "#00e5ff";
     ctx.lineWidth = 0.5;
     ctx.beginPath();
     ctx.moveTo(0, midY);
-    ctx.lineTo(drawWidth, midY);
+    ctx.lineTo(W, midY);
     ctx.stroke();
+
     ctx.globalAlpha = 1;
-  }, [peaks, clipWidthPx, trackColor, trackHeight]);
+  }, [peaks, clipWidthPx, trackHeight]);
 
   if (!peaks || peaks.length === 0) {
-    return <div className="pointer-events-none absolute inset-0 animate-pulse bg-white/5" />;
+    // Pulsing placeholder while peaks are computing
+    return (
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="h-px w-full animate-pulse bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent" />
+      </div>
+    );
   }
 
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none absolute inset-0 opacity-50"
+      className="pointer-events-none absolute inset-0"
+      style={{ opacity: 0.75, mixBlendMode: "screen" }}
     />
   );
+}
+
+/** Interpolated peak sample at pixel column `px` of width `W`. */
+function samplePeak(peaks: number[], px: number, W: number): number {
+  const idx = (px / W) * peaks.length;
+  const lo = Math.floor(idx);
+  const hi = Math.min(lo + 1, peaks.length - 1);
+  return peaks[lo] * (1 - (idx - lo)) + peaks[hi] * (idx - lo);
 }

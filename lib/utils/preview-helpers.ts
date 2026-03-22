@@ -1,5 +1,44 @@
 import type { ClipEvent, PanCropData } from "@/lib/store/types";
 
+// ── FX Mask shape — a typed view over the fxMask field stored in fxParams ──
+// Uses Pick to stay in sync with PanCropData's mask coordinate convention
+// (maskX/maskY are CENTER coordinates, not top-left).
+export type FxMaskShape = Pick<PanCropData, "maskType" | "maskX" | "maskY" | "maskWidth" | "maskHeight" | "maskPoints">;
+
+/** Returns a CSS clip-path string that restricts the FX overlay to the mask area.
+ *  maskX/maskY are CENTER coordinates (consistent with PanCropData convention). */
+export function buildMaskedFxClipPath(mask: FxMaskShape): string | undefined {
+  const { maskType, maskX = 50, maskY = 50, maskWidth = 100, maskHeight = 100, maskPoints } = mask;
+  if (!maskType || maskType === "none") return undefined;
+  if (maskType === "rect") {
+    const hw = maskWidth / 2, hh = maskHeight / 2;
+    const top = Math.max(0, maskY - hh);
+    const right = Math.max(0, 100 - (maskX + hw));
+    const bottom = Math.max(0, 100 - (maskY + hh));
+    const left = Math.max(0, maskX - hw);
+    return `inset(${top}% ${right}% ${bottom}% ${left}%)`;
+  }
+  if (maskType === "circle") {
+    return `circle(${Math.min(maskWidth, maskHeight) / 2}% at ${maskX}% ${maskY}%)`;
+  }
+  if (maskType === "polygon" && maskPoints && maskPoints.length >= 3) {
+    return `polygon(${maskPoints.map((p) => `${p.x}% ${p.y}%`).join(", ")})`;
+  }
+  return undefined;
+}
+
+/** Returns the CSS clip-path for the active hypno-tunnel effect's fxMask, if set. */
+export function computeTunnelClipPath(activeEffectClips: ClipEvent[]): string | undefined {
+  for (const c of activeEffectClips) {
+    if (c.fxParams?.effectDisabled) continue;
+    if (String(c.fxParams?.effectType) !== "hypno-tunnel") continue;
+    const mask = c.fxParams?.fxMask as FxMaskShape | undefined;
+    if (!mask?.maskType || mask.maskType === "none") return undefined;
+    return buildMaskedFxClipPath(mask);
+  }
+  return undefined;
+}
+
 export const MICROS_PER_SECOND = 1_000_000;
 
 export function formatTimecode(micros: number): string {
@@ -59,26 +98,29 @@ export function buildPanCropStyle(
     } else {
       clipPath = `circle(${radius}% at ${pc.maskX ?? 50}% ${pc.maskY ?? 50}%)`;
     }
-  } else if (pc.maskType === "polygon" && pc.maskPoints && pc.maskPoints.length >= 3) {
-    // Combine primary mask + additional mask layers (if any)
-    const allPolygonParts: string[] = [];
-    const primaryPts = pc.maskPoints.map((p) => `${p.x}% ${p.y}%`).join(", ");
-    allPolygonParts.push(primaryPts);
+  } else if (pc.maskType === "polygon") {
+    // Collect all valid polygon parts: the active drawing polygon + every stored layer.
+    // Condition is intentionally NOT gated on maskPoints.length — after "Save & New",
+    // maskPoints is [] but masks[] still holds all saved polygons.
+    const validPrimary = pc.maskPoints && pc.maskPoints.length >= 3;
+    const validLayers = (pc.masks ?? []).filter((m) => m.points.length >= 3);
 
-    if (pc.masks?.length) {
-      for (const m of pc.masks) {
-        if (m.points.length >= 3) {
-          allPolygonParts.push(m.points.map((p) => `${p.x}% ${p.y}%`).join(", "));
-        }
+    if (validPrimary || validLayers.length > 0) {
+      const allPolygonParts: string[] = [];
+      if (validPrimary) {
+        allPolygonParts.push(pc.maskPoints!.map((p) => `${p.x}% ${p.y}%`).join(", "));
       }
-    }
+      for (const m of validLayers) {
+        allPolygonParts.push(m.points.map((p) => `${p.x}% ${p.y}%`).join(", "));
+      }
 
-    const hasSubtract = pc.masks?.some((m) => m.type === "subtract" && m.points.length >= 3);
-    if (invert || hasSubtract) {
-      // evenodd: outer boundary + all polygon holes
-      clipPath = `polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, ${allPolygonParts.join(", ")})`;
-    } else {
-      clipPath = `polygon(${allPolygonParts.join(", ")})`;
+      const hasSubtract = validLayers.some((m) => m.type === "subtract");
+      if (invert || hasSubtract) {
+        // evenodd rule: overlapping subtract polygons punch holes into add regions
+        clipPath = `polygon(evenodd, 0% 0%, 100% 0%, 100% 100%, 0% 100%, ${allPolygonParts.join(", ")})`;
+      } else {
+        clipPath = `polygon(${allPolygonParts.join(", ")})`;
+      }
     }
   }
 

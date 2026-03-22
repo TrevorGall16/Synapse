@@ -2,12 +2,9 @@
 
 import { useRef, useEffect } from "react";
 import type { ClipEvent, MediaPoolItem } from "@/lib/store/types";
-import type { FxResult } from "@/lib/utils/preview-helpers";
+import { MICROS_PER_SECOND, type FxResult } from "@/lib/utils/preview-helpers";
 import { usePlaybackStore } from "@/lib/store/playback-store";
-import { useProjectStore } from "@/lib/store/project-store";
 import { audioEngine } from "@/lib/audio/audio-engine";
-
-const MICROS_PER_SECOND = 1_000_000;
 
 interface PreviewVideoLayerProps {
   media: MediaPoolItem;
@@ -19,18 +16,17 @@ interface PreviewVideoLayerProps {
   panCropStyle: React.CSSProperties;
   isPlaying: boolean;
   playheadPosition: number;
+  aspectRatio: string;
   hypnoTunnel?: FxResult["hypnoTunnel"];
   tunnelClipPath?: string;
 }
 
 export function PreviewVideoLayer({
   media, clip, trackId, opacity, zIndex, trackFilter, panCropStyle,
-  isPlaying, playheadPosition, hypnoTunnel, tunnelClipPath,
+  isPlaying, playheadPosition, aspectRatio, hypnoTunnel, tunnelClipPath,
 }: PreviewVideoLayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const connectedRef = useRef(false);
-  const projectResolution = useProjectStore((s) => s.projectResolution);
-  const aspectRatio = projectResolution === "vertical" ? "9/16" : "16/9";
 
   // Connect to AudioEngine once video element mounts
   useEffect(() => {
@@ -84,7 +80,7 @@ export function PreviewVideoLayer({
   return (
     <div
       className="absolute inset-0 flex items-center justify-center"
-      style={{ zIndex, opacity: visualOpacity }}
+      style={{ zIndex, opacity: visualOpacity, willChange: "opacity, transform" }}
     >
       {/* aspect wrapper clips tunnel and video to the display area,
           preventing spill onto pillarbox/letterbox bars */}

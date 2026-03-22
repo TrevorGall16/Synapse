@@ -25,12 +25,14 @@ export function PanCropWindow() {
   const fxMaskEditingClipId = useProjectStore((s) => s.fxMaskEditingClipId);
   const setFxMaskEditingClipId = useProjectStore((s) => s.setFxMaskEditingClipId);
   const updateFxMask = useProjectStore((s) => s.updateFxMask);
+
   const [polygonClosed, setPolygonClosed] = useState(false);
   const [draggingVertex, setDraggingVertex] = useState<number | null>(null);
   const [isDraggingMask, setIsDraggingMask] = useState(false);
+  // null = editing the live maskPoints; number = editing masks[N] (click-to-re-edit)
+  const [activeMaskLayerIdx, setActiveMaskLayerIdx] = useState<number | null>(null);
   const maskDragStart = useRef({ x: 0, y: 0 });
 
-  // In FX mask mode we operate on the FX clip; otherwise on the inspected video clip.
   const isFxMaskMode = !!fxMaskEditingClipId;
   const activeClipId = isFxMaskMode ? fxMaskEditingClipId : inspectingClipId;
 
@@ -52,43 +54,72 @@ export function PanCropWindow() {
     );
   }
 
-  // In FX mask mode read/write from fxParams.fxMask, else from clip.panCrop
   const pc = isFxMaskMode
     ? ((clip.fxParams?.fxMask as PanCropData | undefined) ?? DEFAULT_PC)
     : (clip.panCrop ?? DEFAULT_PC);
+
   const onPC = (updates: Partial<PanCropData>) =>
-    isFxMaskMode
-      ? updateFxMask(clip!.id, updates)
-      : updateClipPanCrop(clip!.id, updates);
+    isFxMaskMode ? updateFxMask(clip!.id, updates) : updateClipPanCrop(clip!.id, updates);
 
   const maskType = pc.maskType ?? "none";
   const maskX = pc.maskX ?? 50;
   const maskY = pc.maskY ?? 50;
   const maskW = pc.maskWidth ?? 100;
   const maskH = pc.maskHeight ?? 100;
-  const maskPoints = pc.maskPoints ?? [];
   const maskFeather = pc.maskFeather ?? 0;
 
-  // ── Interactive canvas drag for X/Y ──
+  // ── Active editing points: either live maskPoints or a stored layer ──────
+  // Reads from the CORRECT source depending on re-edit mode.
+  const liveMaskPoints = pc.maskPoints ?? [];
+  const activePoints: { x: number; y: number }[] = activeMaskLayerIdx !== null
+    ? (pc.masks?.[activeMaskLayerIdx]?.points ?? [])
+    : liveMaskPoints;
+
+  // Write back to the correct store field
+  const setActivePoints = useCallback((pts: { x: number; y: number }[]) => {
+    if (activeMaskLayerIdx !== null) {
+      const newMasks = [...(pc.masks ?? [])];
+      newMasks[activeMaskLayerIdx] = { ...newMasks[activeMaskLayerIdx], points: pts };
+      onPC({ masks: newMasks });
+    } else {
+      onPC({ maskPoints: pts });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMaskLayerIdx, pc.masks]);
+
+  // Enter re-edit mode for a stored mask layer
+  const enterReEdit = (idx: number) => {
+    setActiveMaskLayerIdx(idx);
+    setPolygonClosed(true); // stored masks are already closed
+    setDraggingVertex(null);
+    setIsDraggingMask(false);
+  };
+
+  // Exit re-edit mode (back to live drawing)
+  const exitReEdit = () => {
+    setActiveMaskLayerIdx(null);
+    setPolygonClosed(false);
+    setDraggingVertex(null);
+  };
+
+  // ── Interactive canvas ────────────────────────────────────────────────────
   const canvasRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, pcX: 0, pcY: 0 });
 
   const onCanvasPointerDown = useCallback((e: React.PointerEvent) => {
-    // Polygon: center-drag when closed, skip when still drawing
     if (maskType === "polygon") {
-      if (!polygonClosed) return; // still adding points via onClick
+      if (!polygonClosed) return;
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
       const px = ((e.clientX - rect.left) / rect.width) * 100;
       const py = ((e.clientY - rect.top) / rect.height) * 100;
-      // Check if near a vertex — use pixel-space distance for consistent circular hit zone
-      const nearVertex = maskPoints.some((p) => {
+      const nearVertex = activePoints.some((p) => {
         const dxPx = ((px - p.x) / 100) * rect.width;
         const dyPx = ((py - p.y) / 100) * rect.height;
         return Math.hypot(dxPx, dyPx) < 15;
       });
-      if (!nearVertex && isInsidePolygon(px, py, maskPoints)) {
+      if (!nearVertex && isInsidePolygon(px, py, activePoints)) {
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
         setIsDraggingMask(true);
@@ -101,10 +132,9 @@ export function PanCropWindow() {
     e.currentTarget.setPointerCapture(e.pointerId);
     isDragging.current = true;
     dragStart.current = { x: e.clientX, y: e.clientY, pcX: pc.x, pcY: pc.y };
-  }, [pc.x, pc.y, maskType, polygonClosed, maskPoints]);
+  }, [pc.x, pc.y, maskType, polygonClosed, activePoints]);
 
   const onCanvasPointerMove = useCallback((e: React.PointerEvent) => {
-    // Center-drag: move entire polygon mask
     if (isDraggingMask) {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -112,11 +142,10 @@ export function PanCropWindow() {
       const py = ((e.clientY - rect.top) / rect.height) * 100;
       const dx = px - maskDragStart.current.x;
       const dy = py - maskDragStart.current.y;
-      const newPoints = maskPoints.map((p) => ({
+      setActivePoints(activePoints.map((p) => ({
         x: Math.max(0, Math.min(100, p.x + dx)),
         y: Math.max(0, Math.min(100, p.y + dy)),
-      }));
-      onPC({ maskPoints: newPoints });
+      })));
       maskDragStart.current = { x: px, y: py };
       return;
     }
@@ -129,7 +158,8 @@ export function PanCropWindow() {
       x: Math.round(Math.max(-100, Math.min(100, dragStart.current.pcX + dx))),
       y: Math.round(Math.max(-100, Math.min(100, dragStart.current.pcY + dy))),
     });
-  }, [isDraggingMask, maskPoints]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDraggingMask, activePoints, setActivePoints]);
 
   const onCanvasPointerUp = useCallback((e: React.PointerEvent) => {
     isDragging.current = false;
@@ -144,17 +174,12 @@ export function PanCropWindow() {
     const x = Math.round(((e.clientX - rect.left) / rect.width) * 10000) / 100;
     const y = Math.round(((e.clientY - rect.top) / rect.height) * 10000) / 100;
 
-    // Auto-close: if clicking near the first point with >=3 points
-    if (maskPoints.length >= 3) {
-      const dist = Math.hypot(x - maskPoints[0].x, y - maskPoints[0].y);
-      if (dist < 10) {
-        setPolygonClosed(true);
-        return;
-      }
+    if (activePoints.length >= 3) {
+      const dist = Math.hypot(x - activePoints[0].x, y - activePoints[0].y);
+      if (dist < 10) { setPolygonClosed(true); return; }
     }
-
-    onPC({ maskPoints: [...maskPoints, { x, y }] });
-  }, [maskType, polygonClosed, maskPoints]);
+    setActivePoints([...activePoints, { x, y }]);
+  }, [maskType, polygonClosed, activePoints, setActivePoints]);
 
   const onCanvasDoubleClick = useCallback((e: React.MouseEvent) => {
     if (maskType !== "polygon") return;
@@ -176,14 +201,42 @@ export function PanCropWindow() {
     if (!rect) return;
     const x = Math.round(((e.clientX - rect.left) / rect.width) * 10000) / 100;
     const y = Math.round(((e.clientY - rect.top) / rect.height) * 10000) / 100;
-    const newPoints = [...maskPoints];
-    newPoints[draggingVertex] = { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
-    onPC({ maskPoints: newPoints });
-  }, [draggingVertex, maskPoints]);
+    const newPts = [...activePoints];
+    newPts[draggingVertex] = { x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) };
+    setActivePoints(newPts);
+  }, [draggingVertex, activePoints, setActivePoints]);
 
   const onVertexPointerUp = useCallback(() => setDraggingVertex(null), []);
 
-  const clearPoints = useCallback(() => { onPC({ maskPoints: [] }); setPolygonClosed(false); setDraggingVertex(null); }, []);
+  const clearPoints = useCallback(() => {
+    setActivePoints([]);
+    setPolygonClosed(false);
+    setDraggingVertex(null);
+  }, [setActivePoints]);
+
+  // ── Save & New: atomically save current polygon → masks[], reset drawing ─
+  const handleSaveAndNew = () => {
+    if (activeMaskLayerIdx !== null) {
+      // Already editing a stored layer; just exit re-edit mode to start a new polygon
+      exitReEdit();
+      return;
+    }
+    if (polygonClosed && activePoints.length >= 3) {
+      // Atomic: save current closed polygon + clear live maskPoints in one store write
+      const savedLayer: MaskLayer = { id: crypto.randomUUID(), points: activePoints, type: "add" };
+      onPC({ maskPoints: [], masks: [...(pc.masks ?? []), savedLayer] });
+      setPolygonClosed(false);
+      setDraggingVertex(null);
+    } else {
+      onPC({ masks: [...(pc.masks ?? []), { id: crypto.randomUUID(), points: [], type: "add" as const }] });
+    }
+  };
+
+  const saveAndNewLabel = activeMaskLayerIdx !== null
+    ? "Done Editing"
+    : polygonClosed && activePoints.length >= 3
+    ? "Save & New"
+    : "+ New Mask";
 
   return (
     <div className="flex h-full min-h-[400px] flex-col bg-[#1a1a1a]">
@@ -193,10 +246,8 @@ export function PanCropWindow() {
             <span className="rounded bg-purple-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white">
               Editing FX Mask
             </span>
-            <button
-              onClick={() => setFxMaskEditingClipId(null)}
-              className="ml-auto rounded bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-200 transition-colors hover:bg-purple-500/40"
-            >
+            <button onClick={() => setFxMaskEditingClipId(null)}
+              className="ml-auto rounded bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-200 transition-colors hover:bg-purple-500/40">
               Done
             </button>
           </>
@@ -218,7 +269,7 @@ export function PanCropWindow() {
           onClick={onCanvasClick}
           onDoubleClick={onCanvasDoubleClick}
         >
-          {/* Preview frame rectangle */}
+          {/* Pan/Crop preview rectangle */}
           <div
             className="absolute inset-0 border-2 border-blue-400/60 bg-blue-400/10"
             style={{
@@ -226,65 +277,57 @@ export function PanCropWindow() {
               transformOrigin: "center center",
             }}
           />
-          {/* Mask overlay preview */}
+
+          {/* Simple mask overlays (rect / circle) */}
           {maskType === "circle" && (
-            <div
-              className="absolute border-2 border-yellow-400/60 rounded-full pointer-events-none"
-              style={{
-                left: `${maskX - Math.min(maskW, maskH) / 2}%`,
-                top: `${maskY - Math.min(maskW, maskH) / 2}%`,
-                width: `${Math.min(maskW, maskH)}%`,
-                height: `${Math.min(maskW, maskH)}%`,
-              }}
-            />
+            <div className="pointer-events-none absolute border-2 border-yellow-400/60 rounded-full"
+              style={{ left: `${maskX - Math.min(maskW, maskH) / 2}%`, top: `${maskY - Math.min(maskW, maskH) / 2}%`, width: `${Math.min(maskW, maskH)}%`, height: `${Math.min(maskW, maskH)}%` }} />
           )}
           {maskType === "rect" && (
-            <div
-              className="absolute border-2 border-yellow-400/60 pointer-events-none"
-              style={{
-                left: `${maskX - maskW / 2}%`,
-                top: `${maskY - maskH / 2}%`,
-                width: `${maskW}%`,
-                height: `${maskH}%`,
-              }}
-            />
+            <div className="pointer-events-none absolute border-2 border-yellow-400/60"
+              style={{ left: `${maskX - maskW / 2}%`, top: `${maskY - maskH / 2}%`, width: `${maskW}%`, height: `${maskH}%` }} />
           )}
-          {/* Polygon SVG overlay — uses viewBox so point coords map to percentages */}
-          {maskType === "polygon" && maskPoints.length > 0 && (
+
+          {/* Ghost outlines: ALL stored masks (non-active ones are dimmed/dashed) */}
+          {maskType === "polygon" && (pc.masks ?? []).map((m, i) => {
+            if (m.points.length < 3) return null;
+            const isActive = i === activeMaskLayerIdx;
+            return (
+              <svg key={m.id} className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <polygon
+                  points={m.points.map((p) => `${p.x},${p.y}`).join(" ")}
+                  fill={isActive ? "rgba(250,204,21,0.08)" : m.type === "subtract" ? "rgba(239,68,68,0.05)" : "rgba(255,255,255,0.04)"}
+                  stroke={isActive ? "#facc15" : "rgba(255,255,255,0.25)"}
+                  strokeWidth={isActive ? "0.6" : "0.4"}
+                  strokeDasharray={isActive ? "none" : "2,2"}
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+            );
+          })}
+
+          {/* Active polygon: current drawing or re-editing stored mask */}
+          {maskType === "polygon" && activePoints.length > 0 && (
             <svg className="absolute inset-0 h-full w-full" style={{ pointerEvents: "none" }} viewBox="0 0 100 100" preserveAspectRatio="none">
-              {/* Lines connecting points */}
-              {maskPoints.length > 1 && (
+              {activePoints.length > 1 && (
                 <polyline
-                  points={maskPoints.map((p) => `${p.x},${p.y}`).join(" ")}
-                  fill={polygonClosed && maskPoints.length > 2 ? "rgba(0,229,255,0.1)" : "none"}
-                  stroke="#00e5ff"
-                  strokeWidth="0.5"
-                  strokeOpacity="0.8"
+                  points={activePoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                  fill={polygonClosed && activePoints.length > 2 ? "rgba(0,229,255,0.12)" : "none"}
+                  stroke="#00e5ff" strokeWidth="0.5" strokeOpacity="0.9"
                   vectorEffect="non-scaling-stroke"
                 />
               )}
-              {/* Closing line when shape is closed */}
-              {polygonClosed && maskPoints.length > 2 && (
+              {polygonClosed && activePoints.length > 2 && (
                 <line
-                  x1={maskPoints[maskPoints.length - 1].x}
-                  y1={maskPoints[maskPoints.length - 1].y}
-                  x2={maskPoints[0].x}
-                  y2={maskPoints[0].y}
-                  stroke="#00e5ff"
-                  strokeWidth="0.5"
-                  strokeOpacity="0.8"
+                  x1={activePoints[activePoints.length - 1].x} y1={activePoints[activePoints.length - 1].y}
+                  x2={activePoints[0].x} y2={activePoints[0].y}
+                  stroke="#00e5ff" strokeWidth="0.5" strokeOpacity="0.9"
                   vectorEffect="non-scaling-stroke"
                 />
               )}
-              {/* Point circles — interactive when polygon is closed */}
-              {maskPoints.map((p, i) => (
-                <circle
-                  key={i}
-                  cx={p.x}
-                  cy={p.y}
-                  r="1.5"
-                  fill={draggingVertex === i ? "#fff" : "#facc15"}
-                  fillOpacity="0.9"
+              {activePoints.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r="1.5"
+                  fill={draggingVertex === i ? "#fff" : "#facc15"} fillOpacity="0.95"
                   style={{ pointerEvents: polygonClosed ? "auto" : "none", cursor: polygonClosed ? (draggingVertex === i ? "grabbing" : "grab") : "default" }}
                   onPointerDown={(e) => onVertexPointerDown(e, i)}
                   onPointerMove={onVertexPointerMove}
@@ -299,36 +342,19 @@ export function PanCropWindow() {
       <div className="flex flex-col gap-3 overflow-y-auto p-3" onPointerDown={(e) => e.stopPropagation()}>
         <SliderField label="X Offset" value={pc.x} min={-100} max={100} onChange={(v) => onPC({ x: v })} />
         <SliderField label="Y Offset" value={pc.y} min={-100} max={100} onChange={(v) => onPC({ y: v })} />
-        <SliderField
-          label={`Scale ${Math.round((pc.scale ?? 1) * 100)}%`}
-          value={Math.round((pc.scale ?? 1) * 100)}
-          min={10} max={500}
-          onChange={(v) => onPC({ scale: v / 100 })}
-        />
+        <SliderField label={`Scale ${Math.round((pc.scale ?? 1) * 100)}%`} value={Math.round((pc.scale ?? 1) * 100)} min={10} max={500} onChange={(v) => onPC({ scale: v / 100 })} />
         <SliderField label="Rotation" value={pc.rotation} min={-360} max={360} onChange={(v) => onPC({ rotation: v })} />
-
-        {/* Reset button */}
-        <button
-          onClick={() => onPC({ x: 0, y: 0, scale: 1, rotation: 0 })}
-          className="rounded bg-white/10 px-2 py-1 text-[10px] font-medium text-white/50 transition-colors hover:bg-white/15 hover:text-white"
-        >
+        <button onClick={() => onPC({ x: 0, y: 0, scale: 1, rotation: 0 })}
+          className="rounded bg-white/10 px-2 py-1 text-[10px] font-medium text-white/50 transition-colors hover:bg-white/15 hover:text-white">
           Reset Transform
         </button>
 
         <div className="h-px bg-white/10" />
 
-        {/* Mask controls */}
         <label className="flex flex-col gap-1">
           <span className="text-[10px] font-medium uppercase tracking-wider text-white/50">Mask Type</span>
-          <select
-            value={maskType}
-            onChange={(e) => {
-              const val = e.target.value as PanCropData["maskType"];
-              onPC({ maskType: val });
-              if (val !== "polygon") setPolygonClosed(false);
-            }}
-            className="rounded bg-white/10 px-2 py-1 text-xs text-white outline-none transition-colors hover:bg-white/15"
-          >
+          <select value={maskType} onChange={(e) => { onPC({ maskType: e.target.value as PanCropData["maskType"] }); if (e.target.value !== "polygon") { setPolygonClosed(false); exitReEdit(); } }}
+            className="rounded bg-white/10 px-2 py-1 text-xs text-white outline-none transition-colors hover:bg-white/15">
             <option value="none" className="text-black">None</option>
             <option value="rect" className="text-black">Rectangle</option>
             <option value="circle" className="text-black">Circle</option>
@@ -347,62 +373,81 @@ export function PanCropWindow() {
 
         {maskType === "polygon" && (
           <>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-white/50">
-                {polygonClosed
-                  ? `${maskPoints.length} points (closed) — drag vertices or drag inside to move`
-                  : `${maskPoints.length} points — click to add, click near start to close`}
-              </span>
+            <div className="text-[10px] text-white/40">
+              {activeMaskLayerIdx !== null
+                ? `Re-editing Layer ${activeMaskLayerIdx + 1} — drag vertices or drag inside to move`
+                : polygonClosed
+                ? `${activePoints.length} pts (closed) — drag vertices or drag inside`
+                : `${activePoints.length} pts — click to add, click near start to close`}
             </div>
-            <button
-              onClick={clearPoints}
-              className="rounded bg-white/10 px-2 py-1 text-[10px] font-medium text-white/50 transition-colors hover:bg-white/15 hover:text-white"
-            >
+            <button onClick={clearPoints}
+              className="rounded bg-white/10 px-2 py-1 text-[10px] font-medium text-white/50 transition-colors hover:bg-white/15 hover:text-white">
               Clear Points
             </button>
           </>
         )}
 
-        {/* Mask Feather / Blur — shown for any active mask */}
         {maskType !== "none" && (
           <>
-            <SliderField
-              label="Mask Blur"
-              value={maskFeather}
-              min={0}
-              max={50}
-              onChange={(v) => onPC({ maskFeather: v })}
-            />
+            <SliderField label="Mask Blur" value={maskFeather} min={0} max={50} onChange={(v) => onPC({ maskFeather: v })} />
             <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={pc.maskInvert ?? false}
-                onChange={(e) => onPC({ maskInvert: e.target.checked })}
-                className="h-3 w-3 cursor-pointer"
-              />
+              <input type="checkbox" checked={pc.maskInvert ?? false} onChange={(e) => onPC({ maskInvert: e.target.checked })} className="h-3 w-3 cursor-pointer" />
               <span className="text-[10px] font-medium text-white/50">Invert Mask</span>
             </label>
           </>
         )}
 
-        {/* Multi-Mask Layers */}
+        {/* Multi-Mask Layers — polygon mode only */}
         {maskType === "polygon" && (
           <>
             <div className="h-px bg-white/10" />
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-medium uppercase tracking-wider text-white/50">Mask Layers</span>
-              <button onClick={() => onPC({ masks: [...(pc.masks ?? []), { id: crypto.randomUUID(), points: [], type: "add" as const }] })} className="rounded bg-white/10 px-2 py-0.5 text-[9px] font-medium text-white/50 hover:bg-white/15 hover:text-white">+ New Mask</button>
+              <button onClick={handleSaveAndNew}
+                className="rounded bg-white/10 px-2 py-0.5 text-[9px] font-medium text-white/50 hover:bg-white/15 hover:text-white">
+                {saveAndNewLabel}
+              </button>
             </div>
-            {(pc.masks ?? []).map((m, i) => (
-              <div key={m.id} className="flex items-center gap-1 text-[9px] text-white/40">
-                <span className="flex-1 truncate">Layer {i + 1} ({m.points.length} pts)</span>
-                <select value={m.type} onChange={(e) => { const ms = [...(pc.masks ?? [])]; ms[i] = { ...m, type: e.target.value as "add" | "subtract" }; onPC({ masks: ms }); }} className="rounded bg-white/10 px-1 py-0.5 text-[8px] text-white outline-none">
-                  <option value="add" className="text-black">Add</option>
-                  <option value="subtract" className="text-black">Subtract</option>
-                </select>
-                <button onClick={() => onPC({ masks: (pc.masks ?? []).filter((_, j) => j !== i) })} className="rounded px-1 py-0.5 text-red-400/60 hover:text-red-400">×</button>
+
+            {/* Live drawing as a "layer 0" indicator when it has points */}
+            {activeMaskLayerIdx === null && activePoints.length >= 3 && (
+              <div className="flex items-center gap-1 rounded border border-cyan-400/30 bg-cyan-400/5 px-2 py-1 text-[9px] text-cyan-300">
+                <span className="flex-1">Active Drawing · {activePoints.length} pts</span>
+                <span className="rounded bg-cyan-400/20 px-1 py-0.5 text-[8px] font-bold uppercase">Live</span>
               </div>
-            ))}
+            )}
+
+            {(pc.masks ?? []).map((m, i) => {
+              const isActive = i === activeMaskLayerIdx;
+              return (
+                <div key={m.id}
+                  className={`flex items-center gap-1 rounded border px-2 py-1 text-[9px] transition-colors ${
+                    isActive
+                      ? "border-yellow-400/40 bg-yellow-400/8 text-yellow-200"
+                      : "border-white/10 bg-white/5 text-white/50 hover:border-white/20"
+                  }`}
+                >
+                  {/* Click to enter re-edit mode */}
+                  <button
+                    onClick={() => isActive ? exitReEdit() : enterReEdit(i)}
+                    className="flex flex-1 items-center gap-1.5 truncate text-left"
+                    title={isActive ? "Click to stop editing" : "Click to re-edit this mask"}
+                  >
+                    <span className={`font-mono text-[8px] ${isActive ? "text-yellow-300" : "text-white/30"}`}>✎</span>
+                    <span className="truncate">Layer {i + 1} · {m.points.length} pts</span>
+                    {isActive && <span className="ml-auto shrink-0 rounded bg-yellow-400/20 px-1 py-0.5 text-[8px] font-bold text-yellow-300">Editing</span>}
+                  </button>
+                  <select value={m.type}
+                    onChange={(e) => { const ms = [...(pc.masks ?? [])]; ms[i] = { ...m, type: e.target.value as "add" | "subtract" }; onPC({ masks: ms }); }}
+                    className="rounded bg-white/10 px-1 py-0.5 text-[8px] text-white outline-none">
+                    <option value="add" className="text-black">Add</option>
+                    <option value="subtract" className="text-black">Subtract</option>
+                  </select>
+                  <button onClick={() => { onPC({ masks: (pc.masks ?? []).filter((_, j) => j !== i) }); if (activeMaskLayerIdx === i) exitReEdit(); }}
+                    className="shrink-0 rounded px-1 py-0.5 text-red-400/60 hover:text-red-400">×</button>
+                </div>
+              );
+            })}
           </>
         )}
       </div>
@@ -410,9 +455,7 @@ export function PanCropWindow() {
   );
 }
 
-function SliderField({
-  label, value, min = 0, max = 100, onChange,
-}: {
+function SliderField({ label, value, min = 0, max = 100, onChange }: {
   label: string; value: number; min?: number; max?: number; onChange: (v: number) => void;
 }) {
   return (
@@ -421,11 +464,9 @@ function SliderField({
         <span className="text-[10px] font-medium uppercase tracking-wider text-white/50">{label}</span>
         <span className="text-[10px] tabular-nums text-white/40">{value}</span>
       </div>
-      <input
-        type="range" min={min} max={max} value={value}
+      <input type="range" min={min} max={max} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-1 w-full cursor-pointer"
-      />
+        className="h-1 w-full cursor-pointer" />
     </label>
   );
 }

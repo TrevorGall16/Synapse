@@ -7,15 +7,11 @@ import { usePlaybackStore } from "@/lib/store/playback-store";
 import { Settings, Crop, Volume2 } from "lucide-react";
 import { ClipFilmstrip } from "./clip-filmstrip";
 import { ClipWaveform } from "./clip-waveform";
+import { ClipContextMenu } from "./clip-context-menu";
+import { snapToNearby } from "@/lib/utils/snap";
 
-function snapToBpmGrid(micros: number, pps: number): number {
-  const { globalBpm } = usePlaybackStore.getState();
-  if (globalBpm <= 0) return micros;
-  const beatMicros = Math.round(60_000_000 / globalBpm);
-  const snapThresholdMicros = Math.round((6 / pps) * 1_000_000);
-  const nearest = Math.round(micros / beatMicros) * beatMicros;
-  return Math.abs(micros - nearest) < snapThresholdMicros ? nearest : micros;
-}
+const SNAP_BREAK_PX = 20;    // px/pointermove — break out of snap magnets when dragging fast
+const HARD_SNAP_OVERSHOOT_PX = 15; // px past a hard snap point before overlap is allowed
 
 interface ClipEventBlockProps {
   clip: ClipEvent;
@@ -33,8 +29,10 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const label = media?.name ?? clip.sourceId;
   const track = tracks.find((t) => t.id === trackId);
   const isSelected = selectedClipIds.includes(clip.id);
+  const isCollapsed = trackHeight <= 24;
 
   const isDragging = useRef(false);
+  const hardSnapLock = useRef<number | null>(null); // micros of the locked hard-snap position
   const isEdgeDragging = useRef<"left" | "right" | false>(false);
   const isLevelDragging = useRef(false);
   const isStretchDragging = useRef(false);
@@ -47,12 +45,12 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const startPos = useRef({ x: 0, y: 0, time: 0, trackId: "" });
   const accumY = useRef(0);
   const [levelTooltip, setLevelTooltip] = useState<number | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   const xPx = (clip.startTime / 1_000_000) * pixelsPerSecond;
   const wPx = (clip.duration / 1_000_000) * pixelsPerSecond;
   const clipLevel = clip.level ?? 100;
 
-  // Fade overlay widths
   const fadeInPx = clip.fadeInDuration ? (clip.fadeInDuration / 1_000_000) * pixelsPerSecond : 0;
   const fadeOutPx = clip.fadeOutDuration ? (clip.fadeOutDuration / 1_000_000) * pixelsPerSecond : 0;
 
@@ -62,29 +60,29 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       e.stopPropagation();
 
       // Select this clip (+ all grouped clips)
-      const { setSelectedClipIds, tracks: allTracks } = useProjectStore.getState();
+      const { setSelectedClipIds, tracks: allTracks, snapshotHistory } = useProjectStore.getState();
       const groupIds: string[] = [clip.id];
       if (clip.groupId) {
         for (const t of allTracks) {
           for (const c of t.clips) {
-            if (c.groupId === clip.groupId && c.id !== clip.id) {
-              groupIds.push(c.id);
-            }
+            if (c.groupId === clip.groupId && c.id !== clip.id) groupIds.push(c.id);
           }
         }
       }
       if (e.shiftKey) {
-        const existing = useProjectStore.getState().selectedClipIds;
-        setSelectedClipIds([...existing, ...groupIds]);
+        setSelectedClipIds([...useProjectStore.getState().selectedClipIds, ...groupIds]);
       } else {
         setSelectedClipIds(groupIds);
       }
 
-      // Move playhead to click position within clip
+      // Track the exact source track for the V shortcut
+      useProjectStore.getState().setSelectedTrackId(trackId);
+
+      // Snapshot before drag for undo
+      snapshotHistory("Move Clip");
+
       const rect = e.currentTarget.getBoundingClientRect();
-      const clickTime = clip.startTime + Math.round(
-        ((e.clientX - rect.left) / pixelsPerSecond) * 1_000_000
-      );
+      const clickTime = clip.startTime + Math.round(((e.clientX - rect.left) / pixelsPerSecond) * 1_000_000);
       usePlaybackStore.getState().setPlayhead(clickTime);
 
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -99,21 +97,51 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       if (!isDragging.current) return;
 
+      const speed = Math.abs(e.movementX);
       const deltaX = e.clientX - startPos.current.x;
       const rawDelta = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
-      const newStart = snapToBpmGrid(startPos.current.time + rawDelta, pixelsPerSecond);
-      const deltaTime = newStart - clip.startTime;
+      const targetTime = Math.max(0, startPos.current.time + rawDelta);
 
+      // Always advance x reference for buttery motion (even when snapped)
+      startPos.current.x = e.clientX;
+
+      let newStart: number;
+
+      if (speed > SNAP_BREAK_PX) {
+        // Dead-zone: bypass all magnets when dragging fast
+        newStart = targetTime;
+        hardSnapLock.current = null;
+        usePlaybackStore.getState().setSnapIndicator(null);
+      } else if (hardSnapLock.current !== null) {
+        // We're locked on a hard snap — require HARD_SNAP_OVERSHOOT_PX to break free
+        const lockPx = Math.abs((targetTime - hardSnapLock.current) / 1_000_000) * pixelsPerSecond;
+        if (lockPx < HARD_SNAP_OVERSHOOT_PX) {
+          // Stay locked
+          newStart = hardSnapLock.current;
+          usePlaybackStore.getState().setSnapIndicator(hardSnapLock.current, true);
+        } else {
+          // Break free — allow overlap / crossfade territory
+          hardSnapLock.current = null;
+          newStart = targetTime;
+          usePlaybackStore.getState().setSnapIndicator(null);
+        }
+      } else {
+        const result = snapToNearby(targetTime, pixelsPerSecond, clip.id);
+        newStart = result.time;
+        if (result.isHard && result.time !== targetTime) {
+          // Engage hard snap lock
+          hardSnapLock.current = result.time;
+        }
+      }
+
+      const deltaTime = newStart - clip.startTime;
       accumY.current += e.movementY;
       const trackJumps = Math.trunc(accumY.current / trackHeight);
 
       if (deltaTime !== 0 || trackJumps !== 0) {
         useProjectStore.getState().moveClip(clip.id, deltaTime, trackJumps);
-        startPos.current.x = e.clientX;
         startPos.current.time = clip.startTime + deltaTime;
-        if (trackJumps !== 0) {
-          accumY.current -= trackJumps * trackHeight;
-        }
+        if (trackJumps !== 0) accumY.current -= trackJumps * trackHeight;
       }
     },
     [clip.id, clip.startTime, pixelsPerSecond, trackHeight]
@@ -122,17 +150,20 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const onPointerUp = useCallback(
     (e: React.PointerEvent) => {
       isDragging.current = false;
+      hardSnapLock.current = null;
       accumY.current = 0;
       e.currentTarget.releasePointerCapture(e.pointerId);
+      usePlaybackStore.getState().setSnapIndicator(null);
     },
     []
   );
 
-  // ── Edge trim handlers (left/right — trim only) ────────
+  // ── Edge trim handlers ──────────────────────────────────
   const onEdgeDown = useCallback(
     (edge: "left" | "right", e: React.PointerEvent) => {
       e.stopPropagation();
       e.currentTarget.setPointerCapture(e.pointerId);
+      useProjectStore.getState().snapshotHistory("Trim Clip");
       isEdgeDragging.current = edge;
       edgeStartX.current = e.clientX;
     },
@@ -144,11 +175,10 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       if (!isEdgeDragging.current) return;
       const deltaX = e.clientX - edgeStartX.current;
       const rawDelta = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
-      // Snap the resulting edge to BPM grid
       const edge = isEdgeDragging.current === "left"
         ? clip.startTime + rawDelta
         : clip.startTime + clip.duration + rawDelta;
-      const snappedEdge = snapToBpmGrid(edge, pixelsPerSecond);
+      const { time: snappedEdge } = snapToNearby(edge, pixelsPerSecond, clip.id);
       const deltaMicros = isEdgeDragging.current === "left"
         ? snappedEdge - clip.startTime
         : snappedEdge - (clip.startTime + clip.duration);
@@ -162,15 +192,17 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       isEdgeDragging.current = false;
       e.currentTarget.releasePointerCapture(e.pointerId);
+      usePlaybackStore.getState().setSnapIndicator(null);
     },
     []
   );
 
-  // ── Top-edge level drag (opacity/volume) ───────────────
+  // ── Top-edge level drag ──────────────────────────────────
   const onLevelDown = useCallback(
     (e: React.PointerEvent) => {
       e.stopPropagation();
       e.currentTarget.setPointerCapture(e.pointerId);
+      useProjectStore.getState().snapshotHistory("Adjust Level");
       isLevelDragging.current = true;
       levelStartY.current = e.clientY;
       levelStartVal.current = clip.level ?? 100;
@@ -199,11 +231,12 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     []
   );
 
-  // ── Fade handle drag ────────────────────────────────────
+  // ── Fade handle drag ─────────────────────────────────────
   const onFadeDown = useCallback(
     (edge: "in" | "out", e: React.PointerEvent) => {
       e.stopPropagation();
       e.currentTarget.setPointerCapture(e.pointerId);
+      useProjectStore.getState().snapshotHistory("Adjust Fade");
       isFadeDragging.current = edge;
       fadeStartX.current = e.clientX;
     },
@@ -217,11 +250,9 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       const deltaMicros = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
       const store = useProjectStore.getState();
       if (isFadeDragging.current === "in") {
-        const cur = clip.fadeInDuration ?? 0;
-        store.setClipFade(clip.id, "in", Math.max(0, cur + deltaMicros));
+        store.setClipFade(clip.id, "in", Math.max(0, (clip.fadeInDuration ?? 0) + deltaMicros));
       } else {
-        const cur = clip.fadeOutDuration ?? 0;
-        store.setClipFade(clip.id, "out", Math.max(0, cur - deltaMicros));
+        store.setClipFade(clip.id, "out", Math.max(0, (clip.fadeOutDuration ?? 0) - deltaMicros));
       }
       fadeStartX.current = e.clientX;
     },
@@ -236,11 +267,12 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     []
   );
 
-  // ── Bottom-right corner stretch handle ─────────────────
+  // ── Time-stretch handle ──────────────────────────────────
   const onStretchDown = useCallback(
     (e: React.PointerEvent) => {
       e.stopPropagation();
       e.currentTarget.setPointerCapture(e.pointerId);
+      useProjectStore.getState().snapshotHistory("Time Stretch");
       isStretchDragging.current = true;
       edgeStartX.current = e.clientX;
       edgeOrigDuration.current = clip.duration;
@@ -277,22 +309,39 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
         backgroundColor: trackColor + "40",
         borderLeft: `2px solid ${trackColor}`,
       }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
-      {/* Filmstrip for video clips */}
-      {track?.type === "video" && media?.previewUrl && (
+      {/* Filmstrip — only in expanded mode */}
+      {!isCollapsed && track?.type === "video" && media?.previewUrl && (
         <ClipFilmstrip clip={clip} media={media} clipWidthPx={wPx} />
       )}
 
-      {/* Waveform for audio clips */}
-      {track?.type === "audio" && (
-        <ClipWaveform sourceId={clip.sourceId} clipWidthPx={wPx} trackColor={trackColor} trackHeight={trackHeight} />
+      {/* Waveform — only in expanded mode */}
+      {!isCollapsed && track?.type === "audio" && (
+        <ClipWaveform sourceId={clip.sourceId} clipWidthPx={wPx} trackHeight={trackHeight} />
       )}
 
-      {/* Fade-in triangle overlay (top-left) — draggable */}
-      {fadeInPx > 0 && (
+      {/* Auto fade-in gradient (crossfade — no drag handle, just visual) */}
+      {fadeInPx > 0 && !clip.manualFadeIn && (
+        <div
+          className="pointer-events-none absolute left-0 top-0 h-full"
+          style={{ width: Math.max(fadeInPx, 4), background: "linear-gradient(to right, rgba(0,0,0,0.55), transparent)" }}
+        />
+      )}
+
+      {/* Auto fade-out gradient (crossfade — no drag handle) */}
+      {fadeOutPx > 0 && !clip.manualFadeOut && (
+        <div
+          className="pointer-events-none absolute right-0 top-0 h-full"
+          style={{ width: Math.max(fadeOutPx, 4), background: "linear-gradient(to left, rgba(0,0,0,0.55), transparent)" }}
+        />
+      )}
+
+      {/* Manual fade-in triangle (user-set via drag) */}
+      {fadeInPx > 0 && clip.manualFadeIn && (
         <svg
           className="absolute top-0 left-0 z-20 h-full cursor-ew-resize"
           style={{ width: Math.max(fadeInPx, 6) }}
@@ -307,8 +356,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
         </svg>
       )}
 
-      {/* Fade-out triangle overlay (top-right) — draggable */}
-      {fadeOutPx > 0 && (
+      {/* Manual fade-out triangle */}
+      {fadeOutPx > 0 && clip.manualFadeOut && (
         <svg
           className="absolute top-0 right-0 z-20 h-full cursor-ew-resize"
           style={{ width: Math.max(fadeOutPx, 6) }}
@@ -323,14 +372,16 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
         </svg>
       )}
 
-      {/* Level line (opacity/volume indicator) */}
-      <div
-        className="pointer-events-none absolute left-0 z-10 w-full border-t border-yellow-400/70"
-        style={{ top: `${100 - clipLevel}%` }}
-      />
+      {/* Level line */}
+      {!isCollapsed && (
+        <div
+          className="pointer-events-none absolute left-0 z-10 w-full border-t border-yellow-400/70"
+          style={{ top: `${100 - clipLevel}%` }}
+        />
+      )}
 
-      {/* Level badge / drag tooltip */}
-      {(clipLevel !== 100 || levelTooltip !== null) && (
+      {/* Level badge */}
+      {!isCollapsed && (clipLevel !== 100 || levelTooltip !== null) && (
         <span className="absolute right-1 top-0 z-10 text-[8px] tabular-nums text-yellow-400/80">
           {levelTooltip ?? clipLevel}%
         </span>
@@ -346,27 +397,31 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
         )}
       </span>
 
-      {/* Inspector button (type-specific icon) */}
-      <button
-        className="absolute right-1 top-1 z-20 rounded p-0.5 text-white/40 transition-colors hover:bg-white/15 hover:text-white"
-        aria-label="Clip settings"
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          const store = useProjectStore.getState();
-          store.setInspectingClipId(clip.id);
-          store.setActiveUISection("inspector");
-        }}
-      >
-        {track?.type === "video" ? <Crop size={12} /> : track?.type === "audio" ? <Volume2 size={12} /> : <Settings size={12} />}
-      </button>
+      {/* Inspector button */}
+      {!isCollapsed && (
+        <button
+          className="absolute right-1 top-1 z-20 rounded p-0.5 text-white/40 transition-colors hover:bg-white/15 hover:text-white"
+          aria-label="Clip settings"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            const store = useProjectStore.getState();
+            store.setInspectingClipId(clip.id);
+            store.setActiveUISection("inspector");
+          }}
+        >
+          {track?.type === "video" ? <Crop size={12} /> : track?.type === "audio" ? <Volume2 size={12} /> : <Settings size={12} />}
+        </button>
+      )}
 
       {/* Top-edge level drag handle */}
-      <div
-        className="absolute left-0 top-0 z-30 h-2.5 w-full cursor-ns-resize"
-        onPointerDown={onLevelDown}
-        onPointerMove={onLevelMove}
-        onPointerUp={onLevelUp}
-      />
+      {!isCollapsed && (
+        <div
+          className="absolute left-0 top-0 z-30 h-2.5 w-full cursor-ns-resize"
+          onPointerDown={onLevelDown}
+          onPointerMove={onLevelMove}
+          onPointerUp={onLevelUp}
+        />
+      )}
 
       {/* Edge trim handles */}
       <div
@@ -377,19 +432,31 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       />
       <div
         className="absolute right-0 top-0 z-20 w-2 cursor-ew-resize"
-        style={{ height: "calc(100% - 10px)" }}
+        style={{ height: isCollapsed ? "100%" : "calc(100% - 10px)" }}
         onPointerDown={(e) => onEdgeDown("right", e)}
         onPointerMove={onEdgeMove}
         onPointerUp={onEdgeUp}
       />
 
-      {/* Bottom-right corner: time-stretch handle */}
-      <div
-        className="absolute right-0 bottom-0 z-40 h-2.5 w-2.5 cursor-nwse-resize rounded-tl bg-white/20"
-        onPointerDown={onStretchDown}
-        onPointerMove={onStretchMove}
-        onPointerUp={onStretchUp}
-      />
+      {/* Bottom-right stretch handle */}
+      {!isCollapsed && (
+        <div
+          className="absolute right-0 bottom-0 z-40 h-2.5 w-2.5 cursor-nwse-resize rounded-tl bg-white/20"
+          onPointerDown={onStretchDown}
+          onPointerMove={onStretchMove}
+          onPointerUp={onStretchUp}
+        />
+      )}
+
+      {ctxMenu && (
+        <ClipContextMenu
+          clipId={clip.id}
+          trackId={trackId}
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   );
 }

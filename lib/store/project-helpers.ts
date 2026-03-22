@@ -82,7 +82,6 @@ export function computeMove(
   deltaTime: number,
   deltaTrack: number,
   getPlaybackState: () => { pixelsPerSecond: number; globalBpm: number; rippleMode: boolean },
-  getGridIntervalFn: (pps: number) => number,
 ): { tracks: Track[]; duration: number } | null {
   if (deltaTime === 0 && deltaTrack === 0) return null;
 
@@ -97,32 +96,9 @@ export function computeMove(
   const moves: { clipId: string; fromIdx: number; toIdx: number; newStartTime: number }[] = [];
   const affectedTrackIndices = new Set<number>();
 
-  let snappedDeltaTime = deltaTime;
-  if (state.snapEnabled && deltaTime !== 0) {
-    const { pixelsPerSecond, globalBpm } = getPlaybackState();
-    const rawStart = Math.max(0, Math.round(target.clip.startTime + deltaTime));
-    const intervalSec = getGridIntervalFn(pixelsPerSecond);
-    const gridMicros = Math.round(intervalSec * 1_000_000);
-    const nearestGrid = Math.round(rawStart / gridMicros) * gridMicros;
-    const thresholdMicros = Math.round((10 / pixelsPerSecond) * 1_000_000);
-
-    // BPM snap candidate
-    let bestCandidate = nearestGrid;
-    let bestDist = Math.abs(rawStart - nearestGrid);
-    if (globalBpm > 0) {
-      const beatMicros = Math.round(60_000_000 / globalBpm);
-      const nearestBeat = Math.round(rawStart / beatMicros) * beatMicros;
-      const beatDist = Math.abs(rawStart - nearestBeat);
-      if (beatDist < bestDist) {
-        bestCandidate = nearestBeat;
-        bestDist = beatDist;
-      }
-    }
-
-    if (bestDist < thresholdMicros) {
-      snappedDeltaTime = bestCandidate - target.clip.startTime;
-    }
-  }
+  // Snap is handled entirely by snapToNearby() in the UI layer before moveClip() is called.
+  // computeMove receives the already-snapped deltaTime — no double-snap here.
+  const snappedDeltaTime = deltaTime;
 
   for (const member of groupMembers) {
     const newStartTime = quantizeToFrame(Math.max(0, Math.round(member.clip.startTime + snappedDeltaTime)));

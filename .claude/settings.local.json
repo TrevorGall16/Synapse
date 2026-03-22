@@ -23,7 +23,9 @@
       "Bash(cd \"D:/Projects/Synapse\" && npm run build 2>&1 | tail -25)",
       "Bash(cd D:/Projects/Synapse && npm run build 2>&1 | tail -40)",
       "Bash(npx next:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find /d/Projects/Synapse/lib -name *.ts -type f)",
+      "Bash(npm install:*)"
     ]
   }
 }

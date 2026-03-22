@@ -109,6 +109,27 @@ export function buildFeatheredMask(
     </mask>`;
 }
 
+/**
+ * Build a masked-FX overlay filter using feComposite operator="in".
+ *
+ * This filter is applied via CSS `filter: url(#<id>)` on the PreviewFxMaskOverlay div,
+ * whose shape is already constrained by CSS clip-path. The feComposite "in" op clips
+ * the rendered output to SourceAlpha — the element's own alpha channel after clip-path —
+ * so the effect is strictly contained within the mask region (no global leakage).
+ *
+ * The rAF loop can chain additional CSS filter functions after the url() reference,
+ * e.g. `filter: url(#masked-fx-abc) hue-rotate(90deg)`.
+ */
+export function buildMaskedFxOverlayFilter(id: string): string {
+  return `
+    <filter id="${id}" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <!-- Pass SourceGraphic through as-is, then composite "in" with SourceAlpha.
+           SourceAlpha reflects the element's alpha AFTER clip-path paints it,
+           so pixels outside the clip-path region are eliminated here. -->
+      <feComposite in="SourceGraphic" in2="SourceAlpha" operator="in"/>
+    </filter>`;
+}
+
 /** Collect all SVG defs needed for the current FX state */
 export function collectSvgDefs(
   effectClips: ClipEvent[],
@@ -130,6 +151,12 @@ export function collectSvgDefs(
     if (effectType === "pixelate") {
       const blockSize = Math.max(2, Math.round(Number(c.fxParams?.blockSize ?? 8) * levelScale));
       defs.push(buildPixelateFilter(`pix-${c.id}`, blockSize));
+    }
+
+    // For masked clips: emit a feComposite "in" overlay filter to prevent global leakage
+    const fxMask = c.fxParams?.fxMask as { maskType?: string } | undefined;
+    if (fxMask?.maskType && fxMask.maskType !== "none") {
+      defs.push(buildMaskedFxOverlayFilter(`masked-fx-${c.id}`));
     }
   }
 

@@ -15,6 +15,9 @@ export interface PlaybackState {
   loopRegion?: { in: number; out: number };
   selectionStart: number | null;
   selectionEnd: number | null;
+  snapIndicatorMicros: number | null;
+  /** true when the active snap is a "Perfect Cut" (end-to-start, 0 overlap) — renders white line */
+  snapIsHardCut: boolean;
   setPlayhead: (time: number) => void;
   togglePlayback: () => void;
   setZoom: (zoom: number) => void;
@@ -22,6 +25,8 @@ export interface PlaybackState {
   setContainerWidth: (width: number) => void;
   setSelection: (start: number | null, end: number | null) => void;
   clearSelection: () => void;
+  /** Pass isHard=true to show a white "Perfect Cut" line instead of cyan crossfade line. */
+  setSnapIndicator: (micros: number | null, isHard?: boolean) => void;
   masterVolume: number;
   setMasterVolume: (vol: number) => void;
   globalBpm: number;
@@ -40,6 +45,8 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   loopRegion: undefined,
   selectionStart: null,
   selectionEnd: null,
+  snapIndicatorMicros: null,
+  snapIsHardCut: false,
 
   setPlayhead: (time) =>
     set(() => {
@@ -61,6 +68,9 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
 
   setSelection: (start, end) => set({ selectionStart: start, selectionEnd: end }),
   clearSelection: () => set({ selectionStart: null, selectionEnd: null }),
+
+  setSnapIndicator: (micros, isHard = false) =>
+    set({ snapIndicatorMicros: micros, snapIsHardCut: micros !== null ? isHard : false }),
 
   masterVolume: 100,
   setMasterVolume: (vol) => set({ masterVolume: Math.max(0, Math.min(100, Math.round(vol))) }),
