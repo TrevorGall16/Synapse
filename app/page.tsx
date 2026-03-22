@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, useMemo } from "react";
+import { useRef, useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Heart, MessageCircle, Share2, Zap, TrendingUp, Play, Pause, Flame, Upload, Globe, User } from "lucide-react";
+import { Heart, MessageCircle, Share2, Zap, TrendingUp, Play, Pause, Flame, Upload, Globe, User, ArrowUp } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useProjectsRegistry } from "@/lib/store/projects-registry";
 import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
@@ -40,6 +40,22 @@ const MOCK_POSTS: FeedPost[] = [
 const STATIC_TAGS = Array.from(new Set(MOCK_POSTS.flatMap((p) => p.tags)));
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
 
+// ── Deterministic infinite-scroll generator ───────────────────────────────────
+function generateMorePosts(pageNum: number): FeedPost[] {
+  return Array.from({ length: 10 }, (_, i) => {
+    const src     = MOCK_POSTS[(pageNum * 10 + i) % MOCK_POSTS.length];
+    const variant = pageNum * 10 + i + 10;
+    return {
+      ...src,
+      id:       `gen-${pageNum}-${i}`,
+      title:    `${src.title} • Vol. ${pageNum + 1}`,
+      likes:    src.likes    + variant * 37,
+      comments: src.comments + variant * 7,
+      featured: false,
+    };
+  });
+}
+
 // ── Niche chip ────────────────────────────────────────────────────────────────
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
@@ -57,6 +73,15 @@ function PostCard({ post, onOpen, onRemix, onCreator }: { post: FeedPost; onOpen
   const [hovered, setHovered] = useState(false);
   const [liked, setLiked] = useState(false);
 
+  // Seek to first frame as soon as metadata loads — gives static poster with no hover
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !post.videoUrl) return;
+    const onMeta = () => { v.currentTime = 0.001; };
+    v.addEventListener("loadedmetadata", onMeta);
+    return () => v.removeEventListener("loadedmetadata", onMeta);
+  }, [post.videoUrl]);
+
   const handleMouseEnter = () => {
     setHovered(true);
     if (videoRef.current && post.videoUrl) {
@@ -66,7 +91,7 @@ function PostCard({ post, onOpen, onRemix, onCreator }: { post: FeedPost; onOpen
   };
   const handleMouseLeave = () => {
     setHovered(false);
-    if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0; }
+    if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0.001; }
   };
 
   return (
@@ -77,8 +102,8 @@ function PostCard({ post, onOpen, onRemix, onCreator }: { post: FeedPost; onOpen
       onMouseLeave={handleMouseLeave}
     >
       <div className="relative" style={{ aspectRatio: "9/16", background: post.bg }}>
-        {/* Waveform bars (visible when no video / before hover) */}
-        <div className={`absolute inset-0 flex items-end gap-[2px] px-2 pb-28 transition-opacity duration-500 ${hovered && post.videoUrl ? "opacity-0" : "opacity-20"}`} aria-hidden>
+        {/* Waveform bars — hidden when video is present */}
+        <div className={`absolute inset-0 flex items-end gap-[2px] px-2 pb-28 transition-opacity duration-500 ${post.videoUrl ? "opacity-0" : "opacity-20"}`} aria-hidden>
           {Array.from({ length: 32 }).map((_, i) => (
             <div key={i} className="flex-1 animate-pulse rounded-t-[2px]"
               style={{ background: post.accent, height: `${18 + Math.sin(i * 0.75) * 38 + (i % 5) * 8}%`, animationDelay: `${(i * 60) % 1000}ms` }}
@@ -86,12 +111,12 @@ function PostCard({ post, onOpen, onRemix, onCreator }: { post: FeedPost; onOpen
           ))}
         </div>
 
-        {/* Hover video preview — muted, loops first 5s */}
+        {/* Video — shows first frame always; plays on hover */}
         <video
           ref={videoRef}
           src={post.videoUrl}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${hovered && post.videoUrl ? "opacity-100" : "opacity-0"}`}
-          muted loop playsInline preload="none"
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${post.videoUrl ? "opacity-100" : "opacity-0"}`}
+          muted loop playsInline preload="metadata"
         />
 
         {/* Glow + base gradient */}
@@ -158,21 +183,13 @@ function PublishedCard({ name, onOpen }: { name: string; onOpen: () => void }) {
   return (
     <article className="group relative cursor-pointer overflow-hidden rounded-xl border border-purple-500/18 bg-[#1a1a1a] transition-all hover:border-purple-500/38 hover:-translate-y-0.5">
       <div className="relative flex flex-col" style={{ aspectRatio: "9/16" }}>
-        <div className="flex flex-1 items-center justify-center bg-gradient-to-b from-purple-900/22 to-[#141414]">
-          <Globe size={20} className="text-purple-400/28" />
-        </div>
-        <div className="absolute left-2 top-2">
-          <span className="flex items-center gap-0.5 rounded-full bg-purple-500/75 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-white"><Globe size={7} />Live</span>
-        </div>
+        <div className="flex flex-1 items-center justify-center bg-gradient-to-b from-purple-900/22 to-[#141414]"><Globe size={20} className="text-purple-400/28" /></div>
+        <div className="absolute left-2 top-2"><span className="flex items-center gap-0.5 rounded-full bg-purple-500/75 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-white"><Globe size={7} />Live</span></div>
         <div className="absolute inset-x-0 bottom-0 translate-y-1 bg-gradient-to-t from-black/80 to-transparent p-3 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100">
           <p className="mb-2 truncate text-[11px] font-semibold text-white">{name}</p>
-          <button onClick={onOpen} className="flex w-full items-center justify-center gap-1 rounded-lg bg-purple-500/28 py-1.5 text-[10px] font-bold text-purple-200 hover:bg-purple-500/42">
-            <Zap size={9} />Open in Studio
-          </button>
+          <button onClick={onOpen} className="flex w-full items-center justify-center gap-1 rounded-lg bg-purple-500/28 py-1.5 text-[10px] font-bold text-purple-200 hover:bg-purple-500/42"><Zap size={9} />Open in Studio</button>
         </div>
-        <div className="absolute inset-x-0 bottom-0 p-3 transition-opacity group-hover:opacity-0">
-          <p className="truncate text-[10px] font-semibold text-white/55">{name}</p>
-        </div>
+        <div className="absolute inset-x-0 bottom-0 p-3 transition-opacity group-hover:opacity-0"><p className="truncate text-[10px] font-semibold text-white/55">{name}</p></div>
       </div>
     </article>
   );
@@ -182,8 +199,7 @@ function PublishedCard({ name, onOpen }: { name: string; onOpen: () => void }) {
 function Toast({ msg }: { msg: string }) {
   return (
     <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-full border border-white/14 bg-[#1c1c1c]/95 px-4 py-2.5 shadow-xl backdrop-blur-sm">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-purple-400" />
-      <span className="text-xs font-semibold text-white/90">{msg}</span>
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-purple-400" /><span className="text-xs font-semibold text-white/90">{msg}</span>
     </div>
   );
 }
@@ -196,6 +212,11 @@ export default function DiscoveryFeedPage() {
   const [activeTag, setActiveTag]     = useState<string | null>(null);
   const [toast, setToast]             = useState<string | null>(null);
 
+  const [loadedPages, setLoadedPages]   = useState(1);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const sentinelRef        = useRef<HTMLDivElement>(null);
+
   const publishedProjects = useProjectsRegistry((s) => s.projects);
   const userPosts  = useFeedStore((s) => s.userPosts);
   const forkProject  = useProjectStore((s) => s.forkProject);
@@ -204,14 +225,40 @@ export default function DiscoveryFeedPage() {
   const loadProject  = useProjectStore((s) => s.loadProject);
   const tracks       = useProjectStore((s) => s.tracks);
 
-  // Merge user posts + mock posts; deduplicate tags for filter bar
-  const allPosts = useMemo(() => [...userPosts, ...MOCK_POSTS], [userPosts]);
+  // Merge user posts + infinite mock pages; deduplicate tags for filter bar
+  const allMockPosts = useMemo(() => {
+    const extra: FeedPost[] = [];
+    for (let p = 1; p < loadedPages; p++) extra.push(...generateMorePosts(p));
+    return [...MOCK_POSTS, ...extra];
+  }, [loadedPages]);
+  const allPosts = useMemo(() => [...userPosts, ...allMockPosts], [userPosts, allMockPosts]);
   const allTags  = useMemo(() => {
     const seen = new Set(STATIC_TAGS);
     userPosts.flatMap((p) => p.tags).forEach((t) => seen.add(t));
     return Array.from(seen);
   }, [userPosts]);
   const displayPosts = activeTag ? allPosts.filter((p) => p.tags.includes(activeTag)) : allPosts;
+
+  // Infinite scroll — load more when sentinel enters viewport
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setLoadedPages((p) => p + 1); },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Back-to-top visibility
+  const handleScroll = useCallback(() => {
+    setShowBackToTop((scrollContainerRef.current?.scrollTop ?? 0) > 2000);
+  }, []);
+
+  const scrollToTop = useCallback(() => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   const showToast = (msg: string, delay = 700) => {
     setToast(msg);
@@ -279,7 +326,7 @@ export default function DiscoveryFeedPage() {
       </div>
 
       {/* Scrollable grid */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         {publishedProjects.length > 0 && (
           <div className="border-b border-white/8 px-6 py-5">
             <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-purple-400/60">Your Published</p>
@@ -316,7 +363,9 @@ export default function DiscoveryFeedPage() {
             </div>
           )}
         </div>
-        <p className="pb-8 text-center text-[10px] text-white/18">Community edits · More loading soon</p>
+        {/* Infinite scroll sentinel */}
+        <div ref={sentinelRef} className="h-1" />
+        <p className="pb-8 text-center text-[10px] text-white/18">Loading more…</p>
       </div>
 
       {/* Overlays */}
@@ -326,10 +375,22 @@ export default function DiscoveryFeedPage() {
           onClose={() => setTheaterPost(null)}
           onRemix={() => { handleRemix(theaterPost); setTheaterPost(null); }}
           onCreator={() => { router.push(`/profile/${theaterPost.user.handle}`); setTheaterPost(null); }}
+          allPosts={allPosts}
+          onNavigate={(p) => setTheaterPost(p)}
         />
       )}
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} onStudioFile={handleStudioFile} />}
       {toast && <Toast msg={toast} />}
+
+      {/* Back to top */}
+      {showBackToTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-6 right-6 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#1c1c1c]/90 text-white/60 shadow-xl backdrop-blur-sm transition-colors hover:bg-white/12 hover:text-white"
+        >
+          <ArrowUp size={16} />
+        </button>
+      )}
     </div>
   );
 }
