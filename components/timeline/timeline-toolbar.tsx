@@ -4,10 +4,10 @@ import { useState } from "react";
 import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine, ArrowRightLeft, Music, Settings, Download, X, Globe } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
-import { useProjectsRegistry } from "@/lib/store/projects-registry";
 import type { ClipEvent } from "@/lib/store/types";
 import { ExportModal } from "@/components/studio/export-modal";
 import { ProjectSettingsModal } from "@/components/studio/project-settings-modal";
+import { PublishModal } from "@/components/studio/publish-modal";
 
 
 export function TimelineToolbar() {
@@ -19,8 +19,8 @@ export function TimelineToolbar() {
   const hasSelection = selectedClipIds.length > 0;
 
   const [showSettings, setShowSettings] = useState(false);
-  const [showExport, setShowExport] = useState(false);
-  const [publishing, setPublishing] = useState(false);
+  const [showExport, setShowExport]     = useState(false);
+  const [showPublish, setShowPublish]   = useState(false);
 
   const onSplit = () => {
     const { playheadPosition } = usePlaybackStore.getState();
@@ -41,32 +41,6 @@ export function TimelineToolbar() {
   const onDelete = () => {
     const { selectedClipIds: ids, deleteSelectedClips } = useProjectStore.getState();
     if (ids.length > 0) deleteSelectedClips(ids);
-  };
-
-  const onPublish = () => {
-    const { tracks, duration, projectSettings } = useProjectStore.getState();
-    const { addProject } = useProjectsRegistry.getState();
-    const id = crypto.randomUUID();
-    const snapshot = { tracks, duration, projectSettings };
-
-    // Persist remix blob to localStorage for the home feed to pick up
-    try {
-      localStorage.setItem(`synapse-remix-${id}`, JSON.stringify(snapshot));
-    } catch {
-      // Ignore QuotaExceededError — registry entry still added
-    }
-
-    addProject({
-      id,
-      name: `Project ${new Date().toLocaleString()}`,
-      lastEdited: Date.now(),
-      width: projectSettings.width,
-      height: projectSettings.height,
-      fps: projectSettings.fps,
-    });
-
-    setPublishing(true);
-    setTimeout(() => setPublishing(false), 2000);
   };
 
   const onHeal = () => {
@@ -144,17 +118,12 @@ export function TimelineToolbar() {
 
         {/* Publish */}
         <button
-          onClick={onPublish}
+          onClick={() => setShowPublish(true)}
           title="Publish to Feed"
           aria-label="Publish to Feed"
-          className={`ml-auto flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
-            publishing
-              ? "bg-green-500/20 text-green-400"
-              : "bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 hover:text-purple-200"
-          }`}
+          className="ml-auto flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium transition-colors bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 hover:text-purple-200"
         >
-          <Globe size={10} />
-          {publishing ? "Published!" : "Publish"}
+          <Globe size={10} />Publish
         </button>
 
         {/* Export */}
@@ -165,7 +134,8 @@ export function TimelineToolbar() {
       </div>
 
       {showSettings && <ProjectSettingsModal onClose={() => setShowSettings(false)} />}
-      {showExport && <ExportModal onClose={() => setShowExport(false)} />}
+      {showExport   && <ExportModal   onClose={() => setShowExport(false)} />}
+      {showPublish  && <PublishModal  onClose={() => setShowPublish(false)} />}
     </>
   );
 }

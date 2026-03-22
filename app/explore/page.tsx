@@ -1,146 +1,169 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { Zap, GitBranch, TrendingUp, Flame, Sparkles } from "lucide-react";
+import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
-import { saveMediaToDB, loadMediaFromDB, removeMediaFromDB } from "@/lib/store/media-pool-db";
 import type { MediaPoolItem } from "@/lib/store/types";
-import { Upload, Film, Music, Image, Trash2 } from "lucide-react";
 
-const TYPE_ICONS = { video: Film, audio: Music, image: Image } as const;
+// ── Trending FX (mock — represents last-24h usage counts) ─────────────────────
+const TRENDING_FX = [
+  { name: "Glitch",          count: 47, color: "#ec4899" },
+  { name: "Blur",            count: 38, color: "#06b6d4" },
+  { name: "Color Shift",     count: 29, color: "#a855f7" },
+  { name: "Strobe",          count: 22, color: "#f59e0b" },
+  { name: "Pixel Sort",      count: 18, color: "#22c55e" },
+  { name: "Scan Lines",      count: 14, color: "#38bdf8" },
+  { name: "Chromatic Aber.", count: 11, color: "#fb923c" },
+  { name: "VHS Grain",       count:  9, color: "#ef4444" },
+];
 
-function formatDuration(micros: number): string {
-  const s = micros / 1_000_000;
-  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+// ── Template card ──────────────────────────────────────────────────────────────
+function TemplateCard({ post, onRemix }: { post: FeedPost; onRemix: () => void }) {
+  return (
+    <article className="group relative overflow-hidden rounded-xl border border-white/8 transition-all hover:border-white/20 hover:-translate-y-0.5"
+      style={{ background: post.bg }}>
+      <div className="relative" style={{ aspectRatio: "9/16" }}>
+        {post.videoUrl ? (
+          <video src={post.videoUrl} muted loop playsInline preload="metadata"
+            className="absolute inset-0 h-full w-full object-cover opacity-70" />
+        ) : (
+          <div className="absolute inset-0 flex items-end gap-[2px] px-2 pb-20 opacity-15" aria-hidden>
+            {Array.from({ length: 24 }).map((_, i) => (
+              <div key={i} className="flex-1 rounded-t-[2px]"
+                style={{ background: post.accent, height: `${20 + Math.sin(i * 0.9) * 35 + (i % 4) * 9}%` }} />
+            ))}
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/90" />
+
+        {/* Remix badge */}
+        <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 backdrop-blur-sm">
+          <GitBranch size={8} className="text-purple-300" />
+          <span className="text-[9px] font-semibold text-purple-300">Remixable</span>
+        </div>
+
+        <div className="absolute inset-x-0 bottom-0 p-3">
+          <div className="mb-1.5 flex items-center gap-1.5">
+            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+              style={{ background: `hsl(${post.user.hue} 55% 30%)` }}>{post.user.initial}</div>
+            <span className="text-[9px] text-white/60">@{post.user.handle}</span>
+          </div>
+          <p className="mb-2 line-clamp-2 text-[11px] font-bold leading-snug text-white">{post.title}</p>
+          <div className="mb-2 flex flex-wrap gap-1">
+            {post.tags.slice(0, 3).map((t) => (
+              <span key={t} className="rounded bg-white/10 px-1 py-px text-[8px] text-white/50">{t}</span>
+            ))}
+          </div>
+          <button onClick={onRemix}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[10px] font-bold text-white transition-all active:scale-95 opacity-0 group-hover:opacity-100"
+            style={{ background: `${post.accent}cc`, boxShadow: `0 0 12px ${post.accent}50` }}>
+            <Zap size={9} />Remix This
+          </button>
+        </div>
+      </div>
+    </article>
+  );
 }
 
-function MediaCard({ item, onDelete }: { item: MediaPoolItem; onDelete: (id: string) => void }) {
-  const Icon = TYPE_ICONS[item.type];
+// ── FX chip ────────────────────────────────────────────────────────────────────
+function FxChip({ name, count, color }: { name: string; count: number; color: string }) {
+  const maxCount = TRENDING_FX[0].count;
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-[#1e1e1e] p-3 transition-colors hover:border-white/20">
-      <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded bg-black/40">
-        {item.previewUrl && item.type === "video" ? (
-          <video src={item.previewUrl} className="h-full w-full object-cover" muted playsInline preload="metadata" />
-        ) : item.previewUrl && item.type === "image" ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.previewUrl} alt={item.name} className="h-full w-full object-cover" />
-        ) : (
-          <Icon size={24} className="text-white/20" />
-        )}
-        <span className="absolute right-1.5 top-1.5 rounded bg-black/60 px-1 py-0.5 text-[9px] font-medium uppercase text-white/60">
-          {item.type}
-        </span>
+    <div className="flex shrink-0 flex-col gap-1.5 rounded-xl border border-white/8 bg-white/4 px-4 py-3 min-w-[96px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold text-white">{name}</span>
+        <span className="text-[10px] font-bold tabular-nums" style={{ color }}>{count}</span>
       </div>
-      <div className="flex items-start justify-between gap-1">
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-white">{item.name}</p>
-          {item.duration > 0 && <p className="text-[10px] text-white/40">{formatDuration(item.duration)}</p>}
-        </div>
-        <button
-          onClick={() => onDelete(item.id)}
-          aria-label="Remove"
-          className="shrink-0 rounded p-1 text-white/20 transition-colors hover:bg-red-500/20 hover:text-red-400"
-        >
-          <Trash2 size={11} />
-        </button>
+      <div className="h-1 rounded-full bg-white/8">
+        <div className="h-full rounded-full transition-all" style={{ width: `${(count / maxCount) * 100}%`, background: color }} />
       </div>
+      <span className="text-[9px] text-white/30">uses · last 24h</span>
     </div>
   );
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function ExplorePage() {
-  const mediaPool = useProjectStore((s) => s.mediaPool);
+  const router    = useRouter();
+  const userPosts = useFeedStore((s) => s.userPosts);
+  const forkProject  = useProjectStore((s) => s.forkProject);
+  const loadProject  = useProjectStore((s) => s.loadProject);
   const addMediaItem = useProjectStore((s) => s.addMediaItem);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Restore persisted media from IndexedDB on mount
-  useEffect(() => {
-    loadMediaFromDB().then((items) => {
-      const existingIds = new Set(useProjectStore.getState().mediaPool.map((m) => m.id));
-      for (const item of items) {
-        if (!existingIds.has(item.id)) addMediaItem(item);
-      }
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Only show posts with allowRemix enabled
+  const templates = useMemo(
+    () => userPosts.filter((p) => p.allowRemix === true),
+    [userPosts]
+  );
 
-  const handleUpload = (files: FileList | null) => {
-    if (!files) return;
-    Array.from(files).forEach((file) => {
-      const id = crypto.randomUUID();
-      const previewUrl = URL.createObjectURL(file);
-      const type: MediaPoolItem["type"] = file.type.startsWith("video/")
-        ? "video" : file.type.startsWith("audio/") ? "audio" : "image";
-
-      const finalize = (duration: number) => {
-        const item: MediaPoolItem = { id, name: file.name, type, duration, previewUrl };
-        addMediaItem(item);
-        saveMediaToDB(file, item).catch(console.error);
-      };
-
-      if (type === "video" || type === "audio") {
-        const probe = document.createElement(type === "video" ? "video" : "audio");
-        probe.src = previewUrl;
-        probe.onloadedmetadata = () => { finalize(Math.round(probe.duration * 1_000_000)); probe.src = ""; };
-        probe.onerror = () => finalize(0);
-      } else {
-        finalize(0);
-      }
-    });
+  const handleRemix = (post: FeedPost) => {
+    if (post.projectSnapshot) {
+      forkProject({ ...post.projectSnapshot, projectId: post.id });
+    } else if (post.videoUrl) {
+      const mediaId = crypto.randomUUID();
+      const media: MediaPoolItem = { id: mediaId, name: post.title, type: "video", duration: 30_000_000, previewUrl: post.videoUrl };
+      loadProject({
+        tracks: [{ id: "v1", type: "video", name: "Video 1", color: "#3b82f6", height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: [{ id: crypto.randomUUID(), trackId: "v1", sourceId: mediaId, startTime: 0, duration: media.duration, mediaOffset: 0 }] }],
+        duration: media.duration + 5_000_000,
+        projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" },
+      });
+      addMediaItem(media);
+    }
+    router.push("/studio");
   };
-
-  const handleDelete = (id: string) => {
-    // Remove from store by overwriting the mediaPool without this item
-    // (addMediaItem doesn't have a remove counterpart yet — use store directly)
-    const store = useProjectStore.getState();
-    const next = store.mediaPool.filter((m) => m.id !== id);
-    useProjectStore.setState({ mediaPool: next });
-    removeMediaFromDB(id).catch(console.error);
-  };
-
-  const handleDrop = (e: React.DragEvent) => { e.preventDefault(); handleUpload(e.dataTransfer.files); };
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-[#141414] p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold text-white">Global Media Library</h1>
-          <p className="mt-0.5 text-xs text-white/40">
-            {mediaPool.length} item{mediaPool.length !== 1 ? "s" : ""} · drag files into the studio timeline
-          </p>
-        </div>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2 rounded bg-white/10 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/20"
-        >
-          <Upload size={14} />
-          Upload Media
-        </button>
-        <input ref={fileInputRef} type="file" multiple accept="video/*,audio/*,image/*" className="hidden"
-          onChange={(e) => handleUpload(e.target.files)} />
+    <div className="flex h-full flex-col overflow-y-auto bg-[#141414]">
+      {/* Header */}
+      <div className="z-10 shrink-0 flex items-center gap-2 border-b border-white/10 bg-[#141414]/95 px-5 py-3 backdrop-blur-sm">
+        <GitBranch size={13} className="text-purple-400" />
+        <h1 className="text-sm font-bold text-white">Template Library</h1>
+        <span className="rounded-full bg-purple-500/18 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-purple-300">Remixable</span>
       </div>
 
-      {mediaPool.length === 0 ? (
-        <div onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}
-          className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-white/10 py-20 transition-colors hover:border-white/20"
-          onClick={() => fileInputRef.current?.click()}>
-          <Upload size={40} className="text-white/20" />
-          <div className="text-center">
-            <p className="text-sm font-medium text-white/40">Drop files here or click to upload</p>
-            <p className="mt-1 text-xs text-white/25">Video, audio, and image files · persisted across refreshes</p>
+      <div className="px-5 py-5">
+        {/* Trending FX section */}
+        <div className="mb-6">
+          <div className="mb-3 flex items-center gap-2">
+            <Flame size={11} className="text-orange-400" />
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Trending FX · Last 24 Hours</p>
+          </div>
+          <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
+            {TRENDING_FX.map((fx) => (
+              <FxChip key={fx.name} name={fx.name} count={fx.count} color={fx.color} />
+            ))}
           </div>
         </div>
-      ) : (
-        <div onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}
-          className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {mediaPool.map((item) => (
-            <MediaCard key={item.id} item={item} onDelete={handleDelete} />
-          ))}
-          <button onClick={() => fileInputRef.current?.click()}
-            className="flex aspect-video flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-white/10 text-white/30 transition-colors hover:border-white/20 hover:text-white/50">
-            <Upload size={20} />
-            <span className="text-[10px]">Add More</span>
-          </button>
+
+        {/* Template grid */}
+        <div className="mb-3 flex items-center gap-2">
+          <Sparkles size={11} className="text-white/35" />
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Community Templates</p>
+          {templates.length > 0 && (
+            <span className="ml-auto text-[9px] text-white/25">{templates.length} available</span>
+          )}
         </div>
-      )}
+
+        {templates.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 py-20 text-center">
+            <TrendingUp size={32} className="mb-3 text-white/15" />
+            <p className="text-sm font-semibold text-white/30">No templates yet</p>
+            <p className="mt-1 text-[11px] text-white/20">Publish a project with "Allow Remix" to share it here.</p>
+            <button onClick={() => router.push("/studio")}
+              className="mt-4 flex items-center gap-1.5 rounded-lg bg-purple-500/20 px-3 py-2 text-xs font-bold text-purple-300 transition-colors hover:bg-purple-500/30">
+              <Zap size={11} />Open Studio
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {templates.map((post) => (
+              <TemplateCard key={post.id} post={post} onRemix={() => handleRemix(post)} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

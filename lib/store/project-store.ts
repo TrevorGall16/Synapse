@@ -32,7 +32,7 @@ export interface ProjectState {
   redo: () => void;
   loadProject: (snapshot: { tracks: Track[]; duration: number; projectSettings: ProjectSettings }) => void;
   /** Fork an existing project: assigns a new projectId, records parentProjectId for lineage tracking. */
-  forkProject: (snapshot: { tracks: Track[]; duration: number; projectSettings: ProjectSettings; projectId?: string }) => void;
+  forkProject: (snapshot: { tracks: Track[]; duration: number; projectSettings: ProjectSettings; projectId?: string; mediaPool?: MediaPoolItem[] }) => void;
   setProjectSettings: (s: ProjectSettings) => void;
   addTrack: (type: TrackType) => void;
   deleteTrack: (trackId: string) => void;
@@ -360,6 +360,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
 
   forkProject: (snapshot) => set({
     tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
+    mediaPool: snapshot.mediaPool ?? [], markers: [],
     projectId: crypto.randomUUID(), parentProjectId: snapshot.projectId ?? undefined,
     selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, historyPast: [], historyFuture: [],
   }),
