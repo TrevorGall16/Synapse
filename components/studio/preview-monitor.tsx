@@ -87,7 +87,7 @@ export function PreviewMonitor() {
   }, [videoTracks, mediaPool, playheadPosition]);
 
   const layersWithOpacity = useMemo(() => {
-    const result: { clip: ClipEvent; track: Track; media: MediaPoolItem; opacity: number }[] = [];
+    const result: { clip: ClipEvent; track: Track; media: MediaPoolItem; opacity: number; fadeDirection?: "in" | "out" }[] = [];
     const byTrack = new Map<string, typeof activeVideoLayers>();
     for (const layer of activeVideoLayers) {
       const arr = byTrack.get(layer.track.id) ?? [];
@@ -101,10 +101,7 @@ export function PreviewMonitor() {
       const overlapDuration = (outgoing.clip.startTime + outgoing.clip.duration) - incoming.clip.startTime;
 
       // Decoder kill-switch: overlaps ≤ 50ms (≈3 frames) are treated as clean cuts.
-      // This prevents ghost micro-overlaps from spinning up a second video decoder,
-      // which is what causes the 10fps drop on "snapped" clips.
       if (overlapDuration <= 50_000) {
-        // Hard snap / micro-overlap — single decoder, sharp cut at incoming.startTime
         result.push(
           playheadPosition >= incoming.clip.startTime
             ? { ...incoming, opacity: 1 }
@@ -113,7 +110,13 @@ export function PreviewMonitor() {
       } else {
         // Real crossfade — both decoders active, smooth opacity blend
         const progress = Math.max(0, Math.min(1, (playheadPosition - incoming.clip.startTime) / overlapDuration));
-        result.push({ ...outgoing, opacity: 1 - progress }, { ...incoming, opacity: progress });
+        const outOpacity = 1 - progress;
+        const inOpacity  = progress;
+        // Only push layers with visible opacity — forces hard unmount of the outgoing video
+        // element the moment it hits 0, immediately releasing its decoder resources back to
+        // the browser so the incoming clip gets full hardware budget.
+        if (outOpacity > 0.001) result.push({ ...outgoing, opacity: outOpacity, fadeDirection: "out" });
+        if (inOpacity  > 0.001) result.push({ ...incoming, opacity: inOpacity,  fadeDirection: "in"  });
       }
     }
     return result;
@@ -258,6 +261,15 @@ export function PreviewMonitor() {
 
       container.querySelectorAll("video").forEach((v) => {
         const el = v as HTMLElement;
+        const layerOpacity = parseFloat(el.dataset.clipOpacity ?? "1");
+        // Shader bypass: once the outgoing clip fades past 80% (opacity < 0.2),
+        // it's visually irrelevant — skip heavy filter work and let the incoming
+        // clip have the full CPU/GPU budget for its own rendering.
+        if (layerOpacity < 0.2) {
+          el.style.filter = "";
+          el.style.transform = el.dataset.pancropTransform || "none";
+          return;
+        }
         el.style.filter = [combined, el.dataset.trackFilter || ""].filter(Boolean).join(" ") || "none";
         const base = el.dataset.pancropTransform || "";
         const transforms: string[] = base ? [base] : [];
@@ -381,7 +393,8 @@ export function PreviewMonitor() {
                 <PreviewVideoLayer key={layer.clip.id} media={layer.media} clip={layer.clip} trackId={layer.track.id}
                   opacity={layer.opacity} zIndex={zIndex} trackFilter={tFilters.join(" ")}
                   panCropStyle={pcResult.style} isPlaying={isPlaying} playheadPosition={playheadPosition}
-                  aspectRatio={aspectRatio} hypnoTunnel={hypnoTunnel} tunnelClipPath={tunnelClipPath} />
+                  aspectRatio={aspectRatio} hypnoTunnel={hypnoTunnel} tunnelClipPath={tunnelClipPath}
+                  fadeDirection={layer.fadeDirection} />
               );
             })
           ) : (
