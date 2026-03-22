@@ -3,6 +3,7 @@
 import { useRef, useState, useMemo, useEffect } from "react";
 import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2 } from "lucide-react";
 import { type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
+import { cleanupSnapshotMedia } from "@/lib/store/media-pool-db";
 
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
 
@@ -69,7 +70,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
             <p className="text-xs font-bold text-white">Delete this post?</p>
             <div className="flex gap-2">
               <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }} className="rounded-lg border border-white/15 px-3 py-1.5 text-[10px] font-semibold text-white/60 hover:bg-white/8">Cancel</button>
-              <button onClick={(e) => { e.stopPropagation(); onDelete?.(); }} className="rounded-lg bg-red-500/25 px-3 py-1.5 text-[10px] font-bold text-red-400 hover:bg-red-500/35">Delete</button>
+              <button onClick={(e) => { e.stopPropagation(); if (post.projectSnapshot?.mediaPool) cleanupSnapshotMedia(post.projectSnapshot.mediaPool).catch(console.warn); onDelete?.(); }} className="rounded-lg bg-red-500/25 px-3 py-1.5 text-[10px] font-bold text-red-400 hover:bg-red-500/35">Delete</button>
             </div>
           </div>
         )}

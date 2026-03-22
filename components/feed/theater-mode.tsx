@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { X, Zap, Heart, Share2, Play, Pause, MessageCircle, Users, Volume2, VolumeX, GitBranch, WifiOff, Pencil } from "lucide-react";
 import type { FeedPost } from "@/lib/store/feed-store";
-import type { ClipEvent } from "@/lib/store/types";
+import type { ClipEvent, MediaPoolItem } from "@/lib/store/types";
+import { hydrateMediaPool } from "@/lib/store/media-pool-db";
+import { useHydrationStore } from "@/lib/store/hydration-store";
 
 interface TheaterModeProps {
   post: FeedPost; onClose: () => void; onRemix: () => void; onCreator: () => void;
@@ -50,22 +52,30 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
   const [liked, setLiked]             = useState(false);
   const [videoVisible, setVideoVisible] = useState(false);
   const [mediaError, setMediaError]   = useState(false);
+  const [hydratedPool, setHydratedPool] = useState<MediaPoolItem[] | null>(null);
+  const isHydrated = useHydrationStore((s) => s.isHydrated);
 
-  // Resolved snapshot clips with blob URL
+  const poolKey = post.id + "|" + (post.projectSnapshot?.mediaPool?.map((m) => m.previewUrl).join(",") ?? "");
+  useEffect(() => {
+    setHydratedPool(null);
+    const pool = post.projectSnapshot?.mediaPool;
+    if (!pool?.length) return;
+    hydrateMediaPool(pool).then(setHydratedPool).catch(() => setHydratedPool(pool));
+  }, [poolKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const snapshotClips = useMemo(() => {
     const snap = post.projectSnapshot;
     if (!snap) return [];
-    const pool = snap.mediaPool ?? [];
+    const pool = (hydratedPool ?? snap.mediaPool) ?? [];
     return snap.tracks
       .filter((t) => t.type === "video").flatMap((t) => t.clips)
       .sort((a, b) => a.startTime - b.startTime)
       .map((c) => ({ ...c, url: pool.find((m) => m.id === c.sourceId)?.previewUrl }))
       .filter((c): c is ClipEvent & { url: string } => !!c.url);
-  }, [post.projectSnapshot]);
+  }, [post.projectSnapshot, hydratedPool]);
 
   const totalDuration = snapshotClips.length > 0 ? (post.projectSnapshot?.duration ?? 30_000_000) : 30_000_000;
 
-  // Keep refs in sync
   useEffect(() => { clipsRef.current = snapshotClips; }, [snapshotClips]);
   useEffect(() => { totalDurRef.current = totalDuration; }, [totalDuration]);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
@@ -74,9 +84,6 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     const v = videoRef.current; if (v) { v.muted = muted; v.volume = muted ? 0 : 1; }
   }, [muted]);
 
-  // Imperative video sync to a playhead (µs).
-  // Gaps → true black + paused. Clip change → load then seek on loadedmetadata.
-  // Same clip → video plays naturally, no action.
   const syncClip = useCallback((ph: number) => {
     const clips = clipsRef.current;
     const v = videoRef.current;
@@ -171,8 +178,10 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     return () => { if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } };
   }, [isPlaying, snapshotClips.length, tick]);
 
-  // Reset + auto-start on post change
+  // Reset + auto-start on post change, IDB hydration, or GlobalHydrator completion
   useEffect(() => {
+    if (isPlayingRef.current) return; // already playing with valid URLs — hydration arrived late, skip
+    if (!isHydrated && !!post.projectSnapshot?.mediaPool?.length) return; // wait for IDB recovery
     containerRef.current?.scrollTo({ top: 0, behavior: "instant" });
     phRef.current = 0; setProgress(0); setIsPlaying(false); setMediaError(false);
     loadedClipRef.current = null; lastTsRef.current = 0;
@@ -204,7 +213,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
       v.play().then(() => setIsPlaying(true)).catch(() => {});
     } else { setVideoVisible(false); if (v) { v.pause(); v.src = ""; } }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [post.id]);
+  }, [post.id, hydratedPool, isHydrated]);
 
   // Single-video scrubber progress via timeupdate
   useEffect(() => {
@@ -259,6 +268,11 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
       <section className="relative flex min-h-screen items-center justify-center px-4 py-4">
         <div className="group relative overflow-hidden rounded-2xl shadow-2xl" style={{ aspectRatio: "9/16", height: "calc(100vh - 32px)", background: post.bg }}>
 
+          {hydratedPool === null && !!post.projectSnapshot?.mediaPool?.length && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/80 backdrop-blur-sm">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/10 border-t-white/50" /><p className="text-[10px] font-semibold text-white/50">Loading media…</p>
+            </div>
+          )}
           {/* True-black gap fill — shown when playhead is between clips */}
           {!videoVisible && !mediaError && (
             <div className="absolute inset-0 bg-[#000000]" />

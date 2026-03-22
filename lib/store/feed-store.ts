@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Track, ProjectSettings, MediaPoolItem } from "./types";
+import { cleanupSnapshotMedia, hydrateMediaPool } from "./media-pool-db";
 
 export interface FeedPost {
   id: string;
@@ -35,6 +36,7 @@ interface FeedState {
   userPosts: FeedPost[];
   addPost:    (post: FeedPost) => void;
   removePost: (id: string) => void;
+  hydrateAllPosts: () => Promise<void>;
 }
 
 /** True if the URL is a Blob (local-session only, breaks on refresh) */
@@ -42,10 +44,29 @@ export function isBlobUrl(url?: string): boolean { return !!url?.startsWith("blo
 
 export const useFeedStore = create<FeedState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       userPosts: [],
       addPost:    (post) => set((s) => ({ userPosts: [post, ...s.userPosts] })),
-      removePost: (id)   => set((s) => ({ userPosts: s.userPosts.filter((p) => p.id !== id) })),
+      removePost: (id) => {
+        const post = get().userPosts.find((p) => p.id === id);
+        if (post?.projectSnapshot?.mediaPool?.length) {
+          cleanupSnapshotMedia(post.projectSnapshot.mediaPool).catch(console.warn);
+        }
+        set((s) => ({ userPosts: s.userPosts.filter((p) => p.id !== id) }));
+      },
+      hydrateAllPosts: async () => {
+        const posts = get().userPosts;
+        if (!posts.length) return;
+        const updated = await Promise.all(
+          posts.map(async (post) => {
+            if (!post.projectSnapshot?.mediaPool?.length) return post;
+            const pool = await hydrateMediaPool(post.projectSnapshot.mediaPool);
+            return { ...post, projectSnapshot: { ...post.projectSnapshot, mediaPool: pool } };
+          })
+        );
+        set({ userPosts: updated });
+        console.log(`IDB Recovery [feed]: ${posts.length} post(s) scanned`);
+      },
     }),
     { name: "synapse-feed-posts" }
   )

@@ -8,6 +8,7 @@ import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useProjectsRegistry } from "@/lib/store/projects-registry";
 import { TheaterMode } from "@/components/feed/theater-mode";
+import { cleanupSnapshotMedia } from "@/lib/store/media-pool-db";
 
 // ── Mock creator profiles ─────────────────────────────────────────────────────
 const CREATOR_MAP: Record<string, { displayName: string; bio: string; hue: number; followers: number; following: number; postCount: number }> = {
@@ -80,7 +81,7 @@ function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, 
             <div className="flex gap-2">
               <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
                 className="rounded-lg border border-white/15 px-3 py-1.5 text-[10px] font-semibold text-white/60 hover:bg-white/8">Cancel</button>
-              <button onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
+              <button onClick={(e) => { e.stopPropagation(); if (post?.projectSnapshot?.mediaPool) cleanupSnapshotMedia(post.projectSnapshot.mediaPool).catch(console.warn); onDelete?.(); }}
                 className="rounded-lg bg-red-500/25 px-3 py-1.5 text-[10px] font-bold text-red-400 hover:bg-red-500/35">Delete</button>
             </div>
           </div>

@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback } from "react";
 import { useProjectStore } from "@/lib/store/project-store";
+import { saveMediaToDB } from "@/lib/store/media-pool-db";
 import type { MediaPoolItem } from "@/lib/store/types";
 
 function mediaTypeFromMime(mime: string): "video" | "audio" | "image" {
@@ -18,7 +19,9 @@ function handleFiles(files: FileList | File[]) {
     const previewUrl = URL.createObjectURL(file);
 
     if (type === "image") {
-      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, previewUrl });
+      const item: MediaPoolItem = { id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, previewUrl };
+      addMediaItem(item);
+      saveMediaToDB(file, item).catch(console.warn);
       continue;
     }
 
@@ -28,7 +31,9 @@ function handleFiles(files: FileList | File[]) {
 
     const finish = (durationSec: number) => {
       const duration = Math.round(durationSec * 1_000_000);
-      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, duration, previewUrl });
+      const item: MediaPoolItem = { id: crypto.randomUUID(), name: file.name, type, duration, previewUrl };
+      addMediaItem(item);
+      saveMediaToDB(file, item).catch(console.warn);
     };
 
     el.onloadedmetadata = () => {
@@ -44,7 +49,9 @@ function handleFiles(files: FileList | File[]) {
       }
     };
     el.onerror = () => {
-      addMediaItem({ id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, previewUrl });
+      const item: MediaPoolItem = { id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, previewUrl };
+      addMediaItem(item);
+      saveMediaToDB(file, item).catch(console.warn);
     };
   }
 }

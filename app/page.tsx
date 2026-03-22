@@ -9,6 +9,7 @@ import { useUserStore } from "@/lib/store/user-store";
 import { TheaterMode } from "@/components/feed/theater-mode";
 import { UploadModal } from "@/components/feed/upload-modal";
 import { FeedPostCard } from "@/components/feed/feed-post-card";
+import { saveMediaToDB } from "@/lib/store/media-pool-db";
 import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
 
 // ── Demo snapshot ─────────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ function Toast({ msg }: { msg: string }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function DiscoveryFeedPage() {
   const router = useRouter();
-  const [theaterPost, setTheaterPost] = useState<FeedPost | null>(null);
+  const [theaterPostId, setTheaterPostId] = useState<string | null>(null);
   const [showUpload, setShowUpload]   = useState(false);
   const [activeTag, setActiveTag]     = useState<string | null>(null);
   const [toast, setToast]             = useState<string | null>(null);
@@ -103,6 +104,11 @@ export default function DiscoveryFeedPage() {
     return [...MOCK_POSTS, ...extra];
   }, [loadedPages]);
   const allPosts = useMemo(() => [...userPosts, ...allMockPosts], [userPosts, allMockPosts]);
+  // Derive reactively so TheaterMode always gets fresh URLs after GlobalHydrator finishes
+  const theaterPost = useMemo(
+    () => (theaterPostId ? allPosts.find((p) => p.id === theaterPostId) ?? null : null),
+    [theaterPostId, allPosts],
+  );
   const allTags  = useMemo(() => {
     const seen = new Set(STATIC_TAGS);
     userPosts.flatMap((p) => p.tags).forEach((t) => seen.add(t));
@@ -163,6 +169,7 @@ export default function DiscoveryFeedPage() {
     const url = URL.createObjectURL(file);
     const mediaId = crypto.randomUUID();
     const media: MediaPoolItem = { id: mediaId, name: file.name, type: "video", duration: 30_000_000, previewUrl: url };
+    saveMediaToDB(file, media).catch(console.warn);
     const vTrack = tracks.find((t) => t.type === "video");
     if (vTrack) { addMediaItem(media); addClip(vTrack.id, { id: crypto.randomUUID(), trackId: vTrack.id, sourceId: mediaId, startTime: 0, duration: media.duration, mediaOffset: 0 }); }
     else {
@@ -220,7 +227,7 @@ export default function DiscoveryFeedPage() {
               {displayPosts.map((post) => (
                 <FeedPostCard
                   key={post.id} post={post}
-                  onOpen={() => setTheaterPost(post)}
+                  onOpen={() => setTheaterPostId(post.id)}
                   onRemix={() => handleRemix(post)}
                   onCreator={() => router.push(`/profile/${post.user.handle}`)}
                   onDelete={post.authorUsername && post.authorUsername === currentProfile?.username
@@ -244,12 +251,12 @@ export default function DiscoveryFeedPage() {
       {/* Overlays */}
       {theaterPost && (
         <TheaterMode
-          post={theaterPost}
-          onClose={() => setTheaterPost(null)}
-          onRemix={() => { handleRemix(theaterPost); setTheaterPost(null); }}
-          onCreator={() => { router.push(`/profile/${theaterPost.user.handle}`); setTheaterPost(null); }}
+          post={theaterPost!}
+          onClose={() => setTheaterPostId(null)}
+          onRemix={() => { handleRemix(theaterPost!); setTheaterPostId(null); }}
+          onCreator={() => { router.push(`/profile/${theaterPost!.user.handle}`); setTheaterPostId(null); }}
           allPosts={allPosts}
-          onNavigate={(p) => setTheaterPost(p)}
+          onNavigate={(p) => setTheaterPostId(p.id)}
         />
       )}
       {showUpload && <UploadModal onClose={() => setShowUpload(false)} onStudioFile={handleStudioFile} />}

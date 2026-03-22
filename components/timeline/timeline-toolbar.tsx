@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine, ArrowRightLeft, Music, Settings, Download, X, Globe } from "lucide-react";
+import { useState, useRef } from "react";
+import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine, ArrowRightLeft, Music, Settings, Download, X, Globe, FolderX } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
+import { removeMediaFromDB } from "@/lib/store/media-pool-db";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import type { ClipEvent } from "@/lib/store/types";
 import { ExportModal } from "@/components/studio/export-modal";
@@ -17,10 +18,22 @@ export function TimelineToolbar() {
   const selectionStart = usePlaybackStore((s) => s.selectionStart);
   const clearSelection = usePlaybackStore((s) => s.clearSelection);
   const hasSelection = selectedClipIds.length > 0;
+  const projectName = useProjectStore((s) => s.name);
+  const setName     = useProjectStore((s) => s.setName);
+  const resetProject = useProjectStore((s) => s.resetProject);
 
   const [showSettings, setShowSettings] = useState(false);
   const [showExport, setShowExport]     = useState(false);
   const [showPublish, setShowPublish]   = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  const handleDeleteProject = () => {
+    const { mediaPool } = useProjectStore.getState();
+    mediaPool.forEach((m) => removeMediaFromDB(m.id).catch(console.warn));
+    resetProject();
+    setConfirmDelete(false);
+  };
 
   const onSplit = () => {
     const { playheadPosition } = usePlaybackStore.getState();
@@ -68,7 +81,25 @@ export function TimelineToolbar() {
 
   return (
     <>
+      {/* Delete-project confirmation banner */}
+      {confirmDelete && (
+        <div className="absolute inset-x-0 top-0 z-50 flex items-center justify-center gap-3 border-b border-red-500/30 bg-red-950/80 px-4 py-2 backdrop-blur-sm">
+          <span className="text-[11px] font-semibold text-red-300">Delete project and all media from disk?</span>
+          <button onClick={handleDeleteProject} className="rounded bg-red-500/30 px-2.5 py-1 text-[10px] font-bold text-red-300 hover:bg-red-500/50">Delete</button>
+          <button onClick={() => setConfirmDelete(false)} className="rounded border border-white/15 px-2.5 py-1 text-[10px] text-white/50 hover:bg-white/8">Cancel</button>
+        </div>
+      )}
       <div className="flex items-center gap-0.5 px-2">
+        {/* Project name input */}
+        <input ref={nameRef} type="text" value={projectName} onChange={(e) => setName(e.target.value)}
+          onPointerDown={(e) => e.stopPropagation()} placeholder="Untitled Project"
+          className="mr-1 w-32 truncate rounded bg-transparent px-1.5 py-0.5 text-[11px] font-semibold text-white/70 outline-none ring-1 ring-transparent transition-all hover:ring-white/15 focus:bg-white/5 focus:ring-white/25 focus:text-white"
+        />
+        <button onClick={() => setConfirmDelete(true)} title="Delete Project" aria-label="Delete Project"
+          className="mr-1 rounded p-1 text-white/30 transition-colors hover:bg-red-500/15 hover:text-red-400">
+          <FolderX size={12} />
+        </button>
+        <div className="mx-0.5 h-4 w-px bg-white/10" />
         <Btn icon={<Scissors size={12} />} label="Split (S)" disabled={!hasSelection} onClick={onSplit} />
         <Btn icon={<Unlink size={12} />} label="Ungroup (U)" disabled={!hasSelection} onClick={onUngroup} />
         <Btn icon={<Link size={12} />} label="Regroup (G)" disabled={selectedClipIds.length < 2} onClick={onRegroup} />

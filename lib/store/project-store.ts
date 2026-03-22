@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { Track, TrackType, MediaPoolItem, Marker, ClipEvent, PanCropData, ProjectSettings, HistorySnapshot } from "./types";
 import { usePlaybackStore } from "./playback-store";
 import {
@@ -39,7 +40,12 @@ export interface ProjectState {
   toggleMute: (trackId: string) => void;
   toggleSolo: (trackId: string) => void;
   setOpacityOrVolume: (trackId: string, value: number) => void;
+  name: string;
+  setName: (name: string) => void;
+  resetProject: () => void;
   addMediaItem: (item: MediaPoolItem) => void;
+  updateMediaItemUrl: (id: string, url: string) => void;
+  setMediaPool: (items: MediaPoolItem[]) => void;
   addClip: (trackId: string, clip: ClipEvent) => void;
   moveClip: (clipId: string, deltaTime: number, deltaTrack: number) => void;
   splitClip: (clipId: string, splitTime: number) => void;
@@ -71,7 +77,6 @@ export interface ProjectState {
   addMarker: (marker: Marker) => void;
   removeMarker: (id: string) => void;
 }
-
 const MIN_CLIP_DURATION = 33_333; // 1 frame @ 30fps
 const MAX_HISTORY = 50;
 
@@ -84,14 +89,13 @@ const DEFAULT_TRACKS: Track[] = [
   { id: "default-text-1", type: "text", name: "Text 1", color: TRACK_COLORS.text, height: TRACK_HEIGHTS.text, collapsed: false, locked: false, clips: [], isMuted: false, isSolo: false, opacityOrVolume: 100 },
 ];
 
-// ── Store ───────────────────────────────────────────────
-
-export const useProjectStore = create<ProjectState>((set) => ({
+export const useProjectStore = create<ProjectState>()(persist((set) => ({
   tracks: DEFAULT_TRACKS,
   mediaPool: [],
   markers: [],
   duration: 300_000_000,
   projectId: "",
+  name: "Untitled Project",
   parentProjectId: undefined,
   selectedClipIds: [],
   selectedTrackId: null,
@@ -103,8 +107,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
   projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" },
   historyPast: [],
   historyFuture: [],
-
-  // ── History ─────────────────────────────────────────
   snapshotHistory: (label) =>
     set((s) => ({
       historyPast: [...s.historyPast.slice(-(MAX_HISTORY - 1)), { tracks: s.tracks, duration: s.duration, markers: s.markers, label }],
@@ -127,8 +129,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
       const current: HistorySnapshot = { tracks: s.tracks, duration: s.duration, markers: s.markers, label: snap.label };
       return { tracks: snap.tracks, duration: snap.duration, markers: snap.markers, historyFuture: future, historyPast: [...s.historyPast.slice(0, MAX_HISTORY - 1), current], selectedClipIds: [] };
     }),
-
-  // ── Track Mutations ──────────────────────────────────
   addTrack: (type) =>
     set((s) => {
       const count = s.tracks.filter((t) => t.type === type).length + 1;
@@ -147,8 +147,13 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setOpacityOrVolume: (trackId, value) =>
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, opacityOrVolume: value } : t) })),
 
+  setName: (name) => set({ name }),
+  resetProject: () => set({ tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: "", name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null }),
   addMediaItem: (item) =>
     set((s) => ({ mediaPool: [...s.mediaPool, item] })),
+  updateMediaItemUrl: (id, url) =>
+    set((s) => ({ mediaPool: s.mediaPool.map((m) => m.id === id ? { ...m, previewUrl: url } : m) })),
+  setMediaPool: (items) => set({ mediaPool: items }),
 
   addClip: (trackId, clip) =>
     set((s) => {
@@ -163,8 +168,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
         ),
       };
     }),
-
-  // ── Vegas Physics: Unified Move with groupId + same-type jumping ──
   moveClip: (clipId, deltaTime, deltaTrack) =>
     set((s) => {
       const result = computeMove(s, clipId, deltaTime, deltaTrack, usePlaybackStore.getState);
@@ -390,4 +393,4 @@ export const useProjectStore = create<ProjectState>((set) => ({
         ),
       })),
     })),
-}));
+}), { name: "synapse-project", skipHydration: true, partialize: (s: ProjectState) => ({ tracks: s.tracks, duration: s.duration, projectId: s.projectId, name: s.name, parentProjectId: s.parentProjectId, projectSettings: s.projectSettings, markers: s.markers, mediaPool: s.mediaPool.map((m) => ({ ...m, previewUrl: "" })) }) }));

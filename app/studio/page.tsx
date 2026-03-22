@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { MediaPool } from "@/components/studio/media-pool";
 import { PreviewMonitor } from "@/components/studio/preview-monitor";
@@ -15,6 +15,7 @@ import { VolumeHud } from "@/components/studio/volume-hud";
 import { ProjectSettingsModal } from "@/components/studio/project-settings-modal";
 import { HistoryPanel } from "@/components/studio/history-panel";
 import { useProjectStore } from "@/lib/store/project-store";
+import { useMediaHydration } from "@/lib/hooks/use-media-hydration";
 import { Film, Plus } from "lucide-react";
 
 // ── Studio Splash Screen ───────────────────────────────
@@ -44,6 +45,8 @@ export default function StudioPage() {
   const [projectStarted, setProjectStarted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
+  const { isHydrating } = useMediaHydration();
+
   const leftTab = useProjectStore((s) => s.activeUISection);
   const setLeftTab = useProjectStore((s) => s.setActiveUISection);
   const inspectingClipId = useProjectStore((s) => s.inspectingClipId);
@@ -51,10 +54,15 @@ export default function StudioPage() {
   const setInspectorSubTab = useProjectStore((s) => s.setInspectorSubTab);
   const tracks = useProjectStore((s) => s.tracks);
   const fxMaskEditingClipId = useProjectStore((s) => s.fxMaskEditingClipId);
+  const projectId = useProjectStore((s) => s.projectId);
 
-  // Auto-detect loaded content (Remix, opened project, or any dropped clips)
+  // When hydration finishes and a projectId exists, bypass the splash automatically
+  useEffect(() => {
+    if (!isHydrating && projectId) setProjectStarted(true);
+  }, [isHydrating, projectId]);
+
   const hasContent = tracks.some((t) => t.clips.length > 0);
-  const showSplash = !projectStarted && !hasContent;
+  const showSplash = !projectStarted && !hasContent && !projectId;
 
   // Derive the track type of the inspecting clip
   let inspectingTrackType: string | null = null;
@@ -65,6 +73,15 @@ export default function StudioPage() {
         break;
       }
     }
+  }
+
+  if (isHydrating) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#141414]">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white/50" />
+        <p className="text-xs font-semibold text-white/40">Waiting for Disk…</p>
+      </div>
+    );
   }
 
   if (showSplash) {
