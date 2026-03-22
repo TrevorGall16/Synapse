@@ -30,6 +30,16 @@ export function PreviewVideoLayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const connectedRef = useRef(false);
 
+  // Set preservesPitch=false immediately on mount so the decoder stays warm during fade-out.
+  // The browser may deprioritize the outgoing clip's decoder as opacity decreases;
+  // this flag prevents pitch-correction processing overhead and keeps the decoder hot.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    (video as HTMLVideoElement & { preservesPitch: boolean }).preservesPitch = false;
+    (video as HTMLVideoElement & { mozPreservesPitch?: boolean }).mozPreservesPitch = false;
+  }, []);
+
   // Connect to AudioEngine once video element mounts — skipped for pre-roll (silent warmup)
   useEffect(() => {
     const video = videoRef.current;
@@ -117,6 +127,12 @@ export function PreviewVideoLayer({
           data-pancrop-transform={isPreroll ? "" : (panCropStyle.transform ?? "")}
           playsInline
           preload="auto"
+          onPlay={(e) => {
+            // Keep decoder active during fade-out — prevents the browser from
+            // deprioritizing the outgoing clip's decoder as opacity approaches 0.
+            const v = e.currentTarget as HTMLVideoElement & { preservesPitch: boolean };
+            v.preservesPitch = false;
+          }}
         />
 
         {/* Hypno-tunnel overlay — only on active (non-preroll) layers */}

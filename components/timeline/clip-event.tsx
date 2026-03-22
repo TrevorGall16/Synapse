@@ -33,7 +33,14 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const isCollapsed = trackHeight <= 24;
 
   const isDragging = useRef(false);
-  const hardSnapLock = useRef<number | null>(null); // micros of the locked hard-snap position
+  const hardSnapLock = useRef<number | null>(null); // micros of current hard-snap position
+  // Virtual-position anchors — set once at mousedown, NEVER advanced during drag.
+  // virtualTime = dragAnchorTime + (e.clientX - dragAnchorX) / pps * 1e6
+  // This gives the total accumulated displacement, so the hard-wall break correctly
+  // fires after 20px of cumulative leftward movement (not just per-frame delta).
+  const dragAnchorX    = useRef(0);
+  const dragAnchorTime = useRef(0);
+  const lastClientX    = useRef(0); // used for speed detection (avoids e.movementX unreliability)
   const isEdgeDragging = useRef<"left" | "right" | false>(false);
   const isLevelDragging = useRef(false);
   const isStretchDragging = useRef(false);
@@ -43,7 +50,6 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const levelStartY = useRef(0);
   const levelStartVal = useRef(100);
   const fadeStartX = useRef(0);
-  const startPos = useRef({ x: 0, y: 0, time: 0, trackId: "" });
   const accumY = useRef(0);
   const [levelTooltip, setLevelTooltip] = useState<number | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -89,7 +95,11 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       e.currentTarget.setPointerCapture(e.pointerId);
       isDragging.current = true;
       accumY.current = 0;
-      startPos.current = { x: e.clientX, y: e.clientY, time: clip.startTime, trackId };
+      hardSnapLock.current = null;
+      // Fix the virtual-position anchors at mousedown — never changed during drag
+      dragAnchorX.current    = e.clientX;
+      dragAnchorTime.current = clip.startTime;
+      lastClientX.current    = e.clientX;
     },
     [clip.id, clip.groupId, clip.startTime, trackId, pixelsPerSecond]
   );
@@ -98,45 +108,48 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       if (!isDragging.current) return;
 
-      const speed = Math.abs(e.movementX);
-      const deltaX = e.clientX - startPos.current.x;
-      const rawDelta = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
-      const targetTime = Math.max(0, startPos.current.time + rawDelta);
+      // ── Speed detection via stable manual delta (e.movementX is unreliable during snaps) ──
+      const speed = Math.abs(e.clientX - lastClientX.current);
+      lastClientX.current = e.clientX;
 
-      // Always advance x reference for buttery motion (even when snapped)
-      startPos.current.x = e.clientX;
+      // ── Virtual position: total delta from mousedown anchors ──────────────────
+      // This is the key fix for the "kinky/frozen" drag:
+      // Old code used per-frame delta (startPos.x advances every frame), so when snapped,
+      // targetTime was always "snapPos ± 2px" — the 20px wall could never break.
+      // New code uses TOTAL accumulated displacement from the fixed mousedown anchor,
+      // so after dragging 21px left past the snap, virtualTime is 21px past it and the wall breaks.
+      const totalDeltaX = e.clientX - dragAnchorX.current;
+      const virtualTime = Math.max(0, dragAnchorTime.current + Math.round((totalDeltaX / pixelsPerSecond) * 1_000_000));
 
       let newStart: number;
 
       if (speed > SNAP_BREAK_PX) {
-        // Fast drag: bypass all magnets instantly
+        // Fast drag: break all magnets, follow mouse immediately
         hardSnapLock.current = null;
-        newStart = targetTime;
+        newStart = virtualTime;
         usePlaybackStore.getState().setSnapIndicator(null);
       } else if (hardSnapLock.current !== null) {
-        // Directional hard wall:
-        //   LEFT side  → 20px barrier before overlap territory opens (prevents ghost overlaps)
-        //   RIGHT side → 8px magnetic catch then instant release
-        const offsetPx = ((targetTime - hardSnapLock.current) / 1_000_000) * pixelsPerSecond;
+        // Hard wall active — check if virtualTime has moved outside the protective zone:
+        //   LEFT  (overlap territory): 20px wall — must push 20px past snap to open crossfade
+        //   RIGHT (natural escape):     8px catch — releases cleanly with no lag
+        const offsetPx = ((virtualTime - hardSnapLock.current) / 1_000_000) * pixelsPerSecond;
         if (offsetPx < -HARD_WALL_LEFT_PX) {
-          // User pushed past the left wall — intentional crossfade territory
           hardSnapLock.current = null;
-          newStart = targetTime;
+          newStart = virtualTime;
           usePlaybackStore.getState().setSnapIndicator(null);
         } else if (offsetPx > HARD_WALL_RIGHT_PX) {
-          // Escaped right naturally — no lag
           hardSnapLock.current = null;
-          newStart = targetTime;
+          newStart = virtualTime;
           usePlaybackStore.getState().setSnapIndicator(null);
         } else {
-          // In zone: physical barrier holds, clip stays exactly at snap edge
+          // In zone: hold clip exactly at snap edge (zero overlap guaranteed)
           newStart = hardSnapLock.current;
           usePlaybackStore.getState().setSnapIndicator(hardSnapLock.current, true);
         }
       } else {
-        const result = snapToNearby(targetTime, pixelsPerSecond, clip.id);
+        const result = snapToNearby(virtualTime, pixelsPerSecond, clip.id);
         newStart = result.time;
-        if (result.isHard && result.time !== targetTime) {
+        if (result.isHard && result.time !== virtualTime) {
           hardSnapLock.current = result.time;
         }
       }
@@ -147,7 +160,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
 
       if (deltaTime !== 0 || trackJumps !== 0) {
         useProjectStore.getState().moveClip(clip.id, deltaTime, trackJumps);
-        startPos.current.time = clip.startTime + deltaTime;
+        // No startPos update needed — virtualTime uses fixed dragAnchorX/dragAnchorTime,
+        // so deltaTime is always derived from clip.startTime (current store value) correctly.
         if (trackJumps !== 0) accumY.current -= trackJumps * trackHeight;
       }
     },
