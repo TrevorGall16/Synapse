@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/ui/sidebar";
 import { GlobalHydrator } from "@/components/GlobalHydrator";
+import { HydrationBarrier } from "@/components/HydrationBarrier";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -33,7 +34,9 @@ export default function RootLayout({
         <GlobalHydrator />
         <div className="flex h-screen w-screen overflow-hidden">
           <Sidebar />
-          <main className="ml-56 flex-1 overflow-hidden min-w-0 min-h-0 h-full">{children}</main>
+          <main className="ml-56 flex-1 overflow-hidden min-w-0 min-h-0 h-full">
+            <HydrationBarrier>{children}</HydrationBarrier>
+          </main>
         </div>
       </body>
     </html>

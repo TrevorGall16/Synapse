@@ -53,6 +53,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
   const [videoVisible, setVideoVisible] = useState(false);
   const [mediaError, setMediaError]   = useState(false);
   const [hydratedPool, setHydratedPool] = useState<MediaPoolItem[] | null>(null);
+  const [recoverHint, setRecoverHint]   = useState(false);
   const isHydrated = useHydrationStore((s) => s.isHydrated);
 
   const poolKey = post.id + "|" + (post.projectSnapshot?.mediaPool?.map((m) => m.previewUrl).join(",") ?? "");
@@ -62,6 +63,13 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     if (!pool?.length) return;
     hydrateMediaPool(pool).then(setHydratedPool).catch(() => setHydratedPool(pool));
   }, [poolKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show recovery hint after 2s of black screen on a snapshot post
+  useEffect(() => {
+    if (videoVisible || !post.projectSnapshot?.mediaPool?.length) { setRecoverHint(false); return; }
+    const t = setTimeout(() => setRecoverHint(true), 2000);
+    return () => clearTimeout(t);
+  }, [videoVisible, post.projectSnapshot?.mediaPool?.length]);
 
   const snapshotClips = useMemo(() => {
     const snap = post.projectSnapshot;
@@ -75,6 +83,16 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
   }, [post.projectSnapshot, hydratedPool]);
 
   const totalDuration = snapshotClips.length > 0 ? (post.projectSnapshot?.duration ?? 30_000_000) : 30_000_000;
+  const firstClipUrl = snapshotClips[0]?.url ?? "";
+
+  // Explicit src-watch: call load() when blob URL is swapped (browser won't auto-reload)
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !firstClipUrl || isPlayingRef.current) return;
+    if (v.src === firstClipUrl) return;
+    v.src = firstClipUrl;
+    v.load();
+  }, [firstClipUrl]);
 
   useEffect(() => { clipsRef.current = snapshotClips; }, [snapshotClips]);
   useEffect(() => { totalDurRef.current = totalDuration; }, [totalDuration]);
@@ -92,23 +110,15 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     const clip = clips.find((c) => ph >= c.startTime && ph < c.startTime + c.duration) ?? null;
 
     if (!clip) {
-      // ── Gap ──────────────────────────────────────────────────────────────────
-      if (loadedClipRef.current !== null) {
-        v.pause();
-        loadedClipRef.current = null;
-        setVideoVisible(false);
-      }
+      if (loadedClipRef.current !== null) { v.pause(); loadedClipRef.current = null; setVideoVisible(false); }
       return;
     }
 
     if (loadedClipRef.current === clip.id) {
-      // ── Same clip — video advances naturally ──────────────────────────────────
-      if (v.readyState >= 2) setVideoVisible(true); // only show when a frame is available
-      if (isPlayingRef.current && v.paused) v.play().catch(() => {}); // resume if video stalled
+      if (v.readyState >= 2) setVideoVisible(true);
+      if (isPlayingRef.current && v.paused) v.play().catch(() => {});
       return;
     }
-
-    // ── New clip — load src then seek on loadedmetadata ───────────────────────
     const clipId     = clip.id;
     const clipUrl    = clip.url;
     const clipStart  = clip.startTime;
@@ -165,8 +175,6 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     lastTsRef.current = ts;
     rafRef.current = requestAnimationFrame(tick);
   }, [syncClip]);
-
-  // Start/stop rAF
   useEffect(() => {
     if (!isPlaying || snapshotClips.length === 0) {
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
@@ -177,8 +185,6 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     rafRef.current = requestAnimationFrame(tick);
     return () => { if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } };
   }, [isPlaying, snapshotClips.length, tick]);
-
-  // Reset + auto-start on post change, IDB hydration, or GlobalHydrator completion
   useEffect(() => {
     if (isPlayingRef.current) return; // already playing with valid URLs — hydration arrived late, skip
     if (!isHydrated && !!post.projectSnapshot?.mediaPool?.length) return; // wait for IDB recovery
@@ -214,8 +220,6 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     } else { setVideoVisible(false); if (v) { v.pause(); v.src = ""; } }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post.id, hydratedPool, isHydrated]);
-
-  // Single-video scrubber progress via timeupdate
   useEffect(() => {
     if (snapshotClips.length > 0) return;
     const v = videoRef.current; if (!v) return;
@@ -223,8 +227,6 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     v.addEventListener("timeupdate", onTime);
     return () => v.removeEventListener("timeupdate", onTime);
   }, [snapshotClips.length]);
-
-  // ESC + body scroll lock
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
@@ -273,10 +275,8 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/10 border-t-white/50" /><p className="text-[10px] font-semibold text-white/50">Loading media…</p>
             </div>
           )}
-          {/* True-black gap fill — shown when playhead is between clips */}
-          {!videoVisible && !mediaError && (
-            <div className="absolute inset-0 bg-[#000000]" />
-          )}
+          {!videoVisible && !mediaError && <div className="absolute inset-0 bg-[#000000]" />}
+          {recoverHint && <p className="absolute bottom-20 left-3 z-30 text-[9px] text-white/30">Attempting to recover IDB…</p>}
 
           {/* Waveform BG — only shown on media error, not in normal gaps */}
           <div className={`absolute inset-0 flex items-end gap-[3px] px-3 pb-28 transition-opacity duration-300 ${mediaError ? "opacity-20" : "opacity-0"}`} aria-hidden>

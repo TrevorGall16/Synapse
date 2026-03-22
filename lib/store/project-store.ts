@@ -148,7 +148,7 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, opacityOrVolume: value } : t) })),
 
   setName: (name) => set({ name }),
-  resetProject: () => set({ tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: "", name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null }),
+  resetProject: () => set({ tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: crypto.randomUUID(), name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null }),
   addMediaItem: (item) =>
     set((s) => ({ mediaPool: [...s.mediaPool, item] })),
   updateMediaItemUrl: (id, url) =>

@@ -49,15 +49,17 @@ export function PublishModal({ onClose }: PublishModalProps) {
     const firstVideo = mediaPool.find((m) => m.type === "video");
     const maxEnd = tracks.flatMap((t) => t.clips).reduce((mx, c) => Math.max(mx, c.startTime + c.duration), 0);
     const allClipsDuration = maxEnd > 0 ? maxEnd : projectDuration;
-    let duration: number;
-    if (scope === "selection") {
-      const { selectionStart, selectionEnd } = usePlaybackStore.getState();
-      duration = (selectionStart != null && selectionEnd != null && selectionEnd > selectionStart)
-        ? selectionEnd - selectionStart
-        : allClipsDuration;
-    } else {
-      duration = allClipsDuration;
-    }
+    const pb = usePlaybackStore.getState();
+    const useRuler = scope === "selection" && pb.selectionStart != null && pb.selectionEnd != null && pb.selectionEnd > pb.selectionStart;
+    const duration = useRuler ? pb.selectionEnd! - pb.selectionStart! : allClipsDuration;
+    // Normalize clip startTimes so selection always begins at t=0
+    const selOffset = useRuler ? pb.selectionStart! : 0;
+    const publishTracks = selOffset === 0 ? tracks : tracks.map((t) => ({
+      ...t,
+      clips: t.clips
+        .filter((c) => c.startTime < selOffset + duration && c.startTime + c.duration > selOffset)
+        .map((c) => ({ ...c, startTime: Math.max(0, c.startTime - selOffset) })),
+    }));
     const id  = crypto.randomUUID();
     const idx = (username.charCodeAt(0) + title.charCodeAt(0)) % ACCENTS.length;
     const tags = tagsRaw.trim()
@@ -75,7 +77,7 @@ export function PublishModal({ onClose }: PublishModalProps) {
       duration: fmtDuration(duration),
       likes: 0, comments: 0, featured: false,
       videoUrl: firstVideo?.previewUrl,
-      projectSnapshot: { tracks, duration, projectSettings, mediaPool },
+      projectSnapshot: { tracks: publishTracks, duration, projectSettings, mediaPool },
       authorUsername: username,
       allowRemix,
       remixedFromPostId: parentPost?.id,

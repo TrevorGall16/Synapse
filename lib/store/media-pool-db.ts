@@ -82,18 +82,22 @@ export async function refreshMediaUrl(id: string): Promise<string | null> {
 }
 
 /** Replace dead blob: URLs in a MediaPool array with fresh ObjectURLs from IDB.
- *  Items not found in IDB (e.g. remote URLs) are returned unchanged. */
+ *  Items not found in IDB (e.g. remote URLs) are returned unchanged.
+ *  Logs a debug table: [id | name | old URL | new URL | status] */
 export async function hydrateMediaPool(items: MediaPoolItem[]): Promise<MediaPoolItem[]> {
-  return Promise.all(
+  const rows: Array<{ id: string; name: string; old: string; new: string; status: string }> = [];
+  const results = await Promise.all(
     items.map(async (item) => {
-      // Skip only if URL is clearly valid and not a blob (e.g. https://...)
-      // Empty string ("") and blob: URLs both need refreshing from IDB
       if (item.previewUrl && !item.previewUrl.startsWith("blob:")) return item;
+      const oldUrl = item.previewUrl || "(empty)";
       const fresh = await refreshMediaUrl(item.id);
-      if (fresh) console.log(`IDB Recovery Success: ${item.name} (${item.id.slice(0, 8)})`);
+      const status = fresh ? "✓ refreshed" : "✗ NOT IN IDB";
+      rows.push({ id: item.id.slice(0, 8), name: item.name, old: oldUrl.slice(0, 48), new: (fresh ?? "").slice(0, 48), status });
       return fresh ? { ...item, previewUrl: fresh } : item;
     })
   );
+  if (rows.length) console.table(rows);
+  return results;
 }
 
 /** Remove all media IDs referenced by a project snapshot (call before removePost). */
