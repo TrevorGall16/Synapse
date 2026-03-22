@@ -288,8 +288,9 @@ export function TrackLane({ trackId, trackHeight: trackHeightProp }: TrackLanePr
         );
       })}
 
-      {/* Crossfade X overlays with draggable edge handles */}
-      {overlaps.map((overlap) => (
+      {/* Crossfade X overlays — only shown for real crossfades (>50ms overlap).
+          Hard snaps / micro-overlaps show no X since they're treated as clean cuts. */}
+      {overlaps.filter((o) => o.currentOverlapMicros > 50_000).map((overlap) => (
         <CrossfadeOverlay key={overlap.key} overlap={overlap} pixelsPerSecond={pixelsPerSecond} />
       ))}
     </div>

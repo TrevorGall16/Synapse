@@ -33,6 +33,7 @@ export function PreviewMonitor() {
   const [quality, setQuality] = useState<PreviewQuality>("Auto");
   const [zoom, setZoom] = useState<ZoomMode>("Fit");
   const fxRafRef = useRef(0);
+  const hadEffectsRef = useRef(false); // tracks whether FX were active last frame
   const videoContainerRef = useRef<HTMLDivElement>(null);
 
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
@@ -98,15 +99,43 @@ export function PreviewMonitor() {
       const sorted = [...layers].sort((a, b) => a.clip.startTime - b.clip.startTime);
       const [outgoing, incoming] = [sorted[0], sorted[1]];
       const overlapDuration = (outgoing.clip.startTime + outgoing.clip.duration) - incoming.clip.startTime;
-      if (overlapDuration > 0) {
+
+      // Decoder kill-switch: overlaps ≤ 50ms (≈3 frames) are treated as clean cuts.
+      // This prevents ghost micro-overlaps from spinning up a second video decoder,
+      // which is what causes the 10fps drop on "snapped" clips.
+      if (overlapDuration <= 50_000) {
+        // Hard snap / micro-overlap — single decoder, sharp cut at incoming.startTime
+        result.push(
+          playheadPosition >= incoming.clip.startTime
+            ? { ...incoming, opacity: 1 }
+            : { ...outgoing, opacity: 1 }
+        );
+      } else {
+        // Real crossfade — both decoders active, smooth opacity blend
         const progress = Math.max(0, Math.min(1, (playheadPosition - incoming.clip.startTime) / overlapDuration));
         result.push({ ...outgoing, opacity: 1 - progress }, { ...incoming, opacity: progress });
-      } else {
-        result.push({ ...outgoing, opacity: 1 }, { ...incoming, opacity: 1 });
       }
     }
     return result;
   }, [activeVideoLayers, playheadPosition]);
+
+  // ── Pre-roll layers (500ms lookahead) ─────────────────────
+  // Clips that haven't started yet but are within 500ms — rendered opacity:0 to warm the decoder.
+  const prerollLayers = useMemo(() => {
+    const PREROLL_MICROS = 500_000;
+    const activeIds = new Set(activeVideoLayers.map((l) => l.clip.id));
+    const result: { clip: ClipEvent; track: Track; media: MediaPoolItem }[] = [];
+    for (const vt of videoTracks) {
+      for (const c of vt.clips) {
+        if (activeIds.has(c.id)) continue;
+        if (c.startTime > playheadPosition && c.startTime - playheadPosition <= PREROLL_MICROS) {
+          const media = mediaPool.find((m) => m.id === c.sourceId);
+          if (media?.previewUrl) result.push({ clip: c, track: vt, media });
+        }
+      }
+    }
+    return result;
+  }, [videoTracks, mediaPool, playheadPosition, activeVideoLayers]);
 
   const activeTextClips = useMemo(() => {
     const result: ClipEvent[] = [];
@@ -194,6 +223,21 @@ export function PreviewMonitor() {
           if (pos >= c.startTime && pos < c.startTime + c.duration) freshEffects.push(c);
         }
       }
+
+      // ── Fast path: no effects → clear stale filters once and skip DOM work ──
+      const hasAnyFx = freshEffects.length > 0 || quality === "Draft";
+      if (!hasAnyFx) {
+        if (hadEffectsRef.current) {
+          container.querySelectorAll("video").forEach((v) => {
+            (v as HTMLElement).style.filter = "";
+            (v as HTMLElement).style.transform = "";
+          });
+          hadEffectsRef.current = false;
+        }
+        return;
+      }
+      hadEffectsRef.current = true;
+
       const unmasked = freshEffects.filter((c) => !isMasked(c));
       const masked = freshEffects.filter(isMasked);
 
@@ -348,6 +392,24 @@ export function PreviewMonitor() {
                 : <div className="absolute inset-0 rounded bg-[#111111]" />}
             </div>
           )}
+
+          {/* Pre-roll: invisible video elements that warm up the decoder before crossfade begins */}
+          {prerollLayers.map((layer) => (
+            <PreviewVideoLayer
+              key={`preroll-${layer.clip.id}`}
+              media={layer.media}
+              clip={layer.clip}
+              trackId={layer.track.id}
+              opacity={0}
+              zIndex={-1}
+              trackFilter=""
+              panCropStyle={{}}
+              isPlaying={isPlaying}
+              playheadPosition={playheadPosition}
+              aspectRatio={aspectRatio}
+              isPreroll
+            />
+          ))}
 
           {maskedEffectClips.map((c) => (
             <PreviewFxMaskOverlay key={`fxm-${c.id}`} clip={c} aspectRatio={aspectRatio} zIndex={videoTracks.length + 2} />

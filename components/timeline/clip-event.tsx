@@ -10,8 +10,9 @@ import { ClipWaveform } from "./clip-waveform";
 import { ClipContextMenu } from "./clip-context-menu";
 import { snapToNearby } from "@/lib/utils/snap";
 
-const SNAP_BREAK_PX = 20;    // px/pointermove — break out of snap magnets when dragging fast
-const HARD_SNAP_OVERSHOOT_PX = 15; // px past a hard snap point before overlap is allowed
+const SNAP_BREAK_PX = 20;       // px/pointermove — break out of snap magnets when dragging fast
+const HARD_WALL_LEFT_PX  = 20;  // px to the LEFT of snap before overlap territory opens
+const HARD_WALL_RIGHT_PX = 8;   // px to the RIGHT before magnetic catch releases
 
 interface ClipEventBlockProps {
   clip: ClipEvent;
@@ -108,28 +109,34 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       let newStart: number;
 
       if (speed > SNAP_BREAK_PX) {
-        // Dead-zone: bypass all magnets when dragging fast
-        newStart = targetTime;
+        // Fast drag: bypass all magnets instantly
         hardSnapLock.current = null;
+        newStart = targetTime;
         usePlaybackStore.getState().setSnapIndicator(null);
       } else if (hardSnapLock.current !== null) {
-        // We're locked on a hard snap — require HARD_SNAP_OVERSHOOT_PX to break free
-        const lockPx = Math.abs((targetTime - hardSnapLock.current) / 1_000_000) * pixelsPerSecond;
-        if (lockPx < HARD_SNAP_OVERSHOOT_PX) {
-          // Stay locked
-          newStart = hardSnapLock.current;
-          usePlaybackStore.getState().setSnapIndicator(hardSnapLock.current, true);
-        } else {
-          // Break free — allow overlap / crossfade territory
+        // Directional hard wall:
+        //   LEFT side  → 20px barrier before overlap territory opens (prevents ghost overlaps)
+        //   RIGHT side → 8px magnetic catch then instant release
+        const offsetPx = ((targetTime - hardSnapLock.current) / 1_000_000) * pixelsPerSecond;
+        if (offsetPx < -HARD_WALL_LEFT_PX) {
+          // User pushed past the left wall — intentional crossfade territory
           hardSnapLock.current = null;
           newStart = targetTime;
           usePlaybackStore.getState().setSnapIndicator(null);
+        } else if (offsetPx > HARD_WALL_RIGHT_PX) {
+          // Escaped right naturally — no lag
+          hardSnapLock.current = null;
+          newStart = targetTime;
+          usePlaybackStore.getState().setSnapIndicator(null);
+        } else {
+          // In zone: physical barrier holds, clip stays exactly at snap edge
+          newStart = hardSnapLock.current;
+          usePlaybackStore.getState().setSnapIndicator(hardSnapLock.current, true);
         }
       } else {
         const result = snapToNearby(targetTime, pixelsPerSecond, clip.id);
         newStart = result.time;
         if (result.isHard && result.time !== targetTime) {
-          // Engage hard snap lock
           hardSnapLock.current = result.time;
         }
       }

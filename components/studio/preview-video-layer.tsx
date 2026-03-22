@@ -19,19 +19,21 @@ interface PreviewVideoLayerProps {
   aspectRatio: string;
   hypnoTunnel?: FxResult["hypnoTunnel"];
   tunnelClipPath?: string;
+  /** Pre-roll: renders hidden to warm the decoder 500ms before the clip enters the crossfade window. */
+  isPreroll?: boolean;
 }
 
 export function PreviewVideoLayer({
   media, clip, trackId, opacity, zIndex, trackFilter, panCropStyle,
-  isPlaying, playheadPosition, aspectRatio, hypnoTunnel, tunnelClipPath,
+  isPlaying, playheadPosition, aspectRatio, hypnoTunnel, tunnelClipPath, isPreroll,
 }: PreviewVideoLayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const connectedRef = useRef(false);
 
-  // Connect to AudioEngine once video element mounts
+  // Connect to AudioEngine once video element mounts — skipped for pre-roll (silent warmup)
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || connectedRef.current) return;
+    if (!video || connectedRef.current || isPreroll) return;
     audioEngine.init();
     audioEngine.ensureResumed();
     if (!audioEngine.hasTrack(trackId)) {
@@ -42,10 +44,22 @@ export function PreviewVideoLayer({
       audioEngine.disconnectTrack(trackId);
       connectedRef.current = false;
     };
-  }, [trackId]);
+  }, [trackId, isPreroll]);
 
-  // Play/pause sync
+  // Pre-roll: seek to clip entry point and play muted to fill the decoder's frame buffer
   useEffect(() => {
+    if (!isPreroll) return;
+    const video = videoRef.current;
+    if (!video) return;
+    const startSecs = clip.mediaOffset / MICROS_PER_SECOND;
+    if (Math.abs(video.currentTime - startSecs) > 0.1) video.currentTime = startSecs;
+    video.muted = true;
+    video.play().catch(() => {});
+  }, [isPreroll, clip.mediaOffset]);
+
+  // Play/pause sync — active layers only
+  useEffect(() => {
+    if (isPreroll) return;
     const video = videoRef.current;
     if (!video) return;
     if (isPlaying) {
@@ -53,15 +67,15 @@ export function PreviewVideoLayer({
     } else {
       video.pause();
     }
-  }, [isPlaying]);
+  }, [isPlaying, isPreroll]);
 
-  // Time sync + pitch
+  // Time sync + pitch — active layers only
   useEffect(() => {
+    if (isPreroll) return;
     const video = videoRef.current;
     if (!video) return;
     const localTime = (playheadPosition - clip.startTime) / MICROS_PER_SECOND;
 
-    // Pitch: convert semitones to playbackRate
     const pitch = Number(clip.fxParams?.pitch ?? 0);
     const rate = (clip.playbackRate ?? 1) * Math.pow(2, pitch / 12);
     video.playbackRate = Math.max(0.25, Math.min(4, rate));
@@ -72,17 +86,25 @@ export function PreviewVideoLayer({
     } else {
       if (Math.abs(video.currentTime - localTime) > 0.25) video.currentTime = localTime;
     }
-  }, [playheadPosition, clip.startTime, clip.playbackRate, clip.fxParams?.pitch, isPlaying]);
+  }, [playheadPosition, clip.startTime, clip.playbackRate, clip.fxParams?.pitch, isPlaying, isPreroll]);
 
-  // Level → opacity binding: visual opacity = crossfade opacity × clip level
-  const visualOpacity = opacity * ((clip.level ?? 100) / 100);
+  // Level × crossfade opacity — pre-roll is fully transparent
+  const visualOpacity = isPreroll ? 0 : opacity * ((clip.level ?? 100) / 100);
 
   return (
     <div
       className="absolute inset-0 flex items-center justify-center"
-      style={{ zIndex, opacity: visualOpacity, willChange: "opacity, transform" }}
+      style={{
+        zIndex: isPreroll ? -1 : zIndex,
+        opacity: visualOpacity,
+        // Promote each video layer to its own GPU compositor layer upfront.
+        // This prevents the mid-crossfade promotion stutter that causes the FPS drop.
+        willChange: "opacity",
+        backfaceVisibility: "hidden",
+        transform: "translateZ(0)",
+      }}
     >
-      {/* aspect wrapper clips tunnel and video to the display area,
+      {/* Aspect wrapper clips tunnel and video to the display area,
           preventing spill onto pillarbox/letterbox bars */}
       <div className="relative h-full max-w-full overflow-hidden" style={{ aspectRatio }}>
         <video
@@ -91,15 +113,14 @@ export function PreviewVideoLayer({
           src={media.previewUrl}
           className="absolute inset-0 h-full w-full"
           style={panCropStyle}
-          data-track-filter={trackFilter || ""}
-          data-pancrop-transform={panCropStyle.transform ?? ""}
+          data-track-filter={isPreroll ? "" : (trackFilter || "")}
+          data-pancrop-transform={isPreroll ? "" : (panCropStyle.transform ?? "")}
           playsInline
           preload="auto"
         />
 
-        {/* Hypno-tunnel overlay — circular (border-radius:50%) so rotation shows no corners.
-            300%/300% at -100%/-100% offset covers the full 16:9 area at any rotation angle. */}
-        {hypnoTunnel && (
+        {/* Hypno-tunnel overlay — only on active (non-preroll) layers */}
+        {!isPreroll && hypnoTunnel && (
           <div
             className="pointer-events-none absolute"
             style={{

@@ -101,7 +101,10 @@ export function computeMove(
   const snappedDeltaTime = deltaTime;
 
   for (const member of groupMembers) {
-    const newStartTime = quantizeToFrame(Math.max(0, Math.round(member.clip.startTime + snappedDeltaTime)));
+    // Use exact integer microseconds — quantizeToFrame is intentionally bypassed here
+    // because it can shift a hard-snapped position off the target edge by ≤16,666µs,
+    // which creates a micro-overlap even after a "Perfect Cut" snap.
+    const newStartTime = Math.max(0, Math.round(member.clip.startTime + snappedDeltaTime));
     const clipType = state.tracks[member.trackIndex].type;
     const sameType = sameTypeIndices(tracks, clipType);
     const currentSameTypeIdx = sameType.indexOf(member.trackIndex);
