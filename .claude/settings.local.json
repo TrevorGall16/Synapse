@@ -25,7 +25,8 @@
       "Bash(npx next:*)",
       "Bash(npx tsc:*)",
       "Bash(find /d/Projects/Synapse/lib -name *.ts -type f)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(wc:*)"
     ]
   }
 }

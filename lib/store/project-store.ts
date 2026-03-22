@@ -16,6 +16,8 @@ export interface ProjectState {
   mediaPool: MediaPoolItem[];
   markers: Marker[];
   duration: number;
+  projectId: string;
+  parentProjectId?: string;
   selectedClipIds: string[];
   selectedTrackId: string | null;
   inspectingClipId: string | null;
@@ -29,6 +31,8 @@ export interface ProjectState {
   undo: () => void;
   redo: () => void;
   loadProject: (snapshot: { tracks: Track[]; duration: number; projectSettings: ProjectSettings }) => void;
+  /** Fork an existing project: assigns a new projectId, records parentProjectId for lineage tracking. */
+  forkProject: (snapshot: { tracks: Track[]; duration: number; projectSettings: ProjectSettings; projectId?: string }) => void;
   setProjectSettings: (s: ProjectSettings) => void;
   addTrack: (type: TrackType) => void;
   deleteTrack: (trackId: string) => void;
@@ -87,6 +91,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
   mediaPool: [],
   markers: [],
   duration: 300_000_000,
+  projectId: "",
+  parentProjectId: undefined,
   selectedClipIds: [],
   selectedTrackId: null,
   inspectingClipId: null,
@@ -346,17 +352,17 @@ export const useProjectStore = create<ProjectState>((set) => ({
       })),
     })),
 
-  loadProject: (snapshot) =>
-    set({
-      tracks: snapshot.tracks,
-      duration: snapshot.duration,
-      projectSettings: snapshot.projectSettings,
-      selectedClipIds: [],
-      selectedTrackId: null,
-      inspectingClipId: null,
-      historyPast: [],
-      historyFuture: [],
-    }),
+  loadProject: (snapshot) => set({
+    tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
+    projectId: crypto.randomUUID(), parentProjectId: undefined,
+    selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, historyPast: [], historyFuture: [],
+  }),
+
+  forkProject: (snapshot) => set({
+    tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
+    projectId: crypto.randomUUID(), parentProjectId: snapshot.projectId ?? undefined,
+    selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, historyPast: [], historyFuture: [],
+  }),
 
   setTrackCollapsed: (trackId, collapsed) =>
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, collapsed } : t) })),

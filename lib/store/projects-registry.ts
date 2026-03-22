@@ -10,6 +10,8 @@ export interface ProjectSummary {
   width: number;
   height: number;
   fps: number;
+  parentProjectId?: string;  // set when forked from another project
+  authorUsername?: string;   // username of the creator who published this
 }
 
 interface ProjectsRegistryState {
