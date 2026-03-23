@@ -142,11 +142,49 @@ export function clipCssFilter(p: Record<string, unknown> = {}): string {
   if (t === "blur")   parts.push(`blur(${(Number(p.blurAmount ?? 0) * 0.4).toFixed(1)}px)`);
   if (t === "invert") parts.push(`invert(${intensity.toFixed(2)})`);
   if (t === "hue-rotate") parts.push(`hue-rotate(${Number(p.hueRotate ?? 0)}deg)`);
+  if (t === "hypno-tunnel") {
+    // Approximation: hue spin + saturate/contrast spike + glow halo via drop-shadow
+    parts.push(`hue-rotate(${Math.round(intensity * 360)}deg)`);
+    parts.push(`saturate(${(1 + intensity * 3).toFixed(2)})`);
+    parts.push(`contrast(${(1 + intensity * 1.5).toFixed(2)})`);
+    parts.push(`brightness(${(1 + intensity * 0.4).toFixed(2)})`);
+    parts.push(`drop-shadow(0 0 ${(intensity * 12).toFixed(1)}px rgba(120,0,255,0.7))`);
+  }
+  if (t === "chromatic-aberration") {
+    // CSS approximation: layered drop-shadows create red/cyan fringe on opposite sides.
+    // Two red shadows shifted right + two cyan/blue shadows shifted left = visible color fringe.
+    const offset = Math.max(1, Number(p.caOffset ?? 3) * intensity);
+    const o1 = offset.toFixed(1);
+    const o2 = (offset * 1.8).toFixed(1);
+    parts.push(
+      `drop-shadow(${o1}px 0 0 rgba(255,30,30,0.80))` +
+      ` drop-shadow(${o2}px 0 0 rgba(255,0,0,0.45))` +
+      ` drop-shadow(-${o1}px 0 0 rgba(0,80,255,0.80))` +
+      ` drop-shadow(-${o2}px 0 0 rgba(0,200,255,0.45))`
+    );
+    parts.push(`saturate(${(1 + intensity * 0.8).toFixed(2)})`);
+    parts.push(`contrast(${(1 + intensity * 0.3).toFixed(2)})`);
+  }
   const br = Number(p.brightness ?? 100); if (br !== 100) parts.push(`brightness(${(br / 100).toFixed(2)})`);
   const co = Number(p.contrast   ?? 100); if (co !== 100) parts.push(`contrast(${(co / 100).toFixed(2)})`);
   const sa = Number(p.saturate   ?? 100); if (sa !== 100) parts.push(`saturate(${(sa / 100).toFixed(2)})`);
   const hr = Number(p.hueRotate  ?? 0);   if (t !== "hue-rotate" && hr !== 0) parts.push(`hue-rotate(${hr}deg)`);
   return parts.join(" ");
+}
+
+/**
+ * Return a CSS `transform` string for effects that need spatial distortion in the feed/theater.
+ * Applied alongside `clipCssFilter` to the video element style.
+ */
+export function clipCssTransform(p: Record<string, unknown> = {}): string {
+  if (p.effectDisabled) return "";
+  const t = String(p.effectType ?? "none");
+  const intensity = Number(p.intensity ?? 50) / 100;
+  if (t === "hypno-tunnel") {
+    // Scale up + slight rotation gives "tunnel zooming inward" feel
+    return `scale(${(1 + intensity * 0.2).toFixed(3)}) rotate(${(intensity * 5).toFixed(1)}deg)`;
+  }
+  return "";
 }
 
 /** Collect all SVG defs needed for the current FX state */

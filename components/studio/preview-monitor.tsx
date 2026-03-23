@@ -142,23 +142,41 @@ export function PreviewMonitor() {
 
   const activeTextClips = useMemo(() => {
     const result: ClipEvent[] = [];
+    // Separate text tracks (original projects)
     for (const tt of tracks.filter((t) => t.type === "text")) {
       for (const c of tt.clips) {
         if (playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration) result.push(c);
       }
     }
+    // Embedded text clips on video clips (remix baking — no separate track)
+    for (const vt of videoTracks) {
+      for (const vc of vt.clips) {
+        for (const c of vc.embeddedTextClips ?? []) {
+          if (playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration) result.push(c);
+        }
+      }
+    }
     return result;
-  }, [tracks, playheadPosition]);
+  }, [tracks, videoTracks, playheadPosition]);
 
   const activeEffectClips = useMemo(() => {
     const result: ClipEvent[] = [];
+    // Separate effect tracks (original projects)
     for (const et of tracks.filter((t) => t.type === "effect")) {
       for (const c of et.clips) {
         if (playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration) result.push(c);
       }
     }
+    // Embedded effect clips on video clips (remix baking — no separate track)
+    for (const vt of videoTracks) {
+      for (const vc of vt.clips) {
+        for (const c of vc.embeddedEffectClips ?? []) {
+          if (playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration) result.push(c);
+        }
+      }
+    }
     return result;
-  }, [tracks, playheadPosition]);
+  }, [tracks, videoTracks, playheadPosition]);
 
   const maskedEffectClips = useMemo(
     () => activeEffectClips.filter((c) => !c.fxParams?.effectDisabled && isMasked(c)),

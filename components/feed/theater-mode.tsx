@@ -6,7 +6,9 @@ import type { FeedPost } from "@/lib/store/feed-store";
 import type { ClipEvent, MediaPoolItem } from "@/lib/store/types";
 import { hydrateMediaPool } from "@/lib/store/media-pool-db";
 import { useHydrationStore } from "@/lib/store/hydration-store";
-import { clipCssFilter } from "@/lib/utils/svg-filters";
+import { useUserStore } from "@/lib/store/user-store";
+import { clipCssFilter, clipCssTransform } from "@/lib/utils/svg-filters";
+import { buildTextStyle } from "@/lib/utils/preview-helpers";
 
 interface TheaterModeProps {
   post: FeedPost; onClose: () => void; onRemix: () => void; onCreator: () => void;
@@ -48,6 +50,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
   const mutedRef     = useRef(true);
 
   const effectClipsRef = useRef<ClipEvent[]>([]);
+  const textClipsRef   = useRef<ClipEvent[]>([]);
 
   const [progress, setProgress]   = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -67,18 +70,29 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     hydrateMediaPool(pool).then(setHydratedPool).catch(() => setHydratedPool(pool));
   }, [poolKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Populate effect clips ref from snapshot — used in tick for per-frame filter updates
+  // Populate effect + text clip refs from snapshot — used in tick for per-frame updates.
+  // Checks both separate tracks (original posts) and embeddedEffectClips (remix baking).
   useEffect(() => {
     const snap = post.projectSnapshot;
+    const videoClips = snap ? snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips) : [];
+    const embeddedFx   = videoClips.flatMap((c) => c.embeddedEffectClips ?? []);
+    const embeddedText = videoClips.flatMap((c) => c.embeddedTextClips ?? []);
     effectClipsRef.current = snap
-      ? snap.tracks.filter((t) => t.type === "effect").flatMap((t) => t.clips)
+      ? [...snap.tracks.filter((t) => t.type === "effect").flatMap((t) => t.clips), ...embeddedFx]
       : [];
-    // Apply initial filter at t=0
+    textClipsRef.current = snap
+      ? [...snap.tracks.filter((t) => t.type === "text").flatMap((t) => t.clips), ...embeddedText]
+      : [];
+    // Apply initial filter + transform at t=0
     const efx = effectClipsRef.current.find(
       (c) => !c.fxParams?.effectDisabled && 0 >= c.startTime && 0 < c.startTime + c.duration
     );
     const v = videoRef.current;
-    if (v) v.style.filter = efx ? clipCssFilter(efx.fxParams ?? {}) : "";
+    if (v) {
+      const efxP = efx?.fxParams ?? {};
+      v.style.filter    = efx ? clipCssFilter(efxP) : "";
+      v.style.transform = efx ? clipCssTransform(efxP) : "";
+    }
   }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show recovery hint after 2s of black screen on a snapshot post
@@ -200,14 +214,33 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
         phRef.current = (phRef.current + delta * 1000) % dur;
         setProgress(phRef.current / dur);
         syncClip(phRef.current);
-        // Dynamic effect filter — toggled per-frame based on effect clip boundaries
+        // Dynamic effect filter — per-frame, with time-based animation for tunnel effects
         const v = videoRef.current;
         if (v) {
           const ph = phRef.current;
           const efx = effectClipsRef.current.find(
             (c) => !c.fxParams?.effectDisabled && ph >= c.startTime && ph < c.startTime + c.duration
           );
-          v.style.filter = efx ? clipCssFilter(efx.fxParams ?? {}) : "";
+          if (!efx) {
+            v.style.filter = "";
+            v.style.transform = "";
+          } else {
+            const efxP = efx.fxParams ?? {};
+            const effectType = String(efxP.effectType ?? "none");
+            if (effectType === "hypno-tunnel") {
+              // Animate: hue spins + scale pulses over a 2s cycle using rAF timestamp
+              const intensity = Number(efxP.intensity ?? 50) / 100;
+              const phase = (ts % 2000) / 2000;
+              const animHue = Math.round(phase * 360);
+              const scl = (1 + intensity * 0.2 + Math.sin(phase * Math.PI * 2) * intensity * 0.05).toFixed(3);
+              const rot = ((phase * 2 - 1) * intensity * 8).toFixed(1);
+              v.style.filter = `hue-rotate(${animHue}deg) saturate(${(1 + intensity * 3).toFixed(2)}) contrast(${(1 + intensity * 1.5).toFixed(2)}) brightness(${(1 + intensity * 0.4).toFixed(2)}) drop-shadow(0 0 ${(intensity * 12).toFixed(1)}px rgba(120,0,255,0.7))`;
+              v.style.transform = `scale(${scl}) rotate(${rot}deg)`;
+            } else {
+              v.style.filter    = clipCssFilter(efxP);
+              v.style.transform = clipCssTransform(efxP);
+            }
+          }
         }
       }
     }
@@ -302,13 +335,16 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
         const efx = effectClipsRef.current.find(
           (c) => !c.fxParams?.effectDisabled && ph >= c.startTime && ph < c.startTime + c.duration
         );
-        v.style.filter = efx ? clipCssFilter(efx.fxParams ?? {}) : "";
+        const efxP = efx?.fxParams ?? {};
+        v.style.filter = efx ? clipCssFilter(efxP) : "";
+        v.style.transform = efx ? clipCssTransform(efxP) : "";
       }
     } else {
       const v = videoRef.current; if (v && v.duration) v.currentTime = ratio * v.duration;
     }
   }, [syncClip]);
 
+  const currentUsername = useUserStore((s) => s.profile?.username);
   const isBlobPost = post.videoUrl?.startsWith("blob:");
   const remixAllowed = post.allowRemix !== false;
   const similarPosts = allPosts.filter((p) => p.id !== post.id && p.tags.some((t) => post.tags.includes(t))).slice(0, 12);
@@ -354,6 +390,20 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
             className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
           />
 
+          {/* Text overlays — re-evaluated via progress state which updates each rAF tick */}
+          {textClipsRef.current.filter((c) => {
+            const ph = phRef.current;
+            return ph >= c.startTime && ph < c.startTime + c.duration;
+          }).map((c) => {
+            const r = buildTextStyle(c, phRef.current);
+            if (!r) return null;
+            return (
+              <div key={c.id} className="pointer-events-none absolute inset-0" style={{ zIndex: 8 }}>
+                <span style={r.style}>{r.displayText}</span>
+              </div>
+            );
+          })}
+
           {/* Bottom scrim */}
           <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{ height: "35%", background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }} />
 
@@ -370,9 +420,14 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
             {post.duration !== "—" && <span className="rounded-full bg-black/60 px-2 py-0.5 text-[9px] tabular-nums text-white/70 backdrop-blur-sm">{post.duration}</span>}
             {isBlobPost && <span className="rounded-full bg-orange-500/70 px-2 py-0.5 text-[9px] font-semibold text-white backdrop-blur-sm">Local Session</span>}
             {post.remixedFromHandle && (
-              <span className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-semibold text-purple-300 backdrop-blur-sm">
-                <GitBranch size={8} />Remixed from @{post.remixedFromHandle}
-              </span>
+              <div className="flex flex-col gap-0.5 rounded-full bg-black/60 px-2 py-0.5 backdrop-blur-sm">
+                <span className="flex items-center gap-1 text-[9px] font-semibold text-purple-300">
+                  <GitBranch size={8} />Remix of @{post.remixedFromHandle}
+                </span>
+                {post.rootParentHandle && post.rootParentHandle !== post.remixedFromHandle && (
+                  <span className="ml-3 text-[8px] text-purple-300/60">Original: @{post.rootParentHandle}</span>
+                )}
+              </div>
             )}
           </div>
 

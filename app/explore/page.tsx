@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Zap, GitBranch, Flame, Sparkles } from "lucide-react";
+import { Zap, GitBranch, Flame, Sparkles, Download } from "lucide-react";
 import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import type { MediaPoolItem } from "@/lib/store/types";
@@ -32,7 +32,7 @@ const TRENDING_FX = [
 ];
 
 // ── Template card ──────────────────────────────────────────────────────────────
-function TemplateCard({ post, onRemix }: { post: FeedPost; onRemix: () => void }) {
+function TemplateCard({ post, onRemix, onImport }: { post: FeedPost; onRemix: () => void; onImport: () => void }) {
   return (
     <article className="group relative overflow-hidden rounded-xl border border-white/8 transition-all hover:border-white/20 hover:-translate-y-0.5"
       style={{ background: post.bg }}>
@@ -68,11 +68,17 @@ function TemplateCard({ post, onRemix }: { post: FeedPost; onRemix: () => void }
               <span key={t} className="rounded bg-white/10 px-1 py-px text-[8px] text-white/50">{t}</span>
             ))}
           </div>
-          <button onClick={onRemix}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-[10px] font-bold text-white transition-all active:scale-95 opacity-0 group-hover:opacity-100"
-            style={{ background: `${post.accent}cc`, boxShadow: `0 0 12px ${post.accent}50` }}>
-            <Zap size={9} />Remix This
-          </button>
+          <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={onImport}
+              className="flex items-center justify-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 text-[10px] font-semibold text-white/60 transition-all hover:bg-white/8 active:scale-95">
+              <Download size={9} />Import
+            </button>
+            <button onClick={onRemix}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
+              style={{ background: `${post.accent}cc`, boxShadow: `0 0 12px ${post.accent}50` }}>
+              <Zap size={9} />Remix This
+            </button>
+          </div>
         </div>
       </div>
     </article>
@@ -101,6 +107,8 @@ export default function ExplorePage() {
   const router    = useRouter();
   const userPosts = useFeedStore((s) => s.userPosts);
   const openProjectInTab = useProjectStore((s) => s.openProjectInTab);
+  const addMediaItem = useProjectStore((s) => s.addMediaItem);
+  const [toast, setToast] = useState<string | null>(null);
 
   // Merge all published user posts with community posts (no allowRemix filter)
   const templates = useMemo(() => {
@@ -109,23 +117,72 @@ export default function ExplorePage() {
   }, [userPosts]);
 
   const handleRemix = (post: FeedPost) => {
-    const remixMeta = { parentProjectId: post.id, remixedFromHandle: post.user.handle };
-    if (post.projectSnapshot) {
-      openProjectInTab({ ...post.projectSnapshot, name: post.title, ...remixMeta });
-    } else if (post.videoUrl) {
-      const mediaId = crypto.randomUUID();
-      const trackId = crypto.randomUUID();
-      const media: MediaPoolItem = { id: mediaId, name: post.title, type: "video", duration: 30_000_000, previewUrl: post.videoUrl };
-      openProjectInTab({
-        tracks: [{ id: trackId, type: "video", name: "Video 1", color: "#3b82f6", height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: [{ id: crypto.randomUUID(), trackId, sourceId: mediaId, startTime: 0, duration: media.duration, mediaOffset: 0 }] }],
-        duration: media.duration + 5_000_000,
-        projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" },
-        mediaPool: [media],
-        name: post.title,
-        ...remixMeta,
-      });
-    }
+    const remixMeta = {
+      parentProjectId: post.id,
+      remixedFromHandle: post.user.handle,
+      rootParentId: post.rootParentId ?? post.id,
+      rootParentHandle: post.rootParentHandle ?? post.user.handle,
+    };
+    const snap = post.projectSnapshot;
+    const duration = snap?.duration ?? 30_000_000;
+    const settings = snap?.projectSettings ?? { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" };
+
+    // Preserve all media pool items so IDB hydration (keyed by original ID) works for all clips.
+    const flatMedia: MediaPoolItem[] = snap?.mediaPool
+      ? [...snap.mediaPool]
+      : post.videoUrl
+        ? [{ id: crypto.randomUUID(), name: post.title, type: "video" as const, duration, previewUrl: post.videoUrl }]
+        : [];
+
+    const trackId = crypto.randomUUID();
+    const audioId = crypto.randomUUID();
+
+    const allEffectClips = snap ? snap.tracks.filter((t) => t.type === "effect").flatMap((t) => t.clips) : [];
+    const allTextClips   = snap ? snap.tracks.filter((t) => t.type === "text").flatMap((t) => t.clips)   : [];
+    const overlapping = <T extends { startTime: number; duration: number }>(pool: T[], target: T) =>
+      pool.filter((e) => e.startTime < target.startTime + target.duration && e.startTime + e.duration > target.startTime);
+
+    const allVideoClips = snap
+      ? snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips).sort((a, b) => a.startTime - b.startTime)
+      : [];
+    const flatVideoClips = allVideoClips.length > 0
+      ? allVideoClips.map((c) => {
+          const efx = overlapping(allEffectClips, c);
+          const txt = overlapping(allTextClips, c);
+          return { ...c, id: crypto.randomUUID(), trackId, ...(efx.length ? { embeddedEffectClips: efx } : {}), ...(txt.length ? { embeddedTextClips: txt } : {}) };
+        })
+      : flatMedia[0]
+        ? [{ id: crypto.randomUUID(), trackId, sourceId: flatMedia[0].id, startTime: 0, duration, mediaOffset: 0 }]
+        : [];
+
+    const flatAudioClips = snap
+      ? snap.tracks.filter((t) => t.type === "audio").flatMap((t) => t.clips).sort((a, b) => a.startTime - b.startTime)
+          .map((c) => ({ ...c, id: crypto.randomUUID(), trackId: audioId }))
+      : [];
+
+    const flatTracks = [
+      { id: trackId, type: "video" as const, name: "Video 1", color: "#3b82f6", height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: flatVideoClips },
+      { id: audioId, type: "audio" as const, name: "Audio 1", color: "#22c55e", height: 48, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: flatAudioClips },
+    ];
+
+    openProjectInTab({ tracks: flatTracks, mediaPool: flatMedia, duration: duration + 5_000_000, projectSettings: settings, name: `Remix: ${post.title}`, ...remixMeta });
     router.push("/studio");
+  };
+
+  const handleImport = (post: FeedPost) => {
+    const snap = post.projectSnapshot;
+    const origMedia = snap?.mediaPool?.find((m) => m.type === "video");
+    const videoUrl = post.videoUrl ?? origMedia?.previewUrl;
+    if (!videoUrl) { setToast("No video to import"); setTimeout(() => setToast(null), 2500); return; }
+    addMediaItem({
+      id: origMedia?.id ?? crypto.randomUUID(),
+      name: origMedia?.name ?? post.title,
+      type: "video",
+      duration: origMedia?.duration ?? snap?.duration ?? 30_000_000,
+      previewUrl: videoUrl,
+    });
+    setToast("Saved to Media Pool");
+    setTimeout(() => setToast(null), 2500);
   };
 
   return (
@@ -160,10 +217,16 @@ export default function ExplorePage() {
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {templates.map((post) => (
-            <TemplateCard key={post.id} post={post} onRemix={() => handleRemix(post)} />
+            <TemplateCard key={post.id} post={post} onRemix={() => handleRemix(post)} onImport={() => handleImport(post)} />
           ))}
         </div>
       </div>
+
+      {toast && (
+        <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-full border border-white/14 bg-[#1c1c1c]/95 px-4 py-2.5 shadow-xl backdrop-blur-sm">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-purple-400" /><span className="text-xs font-semibold text-white/90">{toast}</span>
+        </div>
+      )}
     </div>
   );
 }

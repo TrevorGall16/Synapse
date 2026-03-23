@@ -7,6 +7,7 @@ import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
+import type { Track, ClipEvent } from "@/lib/store/types";
 
 interface PublishModalProps {
   onClose: () => void;
@@ -14,6 +15,40 @@ interface PublishModalProps {
 
 const ACCENTS = ["#7c3aed","#ec4899","#06b6d4","#22c55e","#f59e0b","#ef4444","#a855f7","#38bdf8","#fb923c"];
 const BGS     = ["#1a0a2e","#1a0818","#071a1a","#051a0a","#1a1100","#1a0500","#160a1a","#071018","#180e00"];
+
+/**
+ * For remixed projects: merge any user-added effect/text track clips INTO each video
+ * clip's embeddedEffectClips/embeddedTextClips, then drop the separate tracks.
+ * This ensures the published snapshot has a single canonical FX source for the feed.
+ * Original posts (no embedded arrays) are returned untouched.
+ */
+function consolidateEffectTracks(tracks: Track[]): Track[] {
+  const hasEmbedded = tracks.some(
+    (t) => t.type === "video" && t.clips.some((c) => c.embeddedEffectClips?.length || c.embeddedTextClips?.length)
+  );
+  if (!hasEmbedded) return tracks; // Original post: keep separate tracks as-is
+
+  const sepFx  = tracks.filter((t) => t.type === "effect").flatMap((t) => t.clips);
+  const sepTxt = tracks.filter((t) => t.type === "text").flatMap((t) => t.clips);
+  if (sepFx.length === 0 && sepTxt.length === 0) return tracks;
+
+  const overlaps = <T extends { startTime: number; duration: number }>(pool: T[], clip: T) =>
+    pool.filter((e) => e.startTime < clip.startTime + clip.duration && e.startTime + e.duration > clip.startTime);
+
+  return tracks
+    .filter((t) => t.type !== "effect" && t.type !== "text")
+    .map((t): Track => {
+      if (t.type !== "video") return t;
+      return {
+        ...t,
+        clips: t.clips.map((c): ClipEvent => ({
+          ...c,
+          embeddedEffectClips: [...(c.embeddedEffectClips ?? []), ...overlaps(sepFx, c)],
+          embeddedTextClips:   [...(c.embeddedTextClips   ?? []), ...overlaps(sepTxt, c)],
+        })),
+      };
+    });
+}
 
 function fmtDuration(micros: number): string {
   const secs = Math.floor(micros / 1_000_000);
@@ -39,10 +74,13 @@ export function PublishModal({ onClose }: PublishModalProps) {
   // Detect lineage: stored directly on project to survive across community/mock posts
   const parentProjectId   = useProjectStore((s) => s.parentProjectId);
   const remixedFromHandle = useProjectStore((s) => s.remixedFromHandle);
+  const rootParentId      = useProjectStore((s) => s.rootParentId);
+  const rootParentHandle  = useProjectStore((s) => s.rootParentHandle);
   // Fall back to feed-store lookup for legacy projects that pre-date remixedFromHandle field
   const parentPost = (!remixedFromHandle && parentProjectId)
     ? useFeedStore.getState().userPosts.find((p) => p.id === parentProjectId)
     : null;
+  const effectiveHandle = remixedFromHandle ?? parentPost?.user?.handle;
 
   const handlePublish = () => {
     if (!title.trim() || published) return;
@@ -68,6 +106,8 @@ export function PublishModal({ onClose }: PublishModalProps) {
       ? tagsRaw.split(/\s+/).map((t) => (t.startsWith("#") ? t : `#${t}`))
       : ["#synapse"];
 
+    const finalTracks = consolidateEffectTracks(publishTracks);
+
     addPost({
       id,
       user: { handle: username, initial: displayName[0]?.toUpperCase() ?? "U", hue },
@@ -79,11 +119,13 @@ export function PublishModal({ onClose }: PublishModalProps) {
       duration: fmtDuration(duration),
       likes: 0, comments: 0, featured: false,
       videoUrl: firstVideo?.previewUrl,
-      projectSnapshot: { tracks: publishTracks, duration, projectSettings, mediaPool },
+      projectSnapshot: { tracks: finalTracks, duration, projectSettings, mediaPool },
       authorUsername: username,
       allowRemix,
       remixedFromPostId: parentProjectId,
-      remixedFromHandle: remixedFromHandle ?? parentPost?.user?.handle,
+      remixedFromHandle: effectiveHandle,
+      rootParentId: rootParentId ?? parentProjectId,
+      rootParentHandle: rootParentHandle ?? effectiveHandle,
       createdAt: Date.now(),
     });
 
@@ -108,10 +150,15 @@ export function PublishModal({ onClose }: PublishModalProps) {
 
         <div className="flex flex-col gap-3 p-5">
           {/* Lineage notice */}
-          {(remixedFromHandle ?? parentPost?.user?.handle) && (
-            <div className="flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/8 px-3 py-2">
-              <GitBranch size={11} className="text-purple-400" />
-              <span className="text-[10px] text-purple-300">Remixed from <span className="font-bold">@{remixedFromHandle ?? parentPost?.user?.handle}</span></span>
+          {effectiveHandle && (
+            <div className="flex flex-col gap-0.5 rounded-lg border border-purple-500/20 bg-purple-500/8 px-3 py-2">
+              <div className="flex items-center gap-1.5">
+                <GitBranch size={11} className="text-purple-400" />
+                <span className="text-[10px] text-purple-300">Remixed from <span className="font-bold">@{effectiveHandle}</span></span>
+              </div>
+              {rootParentHandle && rootParentHandle !== effectiveHandle && (
+                <span className="ml-5 text-[9px] text-purple-300/60">Original by <span className="font-bold">@{rootParentHandle}</span></span>
+              )}
             </div>
           )}
 

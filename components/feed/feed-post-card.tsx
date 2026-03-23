@@ -1,10 +1,12 @@
 "use client";
 
 import { useRef, useState, useMemo, useEffect } from "react";
-import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch } from "lucide-react";
+import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch, Download } from "lucide-react";
 import { type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
+import { useUserStore } from "@/lib/store/user-store";
 import { cleanupSnapshotMedia } from "@/lib/store/media-pool-db";
-import { clipCssFilter } from "@/lib/utils/svg-filters";
+import { clipCssFilter, clipCssTransform } from "@/lib/utils/svg-filters";
+import { buildTextStyle } from "@/lib/utils/preview-helpers";
 
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
 
@@ -14,11 +16,13 @@ interface FeedPostCardProps {
   onRemix: () => void;
   onCreator: () => void;
   onDelete?: () => void;
+  onImport?: () => void;
   /** Only show the delete control when explicitly true (Profile page only) */
   showDelete?: boolean;
 }
 
-export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showDelete }: FeedPostCardProps) {
+export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImport, showDelete }: FeedPostCardProps) {
+  const currentUsername = useUserStore((s) => s.profile?.username);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hovered, setHovered] = useState(false);
   const [liked, setLiked] = useState(false);
@@ -29,20 +33,44 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
   const isBlob = isBlobUrl(post.videoUrl);
 
   // First clip's source URL + seek offset — handles gaps at project start
-  const { firstClipSrc, firstClipOffset, firstClipFilter } = useMemo(() => {
+  const { firstClipSrc, firstClipOffset, firstClipFilter, firstClipTransform } = useMemo(() => {
     const snap = post.projectSnapshot;
-    if (!snap) return { firstClipSrc: post.videoUrl, firstClipOffset: 0.001, firstClipFilter: "" };
+    if (!snap) return { firstClipSrc: post.videoUrl, firstClipOffset: 0.001, firstClipFilter: "", firstClipTransform: "" };
     const pool = snap.mediaPool ?? [];
     const fc = snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips).sort((a, b) => a.startTime - b.startTime)[0];
-    const efx = fc ? snap.tracks.filter((t) => t.type === "effect").flatMap((t) => t.clips)
-      .find((c) => c.startTime < fc.startTime + fc.duration && c.startTime + c.duration > fc.startTime && !c.fxParams?.effectDisabled)
+    // Merge embedded (remix baking) + separate effect tracks (original / user-added post-remix)
+    const effectPool = [
+      ...(fc?.embeddedEffectClips ?? []),
+      ...snap.tracks.filter((t) => t.type === "effect").flatMap((t) => t.clips),
+    ];
+    const efx = fc
+      ? effectPool.find((c) => c.startTime < fc.startTime + fc.duration && c.startTime + c.duration > fc.startTime && !c.fxParams?.effectDisabled)
       : undefined;
+    const efxFxParams = efx?.fxParams ?? {};
     return {
       firstClipSrc: fc ? (pool.find((m) => m.id === fc.sourceId)?.previewUrl ?? post.videoUrl) : post.videoUrl,
       firstClipOffset: fc ? Math.max(0.001, (fc.mediaOffset ?? 0) / 1_000_000) : 0.001,
-      firstClipFilter: efx ? clipCssFilter(efx.fxParams ?? {}) : "",
+      firstClipFilter: efx ? clipCssFilter(efxFxParams) : "",
+      firstClipTransform: efx ? clipCssTransform(efxFxParams) : "",
     };
-  }, [post.projectSnapshot, post.videoUrl]);
+  }, [post.projectSnapshot, post.videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Text overlays visible at the preview frame offset
+  // Also checks embeddedTextClips on video clips (remix baking)
+  const textOverlays = useMemo(() => {
+    const snap = post.projectSnapshot;
+    if (!snap) return [];
+    const phMicros = firstClipOffset * 1_000_000;
+    const fc = snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips).sort((a, b) => a.startTime - b.startTime)[0];
+    const textPool = [
+      ...(fc?.embeddedTextClips ?? []),
+      ...snap.tracks.filter((t) => t.type === "text").flatMap((t) => t.clips),
+    ];
+    return textPool
+      .filter((c) => phMicros >= c.startTime && phMicros < c.startTime + c.duration)
+      .map((c) => buildTextStyle(c, phMicros))
+      .filter((r): r is NonNullable<ReturnType<typeof buildTextStyle>> => r !== null);
+  }, [post.projectSnapshot, firstClipOffset]);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -88,9 +116,9 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
         </div>
 
         {/* Video */}
-        <video ref={videoRef} src={firstClipSrc}
+        <video ref={videoRef} src={firstClipSrc || undefined}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
-          style={firstClipFilter ? { filter: firstClipFilter } : undefined}
+          style={{ ...(firstClipFilter ? { filter: firstClipFilter } : {}), ...(firstClipTransform ? { transform: firstClipTransform } : {}) }}
           muted loop playsInline preload="metadata"
           onError={() => setMediaOffline(true)}
         />
@@ -100,6 +128,12 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
             <p className="text-[9px] font-semibold text-white/35">Media Offline</p>
           </div>
         )}
+        {/* Text overlays from snapshot (static at preview frame) */}
+        {textOverlays.map((r, i) => (
+          <div key={i} className="pointer-events-none absolute inset-0" style={{ zIndex: 5 }}>
+            <span style={r.style}>{r.displayText}</span>
+          </div>
+        ))}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80" />
 
         {post.featured && (
@@ -129,7 +163,12 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
           </button>
           <p className="line-clamp-2 text-[11px] font-bold leading-snug text-white">{post.title}</p>
           {post.remixedFromHandle && (
-            <span className="mt-1 flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}</span>
+            <div className="mt-1">
+              <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}</span>
+              {post.rootParentHandle && post.rootParentHandle !== post.remixedFromHandle && (
+                <span className="ml-2.5 text-[7px] text-purple-300/45">Original: @{post.rootParentHandle}</span>
+              )}
+            </div>
           )}
         </div>
 
@@ -141,7 +180,12 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
           </button>
           <p className="mb-1 text-xs font-bold leading-snug text-white">{post.title}</p>
           {post.remixedFromHandle && (
-            <span className="mb-1 flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}</span>
+            <div className="mb-1">
+              <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}</span>
+              {post.rootParentHandle && post.rootParentHandle !== post.remixedFromHandle && (
+                <span className="ml-2.5 text-[7px] text-purple-300/45">Original: @{post.rootParentHandle}</span>
+              )}
+            </div>
           )}
           <div className="mb-2 flex flex-wrap gap-1">
             {post.tags.map((t) => <span key={t} className="rounded bg-white/10 px-1 py-px text-[8px] text-white/50">{t}</span>)}
@@ -162,10 +206,18 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
                 </button>
               )}
             </div>
-            <button onClick={(e) => { e.stopPropagation(); onRemix(); }}
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
-              style={{ background: `${post.accent}dd`, boxShadow: `0 0 10px ${post.accent}50` }}
-            ><Zap size={9} />Remix</button>
+            <div className="flex items-center gap-1.5">
+              {onImport && (
+                <button onClick={(e) => { e.stopPropagation(); onImport(); }}
+                  className="flex items-center gap-1 rounded-lg border border-white/15 px-2 py-1.5 text-[10px] font-semibold text-white/60 transition-all hover:bg-white/8 active:scale-95"
+                  title="Import to Media Pool"
+                ><Download size={9} />Import</button>
+              )}
+              <button onClick={(e) => { e.stopPropagation(); onRemix(); }}
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
+                style={{ background: `${post.accent}dd`, boxShadow: `0 0 10px ${post.accent}50` }}
+              ><Zap size={9} />Remix</button>
+            </div>
           </div>
         </div>
       </div>

@@ -72,6 +72,10 @@ export interface ClipEvent {
   playbackRate?: number;
   level?: number;
   fxParams?: Record<string, unknown>;
+  /** Effect clips baked from the remix source's effect tracks. Renders in preview/feed but not as editable tracks. */
+  embeddedEffectClips?: ClipEvent[];
+  /** Text clips baked from the remix source's text tracks. Renders in preview/feed but not as editable tracks. */
+  embeddedTextClips?: ClipEvent[];
 }
 
 export interface Track {
@@ -130,6 +134,8 @@ export interface SerializedProject {
   projectSettings: ProjectSettings;
   parentProjectId?: string;
   remixedFromHandle?: string;
+  rootParentId?: string;
+  rootParentHandle?: string;
   historyPast: HistorySnapshot[];
   historyFuture: HistorySnapshot[];
 }

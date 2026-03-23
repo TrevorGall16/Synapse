@@ -28,6 +28,9 @@ export interface FeedPost {
   remixedFromPostId?: string;
   /** Handle of the original creator this was remixed from */
   remixedFromHandle?: string;
+  /** The root (first) post in the remix chain — set if this is a remix-of-a-remix */
+  rootParentId?: string;
+  rootParentHandle?: string;
   /** Unix ms timestamp of publication — used for sorting on Profile page */
   createdAt?: number;
 }

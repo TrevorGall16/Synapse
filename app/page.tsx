@@ -144,18 +144,80 @@ export default function DiscoveryFeedPage() {
   };
 
   const handleRemix = (post: FeedPost) => {
-    const remixMeta = { parentProjectId: post.id, remixedFromHandle: post.user.handle };
-    if (post.projectSnapshot) {
-      openProjectInTab({ ...post.projectSnapshot, name: post.title, ...remixMeta });
-    } else if (post.videoUrl) {
-      const mediaId = crypto.randomUUID();
-      const trackId = crypto.randomUUID();
-      const media: MediaPoolItem = { id: mediaId, name: post.title, type: "video", duration: 30_000_000, previewUrl: post.videoUrl };
-      openProjectInTab({ tracks: [{ id: trackId, type: "video", name: "Video 1", color: "#3b82f6", height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: [{ id: crypto.randomUUID(), trackId, sourceId: mediaId, startTime: 0, duration: media.duration, mediaOffset: 0 }] }], duration: media.duration + 5_000_000, projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" }, mediaPool: [media], name: post.title, ...remixMeta });
-    } else {
-      openProjectInTab({ ...buildDemoSnapshot(post.id, post.title), name: post.title, ...remixMeta });
-    }
-    showToast("Opening in Studio…");
+    const remixMeta = {
+      parentProjectId: post.id,
+      remixedFromHandle: post.user.handle,
+      rootParentId: post.rootParentId ?? post.id,
+      rootParentHandle: post.rootParentHandle ?? post.user.handle,
+    };
+    const snap = post.projectSnapshot;
+    const duration = snap?.duration ?? 30_000_000;
+    const settings = snap?.projectSettings ?? { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" };
+
+    // Preserve all media pool items from the snapshot so IDB hydration (keyed by original ID) works.
+    const flatMedia: MediaPoolItem[] = snap?.mediaPool
+      ? [...snap.mediaPool]
+      : post.videoUrl
+        ? [{ id: crypto.randomUUID(), name: post.title, type: "video" as const, duration, previewUrl: post.videoUrl }]
+        : [];
+
+    const trackId = crypto.randomUUID();
+    const audioId = crypto.randomUUID();
+
+    // Global effect + text pools for per-clip baking
+    const allEffectClips = snap ? snap.tracks.filter((t) => t.type === "effect").flatMap((t) => t.clips) : [];
+    const allTextClips   = snap ? snap.tracks.filter((t) => t.type === "text").flatMap((t) => t.clips)   : [];
+    const overlapping = <T extends { startTime: number; duration: number }>(pool: T[], target: T) =>
+      pool.filter((e) => e.startTime < target.startTime + target.duration && e.startTime + e.duration > target.startTime);
+
+    // Flatten ALL video clips onto Video 1, baking overlapping effects + text per-clip
+    const allVideoClips = snap
+      ? snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips).sort((a, b) => a.startTime - b.startTime)
+      : [];
+    const flatVideoClips = allVideoClips.length > 0
+      ? allVideoClips.map((c) => {
+          const efx = overlapping(allEffectClips, c);
+          const txt = overlapping(allTextClips, c);
+          return { ...c, id: crypto.randomUUID(), trackId, ...(efx.length ? { embeddedEffectClips: efx } : {}), ...(txt.length ? { embeddedTextClips: txt } : {}) };
+        })
+      : flatMedia[0]
+        ? [{ id: crypto.randomUUID(), trackId, sourceId: flatMedia[0].id, startTime: 0, duration, mediaOffset: 0 }]
+        : [];
+
+    // Flatten ALL audio clips onto Audio 1 (preserves multi-clip audio sync)
+    const flatAudioClips = snap
+      ? snap.tracks.filter((t) => t.type === "audio").flatMap((t) => t.clips).sort((a, b) => a.startTime - b.startTime)
+          .map((c) => ({ ...c, id: crypto.randomUUID(), trackId: audioId }))
+      : [];
+
+    const flatTracks: Track[] = [
+      { id: trackId, type: "video", name: "Video 1", color: "#3b82f6", height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: flatVideoClips },
+      { id: audioId, type: "audio", name: "Audio 1", color: "#22c55e", height: 48, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: flatAudioClips },
+    ];
+
+    openProjectInTab({ tracks: flatTracks, mediaPool: flatMedia, duration: duration + 5_000_000, projectSettings: settings, name: `Remix: ${post.title}`, ...remixMeta });
+    showToast("Opening remix in Studio…");
+  };
+
+  const showImportToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const handleImport = (post: FeedPost) => {
+    const snap = post.projectSnapshot;
+    const origMedia = snap?.mediaPool?.find((m) => m.type === "video");
+    const videoUrl = post.videoUrl ?? origMedia?.previewUrl;
+    if (!videoUrl) { showImportToast("No video to import"); return; }
+    const item: MediaPoolItem = {
+      id: origMedia?.id ?? crypto.randomUUID(),
+      name: origMedia?.name ?? post.title,
+      type: "video",
+      duration: origMedia?.duration ?? snap?.duration ?? 30_000_000,
+      previewUrl: videoUrl,
+    };
+    addMediaItem(item);
+    showImportToast("Saved to Media Pool");
   };
 
   const handleStudioFile = (file: File) => {
@@ -223,6 +285,7 @@ export default function DiscoveryFeedPage() {
                   key={post.id} post={post}
                   onOpen={() => setTheaterPostId(post.id)}
                   onRemix={() => handleRemix(post)}
+                  onImport={() => handleImport(post)}
                   onCreator={() => router.push(`/profile/${post.user.handle}`)}
                   onDelete={post.authorUsername && post.authorUsername === currentProfile?.username
                     ? () => removePost(post.id)

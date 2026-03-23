@@ -4,7 +4,7 @@ import { useRef, useCallback, useState } from "react";
 import type { ClipEvent } from "@/lib/store/types";
 import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
-import { Settings, Crop, Volume2 } from "lucide-react";
+import { Settings, Crop, Volume2, Layers } from "lucide-react";
 import { ClipFilmstrip } from "./clip-filmstrip";
 import { ClipWaveform } from "./clip-waveform";
 import { ClipContextMenu } from "./clip-context-menu";
@@ -409,10 +409,15 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       )}
 
       {/* Label + rate badge */}
-      <span className="relative z-10 truncate px-1.5 text-[10px] font-medium text-white/80 drop-shadow-sm">
-        {label}
+      <span className="relative z-10 flex items-center gap-1 truncate px-1.5 text-[10px] font-medium text-white/80 drop-shadow-sm">
+        {(clip.embeddedEffectClips?.length || clip.embeddedTextClips?.length) ? (
+          <span className="flex shrink-0 items-center gap-0.5 rounded bg-purple-500/35 px-1 py-px text-[7px] font-bold text-purple-200" title="Merged FX from original">
+            <Layers size={7} />FX
+          </span>
+        ) : null}
+        <span className="truncate">{label}</span>
         {clip.playbackRate != null && clip.playbackRate !== 1 && (
-          <span className="ml-1 rounded bg-white/20 px-0.5 text-[8px] tabular-nums">
+          <span className="shrink-0 rounded bg-white/20 px-0.5 text-[8px] tabular-nums">
             {Math.round(clip.playbackRate * 100)}%
           </span>
         )}

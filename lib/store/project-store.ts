@@ -19,6 +19,8 @@ export interface ProjectState {
   projectId: string;
   parentProjectId?: string;
   remixedFromHandle?: string;
+  rootParentId?: string;
+  rootParentHandle?: string;
   selectedClipIds: string[];
   selectedTrackId: string | null;
   inspectingClipId: string | null;
@@ -47,7 +49,7 @@ export interface ProjectState {
   openNewTab: () => void;
   switchTab: (id: string) => void;
   closeTab: (id: string) => void;
-  openProjectInTab: (snap: { tracks: Track[]; duration: number; projectSettings: ProjectSettings; projectId?: string; mediaPool?: MediaPoolItem[]; name?: string; parentProjectId?: string; remixedFromHandle?: string }) => void;
+  openProjectInTab: (snap: { tracks: Track[]; duration: number; projectSettings: ProjectSettings; projectId?: string; mediaPool?: MediaPoolItem[]; name?: string; parentProjectId?: string; remixedFromHandle?: string; rootParentId?: string; rootParentHandle?: string }) => void;
   addMediaItem: (item: MediaPoolItem) => void;
   updateMediaItemUrl: (id: string, url: string) => void;
   setMediaPool: (items: MediaPoolItem[]) => void;
@@ -94,7 +96,7 @@ const DEFAULT_TRACKS: Track[] = [
 ];
 
 function serializeActive(s: ProjectState): SerializedProject {
-  return { projectId: s.projectId, name: s.name, tracks: s.tracks, mediaPool: s.mediaPool, markers: s.markers, duration: s.duration, projectSettings: s.projectSettings, parentProjectId: s.parentProjectId, remixedFromHandle: s.remixedFromHandle, historyPast: s.historyPast, historyFuture: s.historyFuture };
+  return { projectId: s.projectId, name: s.name, tracks: s.tracks, mediaPool: s.mediaPool, markers: s.markers, duration: s.duration, projectSettings: s.projectSettings, parentProjectId: s.parentProjectId, remixedFromHandle: s.remixedFromHandle, rootParentId: s.rootParentId, rootParentHandle: s.rootParentHandle, historyPast: s.historyPast, historyFuture: s.historyFuture };
 }
 
 export const useProjectStore = create<ProjectState>()(persist((set) => ({
@@ -106,6 +108,8 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
   name: "Untitled Project",
   parentProjectId: undefined,
   remixedFromHandle: undefined,
+  rootParentId: undefined,
+  rootParentHandle: undefined,
   selectedClipIds: [],
   selectedTrackId: null,
   inspectingClipId: null,
@@ -164,13 +168,13 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
 
   resetProject: () => set((s) => {
     const newId = crypto.randomUUID();
-    return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: newId, name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, openProjectIds: [newId], savedProjects: {} };
+    return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: newId, name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, openProjectIds: [newId], savedProjects: {}, parentProjectId: undefined, remixedFromHandle: undefined, rootParentId: undefined, rootParentHandle: undefined };
   }),
 
   openNewTab: () => set((s) => {
     const newId = crypto.randomUUID();
     const ids = s.openProjectIds.includes(s.projectId) ? s.openProjectIds : [...s.openProjectIds, s.projectId];
-    return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: newId, name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, savedProjects: { ...s.savedProjects, [s.projectId]: serializeActive(s) }, openProjectIds: [...ids, newId] };
+    return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: newId, name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, savedProjects: { ...s.savedProjects, [s.projectId]: serializeActive(s) }, openProjectIds: [...ids, newId], parentProjectId: undefined, remixedFromHandle: undefined, rootParentId: undefined, rootParentHandle: undefined };
   }),
 
   switchTab: (id) => set((s) => {
@@ -211,27 +215,35 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
         return { ...target, savedProjects: { ...rest, [s.projectId]: serializeActive(s) }, openProjectIds: ids, selectedClipIds: [], inspectingClipId: null };
       }
       // Deep-copy tracks and mediaPool to prevent state leaking between tabs.
-      const tracksDeep: Track[] = JSON.parse(JSON.stringify(snap.tracks));
+      let tracksDeep: Track[] = JSON.parse(JSON.stringify(snap.tracks));
       const mediaPoolDeep: MediaPoolItem[] = JSON.parse(JSON.stringify(snap.mediaPool ?? []));
-      const newProj: SerializedProject = { projectId: incomingId, name: snap.name ?? "Untitled", tracks: tracksDeep, mediaPool: mediaPoolDeep, markers: [], duration: snap.duration, projectSettings: snap.projectSettings, parentProjectId: snap.parentProjectId ?? snap.projectId, remixedFromHandle: snap.remixedFromHandle, historyPast: [], historyFuture: [] };
+
+      // Attribution: use || to handle both null and undefined from Zustand persistence
+      const rootParentId     = snap.rootParentId     || snap.parentProjectId || undefined;
+      const rootParentHandle = snap.rootParentHandle || snap.remixedFromHandle || undefined;
+
+      // Remix UX: ensure an effect track exists so the remixer can add new FX without "Add Track"
+      const isRemix = !!snap.remixedFromHandle;
+      if (isRemix && !tracksDeep.find((t) => t.type === "effect")) {
+        tracksDeep = [...tracksDeep, createTrack("effect", 1)];
+      }
+
+      const newProj: SerializedProject = { projectId: incomingId, name: snap.name ?? "Untitled", tracks: tracksDeep, mediaPool: mediaPoolDeep, markers: [], duration: snap.duration, projectSettings: snap.projectSettings, parentProjectId: snap.parentProjectId ?? snap.projectId, remixedFromHandle: snap.remixedFromHandle, rootParentId, rootParentHandle, historyPast: [], historyFuture: [] };
       return { ...newProj, savedProjects: { ...s.savedProjects, [s.projectId]: serializeActive(s) }, openProjectIds: [...ids, incomingId], selectedClipIds: [], inspectingClipId: null };
     });
 
-    // Async: re-hydrate any stale media URLs (empty strings or dead blob: URLs) for the
-    // newly active project. This converts "Dead Strings" → "Live Blobs" instantly.
+    // Async: always re-hydrate the new tab's media pool from IDB.
+    // "Always" is correct here: blob URLs in the incoming snap may be from a prior session
+    // and are already expired. hydrateMediaPool skips items with non-blob URLs automatically.
     const { projectId: activeId, mediaPool: activePool } = useProjectStore.getState();
     if (activeId === incomingId && activePool.length > 0) {
-      const hasStale = activePool.some((m) => !m.previewUrl || m.previewUrl.startsWith("blob:"));
-      if (hasStale) {
-        hydrateMediaPool(activePool).then((hydrated) => {
-          hydrated.forEach((item) => {
-            // Guard: only update if the user hasn't switched to a different project.
-            if (item.previewUrl && useProjectStore.getState().projectId === incomingId) {
-              useProjectStore.getState().updateMediaItemUrl(item.id, item.previewUrl);
-            }
-          });
-        }).catch(console.warn);
-      }
+      hydrateMediaPool(activePool).then((hydrated) => {
+        hydrated.forEach((item) => {
+          if (item.previewUrl && useProjectStore.getState().projectId === incomingId) {
+            useProjectStore.getState().updateMediaItemUrl(item.id, item.previewUrl);
+          }
+        });
+      }).catch(console.warn);
     }
   },
 
