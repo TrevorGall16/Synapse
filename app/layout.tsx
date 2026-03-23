@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "@/components/ui/sidebar";
 import { GlobalHydrator } from "@/components/GlobalHydrator";
+import { GlobalSvgFilters } from "@/components/GlobalSvgFilters";
 import { HydrationBarrier } from "@/components/HydrationBarrier";
 import { AppBootstrap } from "@/components/AppBootstrap";
 import "./globals.css";
@@ -32,6 +33,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} bg-[#1a1a1a] antialiased`}
       >
+        <GlobalSvgFilters />
         <GlobalHydrator />
         <AppBootstrap />
         <div className="flex h-screen w-screen overflow-hidden">

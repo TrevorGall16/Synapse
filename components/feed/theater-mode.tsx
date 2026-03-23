@@ -49,8 +49,9 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
   const totalDurRef  = useRef(30_000_000);
   const mutedRef     = useRef(true);
 
-  const effectClipsRef = useRef<ClipEvent[]>([]);
-  const textClipsRef   = useRef<ClipEvent[]>([]);
+  const effectClipsRef    = useRef<ClipEvent[]>([]);
+  const textClipsRef      = useRef<ClipEvent[]>([]);
+  const activeAnimFxIdRef = useRef<string | null>(null); // tracks which clip owns the current CSS animation
 
   const [progress, setProgress]   = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -91,8 +92,11 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     if (v && efx) {
       v.style.filter    = efx.renderedCss?.filter    ?? clipCssFilter(efx.fxParams    ?? {});
       v.style.transform = efx.renderedCss?.transform ?? clipCssTransform(efx.fxParams ?? {});
+      v.style.animation = efx.renderedCss?.animation ?? "";
+      activeAnimFxIdRef.current = efx.id;
     } else if (v) {
-      v.style.filter = ""; v.style.transform = "";
+      v.style.filter = ""; v.style.transform = ""; v.style.animation = "";
+      activeAnimFxIdRef.current = null;
     }
   }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -224,9 +228,15 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
           );
           if (!efx) {
             v.style.filter = ""; v.style.transform = "";
+            if (activeAnimFxIdRef.current !== null) { v.style.animation = ""; activeAnimFxIdRef.current = null; }
           } else if (efx.renderedCss && !efx.fxParams) {
             // Published clip: apply pre-rendered CSS (fxParams was stripped at publish time)
             v.style.filter = efx.renderedCss.filter; v.style.transform = efx.renderedCss.transform;
+            // Only write animation when the clip changes — re-writing every frame restarts the animation
+            if (activeAnimFxIdRef.current !== efx.id) {
+              v.style.animation = efx.renderedCss.animation ?? "";
+              activeAnimFxIdRef.current = efx.id;
+            }
           } else {
             const efxP = efx.fxParams ?? {};
             const effectType = String(efxP.effectType ?? "none");
@@ -336,11 +346,13 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
       if (v) {
         const ph = phRef.current;
         const efx = effectClipsRef.current.find(
-          (c) => !c.fxParams?.effectDisabled && ph >= c.startTime && ph < c.startTime + c.duration
+          (c) => (c.renderedCss || !c.fxParams?.effectDisabled) && ph >= c.startTime && ph < c.startTime + c.duration
         );
         const efxP = efx?.fxParams ?? {};
-        v.style.filter = efx ? clipCssFilter(efxP) : "";
-        v.style.transform = efx ? clipCssTransform(efxP) : "";
+        v.style.filter    = efx ? (efx.renderedCss?.filter    ?? clipCssFilter(efxP))    : "";
+        v.style.transform = efx ? (efx.renderedCss?.transform ?? clipCssTransform(efxP)) : "";
+        v.style.animation = efx?.renderedCss?.animation ?? "";
+        activeAnimFxIdRef.current = efx?.id ?? null;
       }
     } else {
       const v = videoRef.current; if (v && v.duration) v.currentTime = ratio * v.duration;

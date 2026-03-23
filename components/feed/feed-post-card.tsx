@@ -5,7 +5,7 @@ import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBra
 import { type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { cleanupSnapshotMedia } from "@/lib/store/media-pool-db";
-import { clipCssFilter, clipCssTransform } from "@/lib/utils/svg-filters";
+import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { buildTextStyle } from "@/lib/utils/preview-helpers";
 
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
@@ -33,9 +33,9 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   const isBlob = isBlobUrl(post.videoUrl);
 
   // First clip's source URL + seek offset — handles gaps at project start
-  const { firstClipSrc, firstClipOffset, firstClipFilter, firstClipTransform } = useMemo(() => {
+  const { firstClipSrc, firstClipOffset, firstClipFilter, firstClipTransform, firstClipAnimation } = useMemo(() => {
     const snap = post.projectSnapshot;
-    if (!snap) return { firstClipSrc: post.videoUrl, firstClipOffset: 0.001, firstClipFilter: "", firstClipTransform: "" };
+    if (!snap) return { firstClipSrc: post.videoUrl, firstClipOffset: 0.001, firstClipFilter: "", firstClipTransform: "", firstClipAnimation: "" };
     const pool = snap.mediaPool ?? [];
     const fc = snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips).sort((a, b) => a.startTime - b.startTime)[0];
     // Merge embedded (remix baking) + separate effect tracks (original / user-added post-remix)
@@ -50,11 +50,13 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     // Use pre-rendered CSS if available (published clips with stripped fxParams)
     const firstClipFilter    = efx ? (efx.renderedCss?.filter    ?? clipCssFilter(efxFxParams))    : "";
     const firstClipTransform = efx ? (efx.renderedCss?.transform ?? clipCssTransform(efxFxParams)) : "";
+    const firstClipAnimation = efx ? (efx.renderedCss?.animation ?? clipCssAnimation(efxFxParams)) : "";
     return {
       firstClipSrc: fc ? (pool.find((m) => m.id === fc.sourceId)?.previewUrl ?? post.videoUrl) : post.videoUrl,
       firstClipOffset: fc ? Math.max(0.001, (fc.mediaOffset ?? 0) / 1_000_000) : 0.001,
       firstClipFilter,
       firstClipTransform,
+      firstClipAnimation,
     };
   }, [post.projectSnapshot, post.videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -121,7 +123,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
         {/* Video */}
         <video ref={videoRef} src={firstClipSrc || undefined}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
-          style={{ ...(firstClipFilter ? { filter: firstClipFilter } : {}), ...(firstClipTransform ? { transform: firstClipTransform } : {}) }}
+          style={{ ...(firstClipFilter ? { filter: firstClipFilter } : {}), ...(firstClipTransform ? { transform: firstClipTransform } : {}), ...(firstClipAnimation ? { animation: firstClipAnimation } : {}) }}
           muted loop playsInline preload="metadata"
           onError={() => setMediaOffline(true)}
         />

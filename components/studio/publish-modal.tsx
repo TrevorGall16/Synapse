@@ -8,7 +8,7 @@ import { useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { getAttributionLock } from "@/lib/store/attribution-idb";
-import { clipCssFilter, clipCssTransform } from "@/lib/utils/svg-filters";
+import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import type { Track, ClipEvent } from "@/lib/store/types";
 
 interface PublishModalProps {
@@ -52,6 +52,7 @@ function consolidateEffectTracks(tracks: Track[]): Track[] {
             renderedCss: e.renderedCss ?? {
               filter: clipCssFilter(e.fxParams ?? {}),
               transform: clipCssTransform(e.fxParams ?? {}),
+              animation: clipCssAnimation(e.fxParams ?? {}),
             },
           })),
           embeddedTextClips: [...(c.embeddedTextClips ?? []), ...overlaps(sepTxt, c)],
@@ -135,7 +136,9 @@ export function PublishModal({ onClose }: PublishModalProps) {
       duration: fmtDuration(duration),
       likes: 0, comments: 0, featured: false,
       videoUrl: firstVideo?.previewUrl,
-      projectSnapshot: { tracks: finalTracks, duration, projectSettings, mediaPool },
+      // snapshot.duration adds a 1s tail buffer past the last clip so the theater-mode
+      // rAF modulo wraps AFTER every clip has fully played (not mid-last-frame).
+      projectSnapshot: { tracks: finalTracks, duration: duration + 1_000_000, projectSettings, mediaPool },
       authorUsername: username,
       allowRemix,
       remixedFromPostId: parentProjectId,

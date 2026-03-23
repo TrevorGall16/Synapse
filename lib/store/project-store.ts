@@ -391,10 +391,6 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     rootParentId: s.rootParentId, rootParentHandle: s.rootParentHandle,
     projectSettings: s.projectSettings, openProjectIds: s.openProjectIds,
     mediaPool: s.mediaPool.map((m) => ({ ...m, previewUrl: "" })),
-    // Strip tracks + history from saved tabs — restored from IDB on next load.
-    savedProjects: Object.fromEntries(Object.entries(s.savedProjects).map(([k, v]) => [k, {
-      ...v, tracks: [], historyPast: [], historyFuture: [],
-      mediaPool: v.mediaPool.map((m) => ({ ...m, previewUrl: "" })),
-    }])),
+    // savedProjects excluded — tracks, history, and mediaPool saved to IDB via GlobalHydrator.
   }),
 }));

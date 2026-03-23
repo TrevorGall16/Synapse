@@ -8,6 +8,7 @@
 import { del } from "idb-keyval";
 import { getAllMediaIds, getStoredMediaItem } from "./media-pool-db";
 import { getAllProjectIds, loadProjectFromIDB } from "./project-idb";
+import { loadAllPostsFromIDB } from "./feed-idb";
 
 const DB_PREFIX = "synapse-media-";
 const GC_MAX_AGE_MS = 24 * 60 * 60 * 1_000; // 24 hours
@@ -31,14 +32,14 @@ export async function runGcSweep(): Promise<GcResult> {
       .forEach((c) => { if (c.sourceId) referencedIds.add(c.sourceId); });
   }));
 
-  // 2. Also collect IDs referenced by feed posts (via runtime import to avoid circular deps)
+  // 2. Collect IDs referenced by feed posts — read directly from IDB so GC is accurate
+  //    even if the feed store hasn't finished hydrating yet (GC runs 10s after boot).
   try {
-    const { useFeedStore } = await import("./feed-store");
-    const posts = useFeedStore.getState().userPosts;
+    const posts = await loadAllPostsFromIDB();
     for (const post of posts) {
       post.projectSnapshot?.mediaPool?.forEach((m) => referencedIds.add(m.id));
     }
-  } catch { /* feed-store unavailable in SSR/test */ }
+  } catch { /* feed IDB unavailable in SSR/test */ }
 
   // 3. Sweep all media blobs in IDB
   const allIds = await getAllMediaIds();

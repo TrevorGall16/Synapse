@@ -245,13 +245,36 @@ export function PreviewMonitor() {
         }
       }
 
+      // Collect embedded effect clips from active video clips (remix baking)
+      let staticEmbeddedFilter = "";
+      let staticEmbeddedTransform = "";
+      let staticEmbeddedAnimation = "";
+      for (const vt of freshTracks.filter((t) => t.type === "video")) {
+        for (const vc of vt.clips) {
+          if (pos < vc.startTime || pos >= vc.startTime + vc.duration) continue;
+          for (const ec of vc.embeddedEffectClips ?? []) {
+            if (pos < ec.startTime || pos >= ec.startTime + ec.duration) continue;
+            if (ec.renderedCss && !ec.fxParams) {
+              if (ec.renderedCss.filter && ec.renderedCss.filter !== "none") staticEmbeddedFilter += " " + ec.renderedCss.filter;
+              if (ec.renderedCss.transform) staticEmbeddedTransform += " " + ec.renderedCss.transform;
+              if (ec.renderedCss.animation) staticEmbeddedAnimation = ec.renderedCss.animation;
+            } else {
+              freshEffects.push(ec);
+            }
+          }
+        }
+      }
+      staticEmbeddedFilter = staticEmbeddedFilter.trim();
+      staticEmbeddedTransform = staticEmbeddedTransform.trim();
+
       // ── Fast path: no effects → clear stale filters once and skip DOM work ──
-      const hasAnyFx = freshEffects.length > 0 || quality === "Draft";
+      const hasAnyFx = freshEffects.length > 0 || staticEmbeddedFilter !== "" || staticEmbeddedTransform !== "" || staticEmbeddedAnimation !== "" || quality === "Draft";
       if (!hasAnyFx) {
         if (hadEffectsRef.current) {
           container.querySelectorAll("video").forEach((v) => {
             (v as HTMLElement).style.filter = "";
             (v as HTMLElement).style.transform = "";
+            (v as HTMLElement).style.animation = "";
           });
           hadEffectsRef.current = false;
         }
@@ -271,7 +294,7 @@ export function PreviewMonitor() {
         glitchTransform = fxResult.glitchTransform;
         mirrorTransform = fxResult.mirrorTransform;
         const topClip = layersWithOpacity[layersWithOpacity.length - 1]?.clip;
-        const parts = [fxResult.filter !== "none" ? fxResult.filter : "", buildVideoClipFilter(topClip)].filter(Boolean);
+        const parts = [fxResult.filter !== "none" ? fxResult.filter : "", buildVideoClipFilter(topClip), staticEmbeddedFilter].filter(Boolean);
         if (fxResult.chromaticId) parts.push(`url(#${fxResult.chromaticId})`);
         if (fxResult.pixelateId) parts.push(`url(#${fxResult.pixelateId})`);
         combined = parts.join(" ") || "none";
@@ -293,7 +316,13 @@ export function PreviewMonitor() {
         const transforms: string[] = base ? [base] : [];
         if (glitchTransform) transforms.push(glitchTransform);
         else if (mirrorTransform) transforms.push(mirrorTransform);
+        if (staticEmbeddedTransform) transforms.push(staticEmbeddedTransform);
         el.style.transform = transforms.join(" ") || "none";
+        // Apply animation only when it changes — re-writing every rAF tick restarts it
+        if (el.dataset.activeEmbeddedAnimation !== staticEmbeddedAnimation) {
+          el.style.animation = staticEmbeddedAnimation;
+          el.dataset.activeEmbeddedAnimation = staticEmbeddedAnimation;
+        }
       });
 
       // Canvas-based masked FX: draw the topmost video frame into each mask canvas,

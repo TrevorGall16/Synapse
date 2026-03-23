@@ -151,19 +151,9 @@ export function clipCssFilter(p: Record<string, unknown> = {}): string {
     parts.push(`drop-shadow(0 0 ${(intensity * 12).toFixed(1)}px rgba(120,0,255,0.7))`);
   }
   if (t === "chromatic-aberration") {
-    // CSS approximation: layered drop-shadows create red/cyan fringe on opposite sides.
-    // Two red shadows shifted right + two cyan/blue shadows shifted left = visible color fringe.
-    const offset = Math.max(1, Number(p.caOffset ?? 3) * intensity);
-    const o1 = offset.toFixed(1);
-    const o2 = (offset * 1.8).toFixed(1);
-    parts.push(
-      `drop-shadow(${o1}px 0 0 rgba(255,30,30,0.80))` +
-      ` drop-shadow(${o2}px 0 0 rgba(255,0,0,0.45))` +
-      ` drop-shadow(-${o1}px 0 0 rgba(0,80,255,0.80))` +
-      ` drop-shadow(-${o2}px 0 0 rgba(0,200,255,0.45))`
-    );
-    parts.push(`saturate(${(1 + intensity * 0.8).toFixed(2)})`);
-    parts.push(`contrast(${(1 + intensity * 0.3).toFixed(2)})`);
+    // Use the global SVG filter injected by GlobalSvgFilters — pixel-accurate per-channel feOffset.
+    // Fallback string includes saturate/contrast for browsers that can't resolve the url ref.
+    parts.push(`url(#synapse-ca) saturate(${(1 + intensity * 0.8).toFixed(2)}) contrast(${(1 + intensity * 0.3).toFixed(2)})`);
   }
   const br = Number(p.brightness ?? 100); if (br !== 100) parts.push(`brightness(${(br / 100).toFixed(2)})`);
   const co = Number(p.contrast   ?? 100); if (co !== 100) parts.push(`contrast(${(co / 100).toFixed(2)})`);
@@ -183,6 +173,27 @@ export function clipCssTransform(p: Record<string, unknown> = {}): string {
   if (t === "hypno-tunnel") {
     // Scale up + slight rotation gives "tunnel zooming inward" feel
     return `scale(${(1 + intensity * 0.2).toFixed(3)}) rotate(${(intensity * 5).toFixed(1)}deg)`;
+  }
+  return "";
+}
+
+/**
+ * Return a CSS animation shorthand string for time-based effects (strobe, glitch).
+ * The named @keyframes are defined by GlobalSvgFilters injected into the document.
+ * Set on `el.style.animation` ONCE when the clip becomes active (not every rAF tick).
+ */
+export function clipCssAnimation(p: Record<string, unknown> = {}): string {
+  if (p.effectDisabled) return "";
+  const t = String(p.effectType ?? "none");
+  if (t === "strobe") {
+    const hz = Math.max(0.5, Number(p.speed ?? 50) / 10);
+    const period = (1 / hz).toFixed(3);
+    return `synapse-strobe ${period}s step-end infinite`;
+  }
+  if (t === "glitch") {
+    const speed = Math.max(10, Number(p.speed ?? 50));
+    const period = (0.4 * (100 / speed)).toFixed(3);
+    return `synapse-glitch ${period}s linear infinite`;
   }
   return "";
 }

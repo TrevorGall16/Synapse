@@ -38,16 +38,33 @@ export function GlobalHydrator() {
         }
       }
 
-      // Load tracks for other open tabs (so switchTab has data)
-      const { savedProjects } = useProjectStore.getState();
+      // Reconstruct saved tabs entirely from IDB (savedProjects no longer in localStorage)
       for (const id of openProjectIds) {
-        if (id === projectId || !savedProjects[id]) continue;
-        const projectData = await loadProjectFromIDB(id);
-        if (projectData && projectData.tracks.length > 0) {
+        if (id === projectId) continue;
+        const [projectData, historyData] = await Promise.all([
+          loadProjectFromIDB(id),
+          loadHistoryFromIDB(id),
+        ]);
+        if (projectData) {
           useProjectStore.setState((s) => ({
             savedProjects: {
               ...s.savedProjects,
-              [id]: { ...s.savedProjects[id], tracks: projectData.tracks, duration: projectData.duration },
+              [id]: {
+                ...(s.savedProjects[id] ?? {}),
+                projectId: id,
+                name: projectData.name,
+                tracks: projectData.tracks,
+                duration: projectData.duration,
+                markers: projectData.markers,
+                projectSettings: projectData.projectSettings,
+                mediaPool: projectData.mediaPool ?? s.savedProjects[id]?.mediaPool ?? [],
+                parentProjectId: projectData.parentProjectId,
+                remixedFromHandle: projectData.remixedFromHandle,
+                rootParentId: projectData.rootParentId,
+                rootParentHandle: projectData.rootParentHandle,
+                historyPast: historyData?.past ?? [],
+                historyFuture: historyData?.future ?? [],
+              },
             },
           }));
         }
@@ -87,17 +104,16 @@ export function GlobalHydrator() {
         }).catch(console.warn);
         saveHistoryToIDB(s.projectId, s.historyPast, s.historyFuture).catch(console.warn);
 
-        // Save each open tab's tracks to IDB (so they survive across refreshes)
+        // Save each open tab's full state to IDB
         for (const [id, proj] of Object.entries(s.savedProjects)) {
-          if (proj.tracks.length > 0) {
-            saveProjectToIDB({
-              projectId: id, name: proj.name, tracks: proj.tracks, duration: proj.duration,
-              markers: proj.markers, projectSettings: proj.projectSettings,
-              parentProjectId: proj.parentProjectId, remixedFromHandle: proj.remixedFromHandle,
-              rootParentId: proj.rootParentId, rootParentHandle: proj.rootParentHandle,
-              updatedAt: Date.now(),
-            }).catch(console.warn);
-          }
+          saveProjectToIDB({
+            projectId: id, name: proj.name, tracks: proj.tracks, duration: proj.duration,
+            markers: proj.markers, projectSettings: proj.projectSettings,
+            mediaPool: proj.mediaPool,
+            parentProjectId: proj.parentProjectId, remixedFromHandle: proj.remixedFromHandle,
+            rootParentId: proj.rootParentId, rootParentHandle: proj.rootParentHandle,
+            updatedAt: Date.now(),
+          }).catch(console.warn);
         }
       }, 500);
     });

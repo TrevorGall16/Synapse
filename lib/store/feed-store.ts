@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Track, ProjectSettings, MediaPoolItem } from "./types";
 import { cleanupSnapshotMedia, hydrateMediaPool } from "./media-pool-db";
+import { savePostToIDB, removePostFromIDB, loadAllPostsFromIDB } from "./feed-idb";
 
 export interface FeedPost {
   id: string;
@@ -49,28 +50,45 @@ export const useFeedStore = create<FeedState>()(
   persist(
     (set, get) => ({
       userPosts: [],
-      addPost:    (post) => set((s) => ({ userPosts: [post, ...s.userPosts] })),
+
+      addPost: (post) => {
+        set((s) => ({ userPosts: [post, ...s.userPosts] }));
+        // Persist to IDB asynchronously — blob URLs stripped in savePostToIDB
+        savePostToIDB(post).catch(console.warn);
+      },
+
       removePost: (id) => {
         const post = get().userPosts.find((p) => p.id === id);
         if (post?.projectSnapshot?.mediaPool?.length) {
           cleanupSnapshotMedia(post.projectSnapshot.mediaPool).catch(console.warn);
         }
         set((s) => ({ userPosts: s.userPosts.filter((p) => p.id !== id) }));
+        removePostFromIDB(id).catch(console.warn);
       },
+
+      /**
+       * Boot hydration: load all posts from IDB (source of truth), then
+       * recover blob URLs for any mediaPool items still in media-pool-db.
+       * Called by GlobalHydrator after persist rehydration completes.
+       */
       hydrateAllPosts: async () => {
-        const posts = get().userPosts;
-        if (!posts.length) return;
-        const updated = await Promise.all(
-          posts.map(async (post) => {
+        const idbPosts = await loadAllPostsFromIDB();
+        if (!idbPosts.length) return;
+        const hydrated = await Promise.all(
+          idbPosts.map(async (post) => {
             if (!post.projectSnapshot?.mediaPool?.length) return post;
             const pool = await hydrateMediaPool(post.projectSnapshot.mediaPool);
             return { ...post, projectSnapshot: { ...post.projectSnapshot, mediaPool: pool } };
-          })
+          }),
         );
-        set({ userPosts: updated });
-        console.log(`IDB Recovery [feed]: ${posts.length} post(s) scanned`);
+        set({ userPosts: hydrated });
       },
     }),
-    { name: "synapse-feed-posts" }
-  )
+    {
+      name: "synapse-feed-posts",
+      // userPosts excluded from localStorage — all post data lives in IDB via feed-idb.ts.
+      // Persist is kept only for its hasHydrated() / onFinishHydration() signalling API.
+      partialize: () => ({}),
+    },
+  ),
 );

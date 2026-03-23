@@ -8,7 +8,7 @@
 
 import { get, del, keys, createStore } from "idb-keyval";
 import { idbSafeSet } from "./idb-safe-write";
-import type { Track, Marker, HistorySnapshot, ProjectSettings } from "./types";
+import type { Track, Marker, HistorySnapshot, ProjectSettings, MediaPoolItem } from "./types";
 
 const projectsDb = createStore("synapse-projects-db", "projects");
 const historyDb  = createStore("synapse-history-db",  "history");
@@ -20,6 +20,7 @@ export interface IDBProjectRecord {
   duration: number;
   markers: Marker[];
   projectSettings: ProjectSettings;
+  mediaPool?: MediaPoolItem[];
   parentProjectId?: string;
   remixedFromHandle?: string;
   rootParentId?: string;
