@@ -1,16 +1,15 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Track, TrackType, MediaPoolItem, Marker, ClipEvent, PanCropData, ProjectSettings, HistorySnapshot } from "./types";
+import type { Track, TrackType, MediaPoolItem, Marker, ClipEvent, PanCropData, ProjectSettings, HistorySnapshot, SerializedProject } from "./types";
 import { usePlaybackStore } from "./playback-store";
+import { hydrateMediaPool } from "./media-pool-db";
 import {
   TRACK_COLORS, TRACK_HEIGHTS,
   createTrack, findClipLocation,
   findClipsByGroupId, computeMove,
   performSplitClip, performBulkSplit,
-  computeCrossfades,
+  computeCrossfades, performJoinClips, performDeleteClips,
 } from "./project-helpers";
-
-// ── Structural Project Data ─────────────────────────────
 
 export interface ProjectState {
   tracks: Track[];
@@ -19,6 +18,7 @@ export interface ProjectState {
   duration: number;
   projectId: string;
   parentProjectId?: string;
+  remixedFromHandle?: string;
   selectedClipIds: string[];
   selectedTrackId: string | null;
   inspectingClipId: string | null;
@@ -28,11 +28,12 @@ export interface ProjectState {
   projectSettings: ProjectSettings;
   historyPast: HistorySnapshot[];
   historyFuture: HistorySnapshot[];
+  openProjectIds: string[];
+  savedProjects: Record<string, SerializedProject>;
   snapshotHistory: (label: string) => void;
   undo: () => void;
   redo: () => void;
   loadProject: (snapshot: { tracks: Track[]; duration: number; projectSettings: ProjectSettings }) => void;
-  /** Fork an existing project: assigns a new projectId, records parentProjectId for lineage tracking. */
   forkProject: (snapshot: { tracks: Track[]; duration: number; projectSettings: ProjectSettings; projectId?: string; mediaPool?: MediaPoolItem[] }) => void;
   setProjectSettings: (s: ProjectSettings) => void;
   addTrack: (type: TrackType) => void;
@@ -43,6 +44,10 @@ export interface ProjectState {
   name: string;
   setName: (name: string) => void;
   resetProject: () => void;
+  openNewTab: () => void;
+  switchTab: (id: string) => void;
+  closeTab: (id: string) => void;
+  openProjectInTab: (snap: { tracks: Track[]; duration: number; projectSettings: ProjectSettings; projectId?: string; mediaPool?: MediaPoolItem[]; name?: string; parentProjectId?: string; remixedFromHandle?: string }) => void;
   addMediaItem: (item: MediaPoolItem) => void;
   updateMediaItemUrl: (id: string, url: string) => void;
   setMediaPool: (items: MediaPoolItem[]) => void;
@@ -77,10 +82,9 @@ export interface ProjectState {
   addMarker: (marker: Marker) => void;
   removeMarker: (id: string) => void;
 }
-const MIN_CLIP_DURATION = 33_333; // 1 frame @ 30fps
-const MAX_HISTORY = 50;
 
-// ── Default State ───────────────────────────────────────
+const MIN_CLIP_DURATION = 33_333;
+const MAX_HISTORY = 50;
 
 const DEFAULT_TRACKS: Track[] = [
   { id: "default-video-1", type: "video", name: "Video 1", color: TRACK_COLORS.video, height: TRACK_HEIGHTS.video, collapsed: false, locked: false, clips: [], isMuted: false, isSolo: false, opacityOrVolume: 100 },
@@ -88,6 +92,10 @@ const DEFAULT_TRACKS: Track[] = [
   { id: "default-effect-1", type: "effect", name: "Effect 1", color: TRACK_COLORS.effect, height: TRACK_HEIGHTS.effect, collapsed: false, locked: false, clips: [], isMuted: false, isSolo: false, opacityOrVolume: 100 },
   { id: "default-text-1", type: "text", name: "Text 1", color: TRACK_COLORS.text, height: TRACK_HEIGHTS.text, collapsed: false, locked: false, clips: [], isMuted: false, isSolo: false, opacityOrVolume: 100 },
 ];
+
+function serializeActive(s: ProjectState): SerializedProject {
+  return { projectId: s.projectId, name: s.name, tracks: s.tracks, mediaPool: s.mediaPool, markers: s.markers, duration: s.duration, projectSettings: s.projectSettings, parentProjectId: s.parentProjectId, remixedFromHandle: s.remixedFromHandle, historyPast: s.historyPast, historyFuture: s.historyFuture };
+}
 
 export const useProjectStore = create<ProjectState>()(persist((set) => ({
   tracks: DEFAULT_TRACKS,
@@ -97,6 +105,7 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
   projectId: "",
   name: "Untitled Project",
   parentProjectId: undefined,
+  remixedFromHandle: undefined,
   selectedClipIds: [],
   selectedTrackId: null,
   inspectingClipId: null,
@@ -107,6 +116,9 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
   projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" },
   historyPast: [],
   historyFuture: [],
+  openProjectIds: [],
+  savedProjects: {},
+
   snapshotHistory: (label) =>
     set((s) => ({
       historyPast: [...s.historyPast.slice(-(MAX_HISTORY - 1)), { tracks: s.tracks, duration: s.duration, markers: s.markers, label }],
@@ -129,6 +141,7 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
       const current: HistorySnapshot = { tracks: s.tracks, duration: s.duration, markers: s.markers, label: snap.label };
       return { tracks: snap.tracks, duration: snap.duration, markers: snap.markers, historyFuture: future, historyPast: [...s.historyPast.slice(0, MAX_HISTORY - 1), current], selectedClipIds: [] };
     }),
+
   addTrack: (type) =>
     set((s) => {
       const count = s.tracks.filter((t) => t.type === type).length + 1;
@@ -148,37 +161,100 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, opacityOrVolume: value } : t) })),
 
   setName: (name) => set({ name }),
-  resetProject: () => set({ tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: crypto.randomUUID(), name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null }),
+
+  resetProject: () => set((s) => {
+    const newId = crypto.randomUUID();
+    return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: newId, name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, openProjectIds: [newId], savedProjects: {} };
+  }),
+
+  openNewTab: () => set((s) => {
+    const newId = crypto.randomUUID();
+    const ids = s.openProjectIds.includes(s.projectId) ? s.openProjectIds : [...s.openProjectIds, s.projectId];
+    return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: newId, name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, savedProjects: { ...s.savedProjects, [s.projectId]: serializeActive(s) }, openProjectIds: [...ids, newId] };
+  }),
+
+  switchTab: (id) => set((s) => {
+    if (id === s.projectId) return s;
+    const target = s.savedProjects[id];
+    if (!target) return s;
+    const { [id]: _d, ...rest } = s.savedProjects;
+    const ids = s.openProjectIds.includes(s.projectId) ? s.openProjectIds : [...s.openProjectIds, s.projectId];
+    return { ...target, savedProjects: { ...rest, [s.projectId]: serializeActive(s) }, openProjectIds: ids, selectedClipIds: [], inspectingClipId: null };
+  }),
+
+  closeTab: (id) => set((s) => {
+    const ids = s.openProjectIds.filter((x) => x !== id);
+    if (id !== s.projectId) {
+      const { [id]: _d, ...rest } = s.savedProjects;
+      return { openProjectIds: ids, savedProjects: rest };
+    }
+    if (ids.length === 0) return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: "", name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, openProjectIds: [], savedProjects: {} };
+    const prevIdx = s.openProjectIds.indexOf(id);
+    const nextId = ids[Math.max(0, prevIdx - 1)];
+    const target = s.savedProjects[nextId];
+    if (!target) return { openProjectIds: ids };
+    const { [nextId]: _d, ...rest } = s.savedProjects;
+    return { ...target, openProjectIds: ids, savedProjects: rest, selectedClipIds: [], inspectingClipId: null };
+  }),
+
+  openProjectInTab: (snap) => {
+    // Compute the new ID before set() so we can reference it in the async follow-up.
+    const incomingId = snap.projectId ?? crypto.randomUUID();
+
+    set((s) => {
+      const ids = s.openProjectIds.includes(s.projectId) ? s.openProjectIds : [...s.openProjectIds, s.projectId];
+      if (ids.includes(incomingId)) {
+        if (incomingId === s.projectId) return s;
+        const target = s.savedProjects[incomingId];
+        if (!target) return s;
+        const { [incomingId]: _d, ...rest } = s.savedProjects;
+        return { ...target, savedProjects: { ...rest, [s.projectId]: serializeActive(s) }, openProjectIds: ids, selectedClipIds: [], inspectingClipId: null };
+      }
+      // Deep-copy tracks and mediaPool to prevent state leaking between tabs.
+      const tracksDeep: Track[] = JSON.parse(JSON.stringify(snap.tracks));
+      const mediaPoolDeep: MediaPoolItem[] = JSON.parse(JSON.stringify(snap.mediaPool ?? []));
+      const newProj: SerializedProject = { projectId: incomingId, name: snap.name ?? "Untitled", tracks: tracksDeep, mediaPool: mediaPoolDeep, markers: [], duration: snap.duration, projectSettings: snap.projectSettings, parentProjectId: snap.parentProjectId ?? snap.projectId, remixedFromHandle: snap.remixedFromHandle, historyPast: [], historyFuture: [] };
+      return { ...newProj, savedProjects: { ...s.savedProjects, [s.projectId]: serializeActive(s) }, openProjectIds: [...ids, incomingId], selectedClipIds: [], inspectingClipId: null };
+    });
+
+    // Async: re-hydrate any stale media URLs (empty strings or dead blob: URLs) for the
+    // newly active project. This converts "Dead Strings" → "Live Blobs" instantly.
+    const { projectId: activeId, mediaPool: activePool } = useProjectStore.getState();
+    if (activeId === incomingId && activePool.length > 0) {
+      const hasStale = activePool.some((m) => !m.previewUrl || m.previewUrl.startsWith("blob:"));
+      if (hasStale) {
+        hydrateMediaPool(activePool).then((hydrated) => {
+          hydrated.forEach((item) => {
+            // Guard: only update if the user hasn't switched to a different project.
+            if (item.previewUrl && useProjectStore.getState().projectId === incomingId) {
+              useProjectStore.getState().updateMediaItemUrl(item.id, item.previewUrl);
+            }
+          });
+        }).catch(console.warn);
+      }
+    }
+  },
+
   addMediaItem: (item) =>
     set((s) => ({ mediaPool: [...s.mediaPool, item] })),
+
   updateMediaItemUrl: (id, url) =>
     set((s) => ({ mediaPool: s.mediaPool.map((m) => m.id === id ? { ...m, previewUrl: url } : m) })),
+
   setMediaPool: (items) => set({ mediaPool: items }),
 
   addClip: (trackId, clip) =>
     set((s) => {
       const clipEnd = Math.round(clip.startTime + clip.duration);
       const newDuration = clipEnd > s.duration ? clipEnd + 60_000_000 : s.duration;
-      return {
-        duration: newDuration,
-        tracks: s.tracks.map((t) =>
-          t.id === trackId
-            ? { ...t, clips: computeCrossfades([...t.clips, clip]) }
-            : t
-        ),
-      };
-    }),
-  moveClip: (clipId, deltaTime, deltaTrack) =>
-    set((s) => {
-      const result = computeMove(s, clipId, deltaTime, deltaTrack, usePlaybackStore.getState);
-      return result ?? s;
+      return { duration: newDuration, tracks: s.tracks.map((t) => t.id === trackId ? { ...t, clips: computeCrossfades([...t.clips, clip]) } : t) };
     }),
 
+  moveClip: (clipId, deltaTime, deltaTrack) =>
+    set((s) => { const result = computeMove(s, clipId, deltaTime, deltaTrack, usePlaybackStore.getState); return result ?? s; }),
+
   splitClip: (clipId, splitTime) =>
-    set((s) => {
-      const result = performSplitClip(s.tracks, clipId, splitTime);
-      return result ? { tracks: result } : s;
-    }),
+    set((s) => { const result = performSplitClip(s.tracks, clipId, splitTime); return result ? { tracks: result } : s; }),
 
   splitSelectedClips: (clipIds, splitTime) =>
     set((s) => ({ tracks: performBulkSplit(s.tracks, clipIds, splitTime) })),
@@ -187,12 +263,7 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
   setSelectedTrackId: (id) => set({ selectedTrackId: id }),
 
   ungroupClips: (clipIds) =>
-    set((s) => ({
-      tracks: s.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.map((c) => clipIds.includes(c.id) ? { ...c, groupId: undefined } : c),
-      })),
-    })),
+    set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => clipIds.includes(c.id) ? { ...c, groupId: undefined } : c) })) })),
 
   reorderTrack: (startIndex, endIndex) =>
     set((s) => {
@@ -204,41 +275,16 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     }),
 
   deleteSelectedClips: (clipIds) =>
-    set((s) => {
-      const { rippleMode } = usePlaybackStore.getState();
-      const idSet = new Set(clipIds);
-      const tracks = s.tracks.map((t) => {
-        const deleted = t.clips.filter((c) => idSet.has(c.id));
-        let remaining = t.clips.filter((c) => !idSet.has(c.id));
-        if (rippleMode && deleted.length > 0) {
-          for (const d of deleted) {
-            remaining = remaining.map((c) =>
-              c.startTime > d.startTime
-                ? { ...c, startTime: Math.max(0, c.startTime - d.duration) }
-                : c
-            );
-          }
-        }
-        return { ...t, clips: computeCrossfades(remaining) };
-      });
-      return { tracks, selectedClipIds: [] };
-    }),
+    set((s) => ({ tracks: performDeleteClips(s.tracks, clipIds, usePlaybackStore.getState().rippleMode), selectedClipIds: [] })),
 
   updateMediaPeaks: (mediaId, peaks) =>
-    set((s) => ({
-      mediaPool: s.mediaPool.map((m) => m.id === mediaId ? { ...m, peakManifest: peaks } : m),
-    })),
+    set((s) => ({ mediaPool: s.mediaPool.map((m) => m.id === mediaId ? { ...m, peakManifest: peaks } : m) })),
 
   groupClips: (clipIds) =>
     set((s) => {
       if (clipIds.length < 2) return s;
       const groupId = crypto.randomUUID();
-      return {
-        tracks: s.tracks.map((t) => ({
-          ...t,
-          clips: t.clips.map((c) => clipIds.includes(c.id) ? { ...c, groupId } : c),
-        })),
-      };
+      return { tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => clipIds.includes(c.id) ? { ...c, groupId } : c) })) };
     }),
 
   trimClip: (clipId, edge, deltaMicros) =>
@@ -247,9 +293,7 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
         if (!t.clips.some((c) => c.id === clipId)) return t;
         const updated = t.clips.map((c) => {
           if (c.id !== clipId) return c;
-          if (edge === "right") {
-            return { ...c, duration: Math.max(MIN_CLIP_DURATION, Math.round(c.duration + deltaMicros)) };
-          }
+          if (edge === "right") return { ...c, duration: Math.max(MIN_CLIP_DURATION, Math.round(c.duration + deltaMicros)) };
           const maxDelta = c.duration - MIN_CLIP_DURATION;
           const clampedDelta = Math.min(maxDelta, Math.max(-c.startTime, Math.round(deltaMicros)));
           return { ...c, startTime: c.startTime + clampedDelta, duration: c.duration - clampedDelta, mediaOffset: c.mediaOffset + clampedDelta };
@@ -259,50 +303,18 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     })),
 
   timeStretchClip: (clipId, newDuration) =>
-    set((s) => {
-      const clamped = Math.max(MIN_CLIP_DURATION, Math.round(newDuration));
-      return {
-        tracks: s.tracks.map((t) => ({
-          ...t,
-          clips: t.clips.map((c) => {
-            if (c.id !== clipId) return c;
-            const rate = c.duration / clamped;
-            return { ...c, duration: clamped, playbackRate: Math.round(rate * 100) / 100 };
-          }),
-        })),
-      };
-    }),
+    set((s) => ({
+      tracks: s.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          if (c.id !== clipId) return c;
+          const clamped = Math.max(MIN_CLIP_DURATION, Math.round(newDuration));
+          return { ...c, duration: clamped, playbackRate: Math.round((c.duration / clamped) * 100) / 100 };
+        }),
+      })),
+    })),
 
-  joinClips: (clipIds) =>
-    set((s) => {
-      if (clipIds.length < 2) return s;
-      const idSet = new Set(clipIds);
-      const tracks = s.tracks.map((t) => {
-        const selected = t.clips.filter((c) => idSet.has(c.id));
-        if (selected.length < 2) return t;
-        const bySource = new Map<string, ClipEvent[]>();
-        for (const c of selected) {
-          const arr = bySource.get(c.sourceId) ?? [];
-          arr.push(c);
-          bySource.set(c.sourceId, arr);
-        }
-        let clips = [...t.clips];
-        for (const [, group] of bySource) {
-          if (group.length < 2) continue;
-          group.sort((a, b) => a.startTime - b.startTime);
-          const earliest = group[0];
-          const newEnd = group.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0);
-          const mergedFx = group.reduce<Record<string, unknown>>((acc, gc) => gc.fxParams ? { ...acc, ...gc.fxParams } : acc, {});
-          const avgLevel = Math.round(group.reduce((sum, gc) => sum + (gc.level ?? 100), 0) / group.length);
-          const merged: ClipEvent = { ...earliest, startTime: earliest.startTime, duration: newEnd - earliest.startTime, fxParams: Object.keys(mergedFx).length > 0 ? mergedFx : earliest.fxParams, level: avgLevel };
-          const removeIds = new Set(group.map((c) => c.id));
-          clips = clips.filter((c) => !removeIds.has(c.id));
-          clips.push(merged);
-        }
-        return { ...t, clips };
-      });
-      return { tracks };
-    }),
+  joinClips: (clipIds) => set((s) => ({ tracks: performJoinClips(s.tracks, clipIds) })),
 
   setInspectingClipId: (id) => set({ inspectingClipId: id }),
   setActiveUISection: (section) => set({ activeUISection: section }),
@@ -313,12 +325,7 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, ...params } : t) })),
 
   setClipLevel: (clipId, level) =>
-    set((s) => ({
-      tracks: s.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.map((c) => c.id === clipId ? { ...c, level: Math.max(0, Math.min(100, Math.round(level))) } : c),
-      })),
-    })),
+    set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => c.id === clipId ? { ...c, level: Math.max(0, Math.min(100, Math.round(level))) } : c) })) })),
 
   setClipFade: (clipId, edge, durationMicros) =>
     set((s) => ({
@@ -339,21 +346,12 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     set((s) => ({
       tracks: s.tracks.map((t) => ({
         ...t,
-        clips: t.clips.map((c) =>
-          c.id === clipId
-            ? { ...c, panCrop: { x: 0, y: 0, scale: 1, rotation: 0, ...c.panCrop, ...panCrop } }
-            : c
-        ),
+        clips: t.clips.map((c) => c.id === clipId ? { ...c, panCrop: { x: 0, y: 0, scale: 1, rotation: 0, ...c.panCrop, ...panCrop } } : c),
       })),
     })),
 
   updateClipFxParams: (clipId, params) =>
-    set((s) => ({
-      tracks: s.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.map((c) => c.id === clipId ? { ...c, fxParams: { ...c.fxParams, ...params } } : c),
-      })),
-    })),
+    set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => c.id === clipId ? { ...c, fxParams: { ...c.fxParams, ...params } } : c) })) })),
 
   loadProject: (snapshot) => set({
     tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
@@ -374,12 +372,8 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
   setTrackColor: (trackId, color) =>
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, color } : t) })),
 
-  addMarker: (marker) =>
-    set((s) => ({ markers: [...s.markers, marker] })),
-
-  removeMarker: (id) =>
-    set((s) => ({ markers: s.markers.filter((m) => m.id !== id) })),
-
+  addMarker: (marker) => set((s) => ({ markers: [...s.markers, marker] })),
+  removeMarker: (id) => set((s) => ({ markers: s.markers.filter((m) => m.id !== id) })),
   setFxMaskEditingClipId: (id) => set({ fxMaskEditingClipId: id }),
 
   updateFxMask: (clipId, mask) =>
@@ -393,4 +387,13 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
         ),
       })),
     })),
-}), { name: "synapse-project", skipHydration: true, partialize: (s: ProjectState) => ({ tracks: s.tracks, duration: s.duration, projectId: s.projectId, name: s.name, parentProjectId: s.parentProjectId, projectSettings: s.projectSettings, markers: s.markers, mediaPool: s.mediaPool.map((m) => ({ ...m, previewUrl: "" })) }) }));
+}), {
+  name: "synapse-project",
+  skipHydration: true,
+  partialize: (s: ProjectState) => ({
+    tracks: s.tracks, duration: s.duration, projectId: s.projectId, name: s.name, parentProjectId: s.parentProjectId, projectSettings: s.projectSettings, markers: s.markers,
+    mediaPool: s.mediaPool.map((m) => ({ ...m, previewUrl: "" })),
+    openProjectIds: s.openProjectIds,
+    savedProjects: Object.fromEntries(Object.entries(s.savedProjects).map(([k, v]) => [k, { ...v, mediaPool: v.mediaPool.map((m) => ({ ...m, previewUrl: "" })) }])),
+  }),
+}));

@@ -279,6 +279,47 @@ export function performBulkSplit(
   return result;
 }
 
+/** Join selected clips per source within each track. */
+export function performJoinClips(tracks: Track[], clipIds: string[]): Track[] {
+  if (clipIds.length < 2) return tracks;
+  const idSet = new Set(clipIds);
+  return tracks.map((t) => {
+    const selected = t.clips.filter((c) => idSet.has(c.id));
+    if (selected.length < 2) return t;
+    const bySource = new Map<string, ClipEvent[]>();
+    for (const c of selected) { const arr = bySource.get(c.sourceId) ?? []; arr.push(c); bySource.set(c.sourceId, arr); }
+    let clips = [...t.clips];
+    for (const [, group] of bySource) {
+      if (group.length < 2) continue;
+      group.sort((a, b) => a.startTime - b.startTime);
+      const earliest = group[0];
+      const newEnd = group.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0);
+      const mergedFx = group.reduce<Record<string, unknown>>((acc, gc) => gc.fxParams ? { ...acc, ...gc.fxParams } : acc, {});
+      const avgLevel = Math.round(group.reduce((sum, gc) => sum + (gc.level ?? 100), 0) / group.length);
+      const merged: ClipEvent = { ...earliest, duration: newEnd - earliest.startTime, fxParams: Object.keys(mergedFx).length > 0 ? mergedFx : earliest.fxParams, level: avgLevel };
+      const removeIds = new Set(group.map((c) => c.id));
+      clips = clips.filter((c) => !removeIds.has(c.id));
+      clips.push(merged);
+    }
+    return { ...t, clips };
+  });
+}
+
+/** Delete selected clips, optionally ripple-shifting subsequent clips. */
+export function performDeleteClips(tracks: Track[], clipIds: string[], rippleMode: boolean): Track[] {
+  const idSet = new Set(clipIds);
+  return tracks.map((t) => {
+    const deleted = t.clips.filter((c) => idSet.has(c.id));
+    let remaining = t.clips.filter((c) => !idSet.has(c.id));
+    if (rippleMode && deleted.length > 0) {
+      for (const d of deleted) {
+        remaining = remaining.map((c) => c.startTime > d.startTime ? { ...c, startTime: Math.max(0, c.startTime - d.duration) } : c);
+      }
+    }
+    return { ...t, clips: computeCrossfades(remaining) };
+  });
+}
+
 /** Auto-crossfade: detect overlaps on a single track, set fade durations.
  *  Respects manual fade flags — won't overwrite user-set fades. */
 export function computeCrossfades(clips: ClipEvent[]): ClipEvent[] {

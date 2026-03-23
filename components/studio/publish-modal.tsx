@@ -36,9 +36,11 @@ export function PublishModal({ onClose }: PublishModalProps) {
   const [published, setPublished] = useState(false);
   const [publishedId, setPublishedId] = useState<string | null>(null);
 
-  // Detect lineage: parentProjectId in project store maps to a feed post's id
-  const parentProjectId = useProjectStore((s) => s.parentProjectId);
-  const parentPost = parentProjectId
+  // Detect lineage: stored directly on project to survive across community/mock posts
+  const parentProjectId   = useProjectStore((s) => s.parentProjectId);
+  const remixedFromHandle = useProjectStore((s) => s.remixedFromHandle);
+  // Fall back to feed-store lookup for legacy projects that pre-date remixedFromHandle field
+  const parentPost = (!remixedFromHandle && parentProjectId)
     ? useFeedStore.getState().userPosts.find((p) => p.id === parentProjectId)
     : null;
 
@@ -80,8 +82,8 @@ export function PublishModal({ onClose }: PublishModalProps) {
       projectSnapshot: { tracks: publishTracks, duration, projectSettings, mediaPool },
       authorUsername: username,
       allowRemix,
-      remixedFromPostId: parentPost?.id,
-      remixedFromHandle: parentPost?.user?.handle,
+      remixedFromPostId: parentProjectId,
+      remixedFromHandle: remixedFromHandle ?? parentPost?.user?.handle,
       createdAt: Date.now(),
     });
 
@@ -106,10 +108,10 @@ export function PublishModal({ onClose }: PublishModalProps) {
 
         <div className="flex flex-col gap-3 p-5">
           {/* Lineage notice */}
-          {parentPost && (
+          {(remixedFromHandle ?? parentPost?.user?.handle) && (
             <div className="flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/8 px-3 py-2">
               <GitBranch size={11} className="text-purple-400" />
-              <span className="text-[10px] text-purple-300">Remixed from <span className="font-bold">@{parentPost.user.handle}</span></span>
+              <span className="text-[10px] text-purple-300">Remixed from <span className="font-bold">@{remixedFromHandle ?? parentPost?.user?.handle}</span></span>
             </div>
           )}
 

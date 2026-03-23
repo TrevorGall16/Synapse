@@ -119,3 +119,17 @@ export interface MediaPoolItem {
   previewUrl?: string;
   peakManifest?: number[];
 }
+
+export interface SerializedProject {
+  projectId: string;
+  name: string;
+  tracks: Track[];
+  mediaPool: MediaPoolItem[];
+  markers: Marker[];
+  duration: number;
+  projectSettings: ProjectSettings;
+  parentProjectId?: string;
+  remixedFromHandle?: string;
+  historyPast: HistorySnapshot[];
+  historyFuture: HistorySnapshot[];
+}

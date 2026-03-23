@@ -175,6 +175,7 @@ export default function ProfilePage() {
   const username = Array.isArray(params.username) ? params.username[0] : (params.username ?? "you");
 
   const { profile: storeProfile, hasHydrated } = useUserStore();
+  const openProjectInTab = useProjectStore((s) => s.openProjectInTab);
   const loadProject      = useProjectStore((s) => s.loadProject);
   const allUserPosts     = useFeedStore((s) => s.userPosts);
   const removePost       = useFeedStore((s) => s.removePost);
@@ -243,7 +244,7 @@ export default function ProfilePage() {
   };
 
   const handleStudioLoad = (p: FeedPost) => {
-    if (p.projectSnapshot) loadProject(p.projectSnapshot);
+    if (p.projectSnapshot) openProjectInTab({ ...p.projectSnapshot, name: p.title });
     setTheaterPost(null);
     router.push("/studio");
   };

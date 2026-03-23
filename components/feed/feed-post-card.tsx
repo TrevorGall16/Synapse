@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, useState, useMemo, useEffect } from "react";
-import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2 } from "lucide-react";
+import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch } from "lucide-react";
 import { type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { cleanupSnapshotMedia } from "@/lib/store/media-pool-db";
+import { clipCssFilter } from "@/lib/utils/svg-filters";
 
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
 
@@ -28,14 +29,18 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
   const isBlob = isBlobUrl(post.videoUrl);
 
   // First clip's source URL + seek offset — handles gaps at project start
-  const { firstClipSrc, firstClipOffset } = useMemo(() => {
+  const { firstClipSrc, firstClipOffset, firstClipFilter } = useMemo(() => {
     const snap = post.projectSnapshot;
-    if (!snap) return { firstClipSrc: post.videoUrl, firstClipOffset: 0.001 };
+    if (!snap) return { firstClipSrc: post.videoUrl, firstClipOffset: 0.001, firstClipFilter: "" };
     const pool = snap.mediaPool ?? [];
     const fc = snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips).sort((a, b) => a.startTime - b.startTime)[0];
+    const efx = fc ? snap.tracks.filter((t) => t.type === "effect").flatMap((t) => t.clips)
+      .find((c) => c.startTime < fc.startTime + fc.duration && c.startTime + c.duration > fc.startTime && !c.fxParams?.effectDisabled)
+      : undefined;
     return {
       firstClipSrc: fc ? (pool.find((m) => m.id === fc.sourceId)?.previewUrl ?? post.videoUrl) : post.videoUrl,
       firstClipOffset: fc ? Math.max(0.001, (fc.mediaOffset ?? 0) / 1_000_000) : 0.001,
+      firstClipFilter: efx ? clipCssFilter(efx.fxParams ?? {}) : "",
     };
   }, [post.projectSnapshot, post.videoUrl]);
 
@@ -84,7 +89,8 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
 
         {/* Video */}
         <video ref={videoRef} src={firstClipSrc}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
+          style={firstClipFilter ? { filter: firstClipFilter } : undefined}
           muted loop playsInline preload="metadata"
           onError={() => setMediaOffline(true)}
         />
@@ -122,6 +128,9 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
             <span className="text-[10px] font-medium text-white/70">@{post.user.handle}</span>
           </button>
           <p className="line-clamp-2 text-[11px] font-bold leading-snug text-white">{post.title}</p>
+          {post.remixedFromHandle && (
+            <span className="mt-1 flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}</span>
+          )}
         </div>
 
         {/* Hover overlay — actions slide up */}
@@ -130,8 +139,11 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, showD
             <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ring-1 ring-white/20" style={{ background: `hsl(${post.user.hue} 55% 30%)` }}>{post.user.initial}</div>
             <span className="text-[10px] font-semibold text-white/80">@{post.user.handle}</span>
           </button>
-          <p className="mb-1.5 text-xs font-bold leading-snug text-white">{post.title}</p>
-          <div className="mb-3 flex flex-wrap gap-1">
+          <p className="mb-1 text-xs font-bold leading-snug text-white">{post.title}</p>
+          {post.remixedFromHandle && (
+            <span className="mb-1 flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}</span>
+          )}
+          <div className="mb-2 flex flex-wrap gap-1">
             {post.tags.map((t) => <span key={t} className="rounded bg-white/10 px-1 py-px text-[8px] text-white/50">{t}</span>)}
           </div>
           <div className="flex items-center justify-between">

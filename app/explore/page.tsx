@@ -2,10 +2,22 @@
 
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Zap, GitBranch, TrendingUp, Flame, Sparkles } from "lucide-react";
+import { Zap, GitBranch, Flame, Sparkles } from "lucide-react";
 import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import type { MediaPoolItem } from "@/lib/store/types";
+
+// ── Static community posts — shown alongside (or instead of) user posts ────────
+const COMMUNITY_POSTS: FeedPost[] = [
+  { id: "cx1", user: { handle: "aurora_vj",   initial: "A", hue: 270 }, title: "Strobing Bass Drop Edit",   tags: ["#techno","#hypnotic"],    bg: "#1a0a2e", accent: "#7c3aed", duration: "0:42", likes: 2847, comments: 142, featured: true,  allowRemix: true },
+  { id: "cx2", user: { handle: "neon_cut",    initial: "N", hue: 340 }, title: "RGB Glitch Cascade",        tags: ["#glitch","#edm"],         bg: "#1a0818", accent: "#ec4899", duration: "0:30", likes: 1923, comments: 88,  featured: false, allowRemix: true },
+  { id: "cx3", user: { handle: "spectral_x",  initial: "S", hue: 200 }, title: "Hypno Tunnel Loop",         tags: ["#psy","#loop"],           bg: "#071a1a", accent: "#06b6d4", duration: "1:04", likes: 3410, comments: 211, featured: false, allowRemix: true },
+  { id: "cx4", user: { handle: "hue.shift",   initial: "H", hue: 30  }, title: "Chromatic Aberration Pack", tags: ["#vfx","#bass"],           bg: "#1a1100", accent: "#f59e0b", duration: "0:55", likes: 891,  comments: 47,  featured: false, allowRemix: true },
+  { id: "cx5", user: { handle: "deep.freq",   initial: "D", hue: 150 }, title: "Pixel Sort Waveform",       tags: ["#experimental","#lo-fi"], bg: "#051a0a", accent: "#22c55e", duration: "0:37", likes: 2104, comments: 93,  featured: false, allowRemix: true },
+  { id: "cx6", user: { handle: "void_signal", initial: "V", hue: 0   }, title: "Infrared Strobe Cut",       tags: ["#industrial","#harsh"],   bg: "#1a0500", accent: "#ef4444", duration: "0:28", likes: 1650, comments: 72,  featured: false, allowRemix: true },
+  { id: "cx7", user: { handle: "prismatic",   initial: "P", hue: 300 }, title: "Kaleidoscope Crossfade",    tags: ["#ambient","#visual"],     bg: "#160a1a", accent: "#a855f7", duration: "2:10", likes: 4201, comments: 317, featured: true,  allowRemix: true },
+  { id: "cx8", user: { handle: "bpmviz",      initial: "B", hue: 45  }, title: "Beat-Sync Flash Grid",      tags: ["#dnb","#reactive"],       bg: "#180e00", accent: "#fb923c", duration: "0:48", likes: 3027, comments: 184, featured: false, allowRemix: true },
+];
 
 // ── Trending FX (mock — represents last-24h usage counts) ─────────────────────
 const TRENDING_FX = [
@@ -88,28 +100,30 @@ function FxChip({ name, count, color }: { name: string; count: number; color: st
 export default function ExplorePage() {
   const router    = useRouter();
   const userPosts = useFeedStore((s) => s.userPosts);
-  const forkProject  = useProjectStore((s) => s.forkProject);
-  const loadProject  = useProjectStore((s) => s.loadProject);
-  const addMediaItem = useProjectStore((s) => s.addMediaItem);
+  const openProjectInTab = useProjectStore((s) => s.openProjectInTab);
 
-  // Only show posts with allowRemix enabled
-  const templates = useMemo(
-    () => userPosts.filter((p) => p.allowRemix === true),
-    [userPosts]
-  );
+  // Merge all published user posts with community posts (no allowRemix filter)
+  const templates = useMemo(() => {
+    const userIds = new Set(userPosts.map((p) => p.id));
+    return [...userPosts, ...COMMUNITY_POSTS.filter((p) => !userIds.has(p.id))];
+  }, [userPosts]);
 
   const handleRemix = (post: FeedPost) => {
+    const remixMeta = { parentProjectId: post.id, remixedFromHandle: post.user.handle };
     if (post.projectSnapshot) {
-      forkProject({ ...post.projectSnapshot, projectId: post.id });
+      openProjectInTab({ ...post.projectSnapshot, name: post.title, ...remixMeta });
     } else if (post.videoUrl) {
       const mediaId = crypto.randomUUID();
+      const trackId = crypto.randomUUID();
       const media: MediaPoolItem = { id: mediaId, name: post.title, type: "video", duration: 30_000_000, previewUrl: post.videoUrl };
-      loadProject({
-        tracks: [{ id: "v1", type: "video", name: "Video 1", color: "#3b82f6", height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: [{ id: crypto.randomUUID(), trackId: "v1", sourceId: mediaId, startTime: 0, duration: media.duration, mediaOffset: 0 }] }],
+      openProjectInTab({
+        tracks: [{ id: trackId, type: "video", name: "Video 1", color: "#3b82f6", height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: [{ id: crypto.randomUUID(), trackId, sourceId: mediaId, startTime: 0, duration: media.duration, mediaOffset: 0 }] }],
         duration: media.duration + 5_000_000,
         projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" },
+        mediaPool: [media],
+        name: post.title,
+        ...remixMeta,
       });
-      addMediaItem(media);
     }
     router.push("/studio");
   };
@@ -119,8 +133,8 @@ export default function ExplorePage() {
       {/* Header */}
       <div className="z-10 shrink-0 flex items-center gap-2 border-b border-white/10 bg-[#141414]/95 px-5 py-3 backdrop-blur-sm">
         <GitBranch size={13} className="text-purple-400" />
-        <h1 className="text-sm font-bold text-white">Template Library</h1>
-        <span className="rounded-full bg-purple-500/18 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-purple-300">Remixable</span>
+        <h1 className="text-sm font-bold text-white">Explore</h1>
+        <span className="rounded-full bg-purple-500/18 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-purple-300">Community</span>
       </div>
 
       <div className="px-5 py-5">
@@ -140,29 +154,15 @@ export default function ExplorePage() {
         {/* Template grid */}
         <div className="mb-3 flex items-center gap-2">
           <Sparkles size={11} className="text-white/35" />
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Community Templates</p>
-          {templates.length > 0 && (
-            <span className="ml-auto text-[9px] text-white/25">{templates.length} available</span>
-          )}
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Community Edits</p>
+          <span className="ml-auto text-[9px] text-white/25">{templates.length} posts</span>
         </div>
 
-        {templates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/10 py-20 text-center">
-            <TrendingUp size={32} className="mb-3 text-white/15" />
-            <p className="text-sm font-semibold text-white/30">No templates yet</p>
-            <p className="mt-1 text-[11px] text-white/20">Publish a project with "Allow Remix" to share it here.</p>
-            <button onClick={() => router.push("/studio")}
-              className="mt-4 flex items-center gap-1.5 rounded-lg bg-purple-500/20 px-3 py-2 text-xs font-bold text-purple-300 transition-colors hover:bg-purple-500/30">
-              <Zap size={11} />Open Studio
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {templates.map((post) => (
-              <TemplateCard key={post.id} post={post} onRemix={() => handleRemix(post)} />
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {templates.map((post) => (
+            <TemplateCard key={post.id} post={post} onRemix={() => handleRemix(post)} />
+          ))}
+        </div>
       </div>
     </div>
   );

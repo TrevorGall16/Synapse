@@ -431,7 +431,7 @@ export function PreviewMonitor() {
           {activeTextClips.map((tc) => {
             const result = buildTextStyle(tc, playheadPosition);
             if (!result) return null;
-            return <div key={tc.id} className="pointer-events-none absolute inset-0"><span style={result.style}>{result.displayText}</span></div>;
+            return <div key={tc.id} className="pointer-events-none absolute inset-0" style={{ zIndex: videoTracks.length + 1 }}><span style={result.style}>{result.displayText}</span></div>;
           })}
         </div>
       </div>

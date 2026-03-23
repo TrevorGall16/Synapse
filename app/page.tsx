@@ -91,7 +91,7 @@ export default function DiscoveryFeedPage() {
     const { userPosts: posts, removePost: rp } = useFeedStore.getState();
     posts.filter((p) => isBlobUrl(p.videoUrl)).forEach((p) => rp(p.id));
   }, []);
-  const forkProject  = useProjectStore((s) => s.forkProject);
+  const openProjectInTab = useProjectStore((s) => s.openProjectInTab);
   const addMediaItem = useProjectStore((s) => s.addMediaItem);
   const addClip      = useProjectStore((s) => s.addClip);
   const loadProject  = useProjectStore((s) => s.loadProject);
@@ -144,22 +144,16 @@ export default function DiscoveryFeedPage() {
   };
 
   const handleRemix = (post: FeedPost) => {
+    const remixMeta = { parentProjectId: post.id, remixedFromHandle: post.user.handle };
     if (post.projectSnapshot) {
-      // Full studio publish — fork with the embedded multi-track timeline
-      forkProject({ ...post.projectSnapshot, projectId: post.id });
+      openProjectInTab({ ...post.projectSnapshot, name: post.title, ...remixMeta });
     } else if (post.videoUrl) {
-      // Social post with video — build a minimal project around the video
       const mediaId = crypto.randomUUID();
+      const trackId = crypto.randomUUID();
       const media: MediaPoolItem = { id: mediaId, name: post.title, type: "video", duration: 30_000_000, previewUrl: post.videoUrl };
-      loadProject({
-        tracks: [{ id: "v1", type: "video", name: "Video 1", color: "#3b82f6", height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: [{ id: crypto.randomUUID(), trackId: "v1", sourceId: mediaId, startTime: 0, duration: media.duration, mediaOffset: 0 }] }],
-        duration: media.duration + 5_000_000,
-        projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" },
-      });
-      addMediaItem(media);
+      openProjectInTab({ tracks: [{ id: trackId, type: "video", name: "Video 1", color: "#3b82f6", height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: [{ id: crypto.randomUUID(), trackId, sourceId: mediaId, startTime: 0, duration: media.duration, mediaOffset: 0 }] }], duration: media.duration + 5_000_000, projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" }, mediaPool: [media], name: post.title, ...remixMeta });
     } else {
-      // Mock post — demo snapshot
-      forkProject(buildDemoSnapshot(post.id, post.title));
+      openProjectInTab({ ...buildDemoSnapshot(post.id, post.title), name: post.title, ...remixMeta });
     }
     showToast("Opening in Studio…");
   };

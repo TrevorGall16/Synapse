@@ -6,6 +6,7 @@ import type { FeedPost } from "@/lib/store/feed-store";
 import type { ClipEvent, MediaPoolItem } from "@/lib/store/types";
 import { hydrateMediaPool } from "@/lib/store/media-pool-db";
 import { useHydrationStore } from "@/lib/store/hydration-store";
+import { clipCssFilter } from "@/lib/utils/svg-filters";
 
 interface TheaterModeProps {
   post: FeedPost; onClose: () => void; onRemix: () => void; onCreator: () => void;
@@ -46,9 +47,11 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
   const totalDurRef  = useRef(30_000_000);
   const mutedRef     = useRef(true);
 
-  const [progress, setProgress]       = useState(0);
-  const [isPlaying, setIsPlaying]     = useState(false);
-  const [muted, setMuted]             = useState(true);
+  const effectClipsRef = useRef<ClipEvent[]>([]);
+
+  const [progress, setProgress]   = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [muted, setMuted]         = useState(true);
   const [liked, setLiked]             = useState(false);
   const [videoVisible, setVideoVisible] = useState(false);
   const [mediaError, setMediaError]   = useState(false);
@@ -63,6 +66,20 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
     if (!pool?.length) return;
     hydrateMediaPool(pool).then(setHydratedPool).catch(() => setHydratedPool(pool));
   }, [poolKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Populate effect clips ref from snapshot — used in tick for per-frame filter updates
+  useEffect(() => {
+    const snap = post.projectSnapshot;
+    effectClipsRef.current = snap
+      ? snap.tracks.filter((t) => t.type === "effect").flatMap((t) => t.clips)
+      : [];
+    // Apply initial filter at t=0
+    const efx = effectClipsRef.current.find(
+      (c) => !c.fxParams?.effectDisabled && 0 >= c.startTime && 0 < c.startTime + c.duration
+    );
+    const v = videoRef.current;
+    if (v) v.style.filter = efx ? clipCssFilter(efx.fxParams ?? {}) : "";
+  }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show recovery hint after 2s of black screen on a snapshot post
   useEffect(() => {
@@ -146,7 +163,20 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
         if (loadedClipRef.current !== clipId) return;
         v.muted = mutedRef.current;
         setMediaError(false);
-        const reveal = () => { setVideoVisible(true); if (isPlayingRef.current) v.play().catch(() => {}); };
+        const mediaEndSec = (clipOffset + clip.duration) / 1_000_000;
+      const reveal = () => {
+        setVideoVisible(true);
+        if (isPlayingRef.current) v.play().catch(() => {});
+        // Enforce clip boundary: if video plays past this clip's trimmed end, advance the timeline
+        const guard = () => {
+          if (loadedClipRef.current !== clipId) { v.removeEventListener("timeupdate", guard); return; }
+          if (v.currentTime >= mediaEndSec) {
+            v.removeEventListener("timeupdate", guard);
+            phRef.current = clipStart + clip.duration; loadedClipRef.current = null; v.pause();
+          }
+        };
+        v.addEventListener("timeupdate", guard);
+      };
         if (v.readyState >= 2) { reveal(); }
         else { const onCp = () => { v.removeEventListener("canplay", onCp); if (loadedClipRef.current === clipId) reveal(); }; v.addEventListener("canplay", onCp); }
       };
@@ -170,6 +200,15 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
         phRef.current = (phRef.current + delta * 1000) % dur;
         setProgress(phRef.current / dur);
         syncClip(phRef.current);
+        // Dynamic effect filter — toggled per-frame based on effect clip boundaries
+        const v = videoRef.current;
+        if (v) {
+          const ph = phRef.current;
+          const efx = effectClipsRef.current.find(
+            (c) => !c.fxParams?.effectDisabled && ph >= c.startTime && ph < c.startTime + c.duration
+          );
+          v.style.filter = efx ? clipCssFilter(efx.fxParams ?? {}) : "";
+        }
       }
     }
     lastTsRef.current = ts;
@@ -205,7 +244,11 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
         const onSeeked = () => {
           v.removeEventListener("seeked", onSeeked);
           if (loadedClipRef.current !== clip.id) return;
-          const reveal = () => { setVideoVisible(true); v.play().then(() => setIsPlaying(true)).catch(() => {}); };
+          const reveal = () => {
+            setVideoVisible(true); v.play().then(() => setIsPlaying(true)).catch(() => {});
+            const endSec = ((clip.mediaOffset ?? 0) + clip.duration) / 1_000_000;
+            v.addEventListener("timeupdate", function g() { if (v.currentTime >= endSec) { v.removeEventListener("timeupdate", g); phRef.current = clip.startTime + clip.duration; loadedClipRef.current = null; v.pause(); } });
+          };
           if (v.readyState >= 2) { reveal(); }
           else { const onCp = () => { v.removeEventListener("canplay", onCp); if (loadedClipRef.current === clip.id) reveal(); }; v.addEventListener("canplay", onCp); }
         };
@@ -252,6 +295,15 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
       phRef.current = ratio * totalDurRef.current;
       loadedClipRef.current = null; // force clip re-sync
       syncClip(phRef.current);
+      // Update effect filter at the seeked position
+      const v = videoRef.current;
+      if (v) {
+        const ph = phRef.current;
+        const efx = effectClipsRef.current.find(
+          (c) => !c.fxParams?.effectDisabled && ph >= c.startTime && ph < c.startTime + c.duration
+        );
+        v.style.filter = efx ? clipCssFilter(efx.fxParams ?? {}) : "";
+      }
     } else {
       const v = videoRef.current; if (v && v.duration) v.currentTime = ratio * v.duration;
     }
@@ -299,7 +351,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
           {/* Video */}
           <video ref={videoRef} muted loop={snapshotClips.length === 0} playsInline
             onError={() => setMediaError(true)}
-            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
           />
 
           {/* Bottom scrim */}

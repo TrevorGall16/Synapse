@@ -82,6 +82,7 @@ function NewTrackDropZone() {
 
 export function Timeline() {
   const tracks = useProjectStore((s) => s.tracks);
+  const mediaPool = useProjectStore((s) => s.mediaPool);
   const addTrack = useProjectStore((s) => s.addTrack);
   const deleteTrack = useProjectStore((s) => s.deleteTrack);
   const reorderTrack = useProjectStore((s) => s.reorderTrack);
@@ -357,6 +358,15 @@ export function Timeline() {
                   </div>
                 );
               })}
+              {/* Empty-state hint — shown when every track has zero clips AND the pool is empty */}
+              {tracks.every((t) => t.clips.length === 0) && mediaPool.length === 0 && (
+                <div className="flex min-h-[120px] items-center justify-center">
+                  <p className="select-none text-center text-[11px] font-medium text-white/25">
+                    This project is empty<br />
+                    <span className="text-[10px] font-normal text-white/15">Drag media from the pool onto a track to begin.</span>
+                  </p>
+                </div>
+              )}
               {/* Drop zone to create a new track */}
               <NewTrackDropZone />
             </div>

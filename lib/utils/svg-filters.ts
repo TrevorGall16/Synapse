@@ -130,6 +130,25 @@ export function buildMaskedFxOverlayFilter(id: string): string {
     </filter>`;
 }
 
+/**
+ * Convert a clip's `fxParams` into a CSS `filter` string.
+ * Used by Theater Mode and FeedPostCard to preview effects without WebGPU.
+ */
+export function clipCssFilter(p: Record<string, unknown> = {}): string {
+  if (p.effectDisabled) return "";
+  const t = String(p.effectType ?? "none");
+  const intensity = Number(p.intensity ?? 50) / 100;
+  const parts: string[] = [];
+  if (t === "blur")   parts.push(`blur(${(Number(p.blurAmount ?? 0) * 0.4).toFixed(1)}px)`);
+  if (t === "invert") parts.push(`invert(${intensity.toFixed(2)})`);
+  if (t === "hue-rotate") parts.push(`hue-rotate(${Number(p.hueRotate ?? 0)}deg)`);
+  const br = Number(p.brightness ?? 100); if (br !== 100) parts.push(`brightness(${(br / 100).toFixed(2)})`);
+  const co = Number(p.contrast   ?? 100); if (co !== 100) parts.push(`contrast(${(co / 100).toFixed(2)})`);
+  const sa = Number(p.saturate   ?? 100); if (sa !== 100) parts.push(`saturate(${(sa / 100).toFixed(2)})`);
+  const hr = Number(p.hueRotate  ?? 0);   if (t !== "hue-rotate" && hr !== 0) parts.push(`hue-rotate(${hr}deg)`);
+  return parts.join(" ");
+}
+
 /** Collect all SVG defs needed for the current FX state */
 export function collectSvgDefs(
   effectClips: ClipEvent[],

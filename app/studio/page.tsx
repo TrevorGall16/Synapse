@@ -12,10 +12,12 @@ import { VideoFxInspector } from "@/components/studio/video-fx-inspector";
 import { AudioInspector } from "@/components/studio/audio-inspector";
 import { AudioMixer } from "@/components/studio/audio-mixer";
 import { VolumeHud } from "@/components/studio/volume-hud";
+import { StudioTabs } from "@/components/studio/studio-tabs";
 import { ProjectSettingsModal } from "@/components/studio/project-settings-modal";
 import { HistoryPanel } from "@/components/studio/history-panel";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useMediaHydration } from "@/lib/hooks/use-media-hydration";
+import { refreshMediaUrl } from "@/lib/store/media-pool-db";
 import { Film, Plus } from "lucide-react";
 
 // ── Studio Splash Screen ───────────────────────────────
@@ -55,11 +57,24 @@ export default function StudioPage() {
   const tracks = useProjectStore((s) => s.tracks);
   const fxMaskEditingClipId = useProjectStore((s) => s.fxMaskEditingClipId);
   const projectId = useProjectStore((s) => s.projectId);
+  const updateMediaItemUrl = useProjectStore((s) => s.updateMediaItemUrl);
 
   // When hydration finishes and a projectId exists, bypass the splash automatically
   useEffect(() => {
     if (!isHydrating && projectId) setProjectStarted(true);
   }, [isHydrating, projectId]);
+
+  // Silently re-hydrate stale media when switching tabs
+  useEffect(() => {
+    const { mediaPool } = useProjectStore.getState();
+    const stale = mediaPool.filter((m) => !m.previewUrl || m.previewUrl.startsWith("blob:"));
+    if (!stale.length) return;
+    Promise.all(stale.map(async (item) => {
+      const url = await refreshMediaUrl(item.id);
+      if (url) updateMediaItemUrl(item.id, url);
+    })).catch(console.warn);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   const hasContent = tracks.some((t) => t.clips.length > 0);
   const showSplash = !projectStarted && !hasContent && !projectId;
@@ -96,9 +111,11 @@ export default function StudioPage() {
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#1a1a1a] text-white">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#1a1a1a] text-white">
       {showSettings && <ProjectSettingsModal onClose={() => setShowSettings(false)} />}
       <VolumeHud />
+      <StudioTabs />
+      <div className="flex-1 overflow-hidden min-h-0">
       <Group orientation="vertical">
         {/* Top half: Media Pool/Inspector + Preview Monitor */}
         <Panel defaultSize={50} minSize={25} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
@@ -206,6 +223,7 @@ export default function StudioPage() {
           <AudioMixer />
         </Panel>
       </Group>
+      </div>
     </div>
   );
 }
