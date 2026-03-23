@@ -47,11 +47,14 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
       ? effectPool.find((c) => c.startTime < fc.startTime + fc.duration && c.startTime + c.duration > fc.startTime && !c.fxParams?.effectDisabled)
       : undefined;
     const efxFxParams = efx?.fxParams ?? {};
+    // Use pre-rendered CSS if available (published clips with stripped fxParams)
+    const firstClipFilter    = efx ? (efx.renderedCss?.filter    ?? clipCssFilter(efxFxParams))    : "";
+    const firstClipTransform = efx ? (efx.renderedCss?.transform ?? clipCssTransform(efxFxParams)) : "";
     return {
       firstClipSrc: fc ? (pool.find((m) => m.id === fc.sourceId)?.previewUrl ?? post.videoUrl) : post.videoUrl,
       firstClipOffset: fc ? Math.max(0.001, (fc.mediaOffset ?? 0) / 1_000_000) : 0.001,
-      firstClipFilter: efx ? clipCssFilter(efxFxParams) : "",
-      firstClipTransform: efx ? clipCssTransform(efxFxParams) : "",
+      firstClipFilter,
+      firstClipTransform,
     };
   }, [post.projectSnapshot, post.videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 

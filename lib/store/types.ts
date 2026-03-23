@@ -76,6 +76,11 @@ export interface ClipEvent {
   embeddedEffectClips?: ClipEvent[];
   /** Text clips baked from the remix source's text tracks. Renders in preview/feed but not as editable tracks. */
   embeddedTextClips?: ClipEvent[];
+  /**
+   * Pre-rendered CSS strings replacing raw fxParams for published embedded effect clips.
+   * Stripping fxParams prevents recipe reverse-engineering; renderedCss drives the visual.
+   */
+  renderedCss?: { filter: string; transform: string };
 }
 
 export interface Track {

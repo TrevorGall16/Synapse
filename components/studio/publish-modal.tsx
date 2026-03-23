@@ -7,6 +7,8 @@ import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
+import { getAttributionLock } from "@/lib/store/attribution-idb";
+import { clipCssFilter, clipCssTransform } from "@/lib/utils/svg-filters";
 import type { Track, ClipEvent } from "@/lib/store/types";
 
 interface PublishModalProps {
@@ -43,8 +45,16 @@ function consolidateEffectTracks(tracks: Track[]): Track[] {
         ...t,
         clips: t.clips.map((c): ClipEvent => ({
           ...c,
-          embeddedEffectClips: [...(c.embeddedEffectClips ?? []), ...overlaps(sepFx, c)],
-          embeddedTextClips:   [...(c.embeddedTextClips   ?? []), ...overlaps(sepTxt, c)],
+          embeddedEffectClips: [...(c.embeddedEffectClips ?? []), ...overlaps(sepFx, c)].map((e) => ({
+            // Strip raw fxParams → replace with pre-rendered CSS (secret sauce stripping)
+            ...e,
+            fxParams: undefined,
+            renderedCss: e.renderedCss ?? {
+              filter: clipCssFilter(e.fxParams ?? {}),
+              transform: clipCssTransform(e.fxParams ?? {}),
+            },
+          })),
+          embeddedTextClips: [...(c.embeddedTextClips ?? []), ...overlaps(sepTxt, c)],
         })),
       };
     });
@@ -82,10 +92,10 @@ export function PublishModal({ onClose }: PublishModalProps) {
     : null;
   const effectiveHandle = remixedFromHandle ?? parentPost?.user?.handle;
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (!title.trim() || published) return;
 
-    const { tracks, duration: projectDuration, projectSettings, mediaPool } = useProjectStore.getState();
+    const { tracks, duration: projectDuration, projectSettings, mediaPool, projectId: currentProjectId } = useProjectStore.getState();
     const firstVideo = mediaPool.find((m) => m.type === "video");
     const maxEnd = tracks.flatMap((t) => t.clips).reduce((mx, c) => Math.max(mx, c.startTime + c.duration), 0);
     const allClipsDuration = maxEnd > 0 ? maxEnd : projectDuration;
@@ -108,6 +118,12 @@ export function PublishModal({ onClose }: PublishModalProps) {
 
     const finalTracks = consolidateEffectTracks(publishTracks);
 
+    // Read attribution lock from IDB — authoritative over in-memory store values
+    const lock = await getAttributionLock(currentProjectId).catch(() => null);
+    const safeRemixedFromHandle = lock?.remixedFromHandle ?? effectiveHandle;
+    const safeRootParentId      = lock?.rootParentId      ?? rootParentId ?? parentProjectId;
+    const safeRootParentHandle  = lock?.rootParentHandle  ?? rootParentHandle ?? effectiveHandle;
+
     addPost({
       id,
       user: { handle: username, initial: displayName[0]?.toUpperCase() ?? "U", hue },
@@ -123,9 +139,9 @@ export function PublishModal({ onClose }: PublishModalProps) {
       authorUsername: username,
       allowRemix,
       remixedFromPostId: parentProjectId,
-      remixedFromHandle: effectiveHandle,
-      rootParentId: rootParentId ?? parentProjectId,
-      rootParentHandle: rootParentHandle ?? effectiveHandle,
+      remixedFromHandle: safeRemixedFromHandle,
+      rootParentId: safeRootParentId,
+      rootParentHandle: safeRootParentHandle,
       createdAt: Date.now(),
     });
 

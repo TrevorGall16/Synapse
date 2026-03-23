@@ -1,0 +1,72 @@
+1. The Storage "Time Bomb" (LocalStorage & State Bloat)
+The Issue: You are shoving entire project histories (undo/redo), multi-tab data, and track metadata into LocalStorage, which has a hard 5MB limit. A few complex edits will hit this limit, trigger a crash, and prevent the app from saving anything ever again.
+
+The Fix: Move the History (undo/redo) and Full Track Data into IndexedDB. Use LocalStorage only for a lightweight "Project Registry" (ID, Name, Thumbnail).
+
+2. Destructive Deletion (The Remix Suicide)
+The Issue: When you delete a post, the app deletes the video from IndexedDB. But because Remixes share that same Video ID, deleting the "Parent" post instantly kills the video for every "Child" remix.
+
+The Fix: Implement Reference Counting. When a video is imported or remixed, increment a counter. Only delete the binary file from IndexedDB if the counter hits zero.
+
+3. Fake "Flattening" (The Secret Sauce Leak)
+The Issue: "Flattening" is currently just a UI trick. The raw metadata (keyframes, effect parameters, and source references) is still hidden inside the JSON snapshot. A smart user can easily extract your exact "recipe" or un-flatten the project.
+
+The Fix: Strip all fxParams and keyframes from the snapshot before publishing. The published post should only contain the final rendered values for the player, not the instructions on how to recreate them.
+
+4. Timing Drift (The Dopamine Killer)
+The Issue: The UI uses a "mock" playback loop that guesses the time based on frame count. The actual audio engine uses a real MasterClock. Under heavy load, the video and audio will slowly drift apart, making the editor feel "mushy" and unprofessional.
+
+The Fix: Slave the entire UI and Preview Monitor to the AudioContext.currentTime. Eliminate all independent requestAnimationFrame loops that aren't synced to the MasterClock.
+
+5. Blocking Hydration (The TTI Killer)
+The Issue: The "Hydration Barrier" stops the whole app until every single video in your library is loaded into memory. If a user has 2GB of clips, the app will sit on a loading spinner for 30 seconds.
+
+The Fix: Implement Lazy Hydration. Only "wake up" the videos that are currently visible on the screen or timeline. Let the UI render immediately with placeholders.
+
+6. Security: Attribution Forgery
+The Issue: The "Original Creator" ID is just a text field that can be edited in the browser console before hitting "Publish." Someone can remix your work and change the "Root Parent" to themselves.
+
+The Fix: (Long term) The server needs to validate the parentId chain. (Short term) Hard-code the rootParentId during the fork event and prevent it from being modified by the useProjectStore setters.
+
+7. Orphaned Blobs (The "Ghost" Storage)
+The Issue: Deleting a project from the "Registry" doesn't actually delete the videos from the hard drive. Over time, your app will take up 20GB of the user's disk space with "zombie" videos they thought they deleted.
+
+The Fix: Create a Garbage Collection service. Every time the app starts, compare the IDs in the Project Registry to the IDs in IndexedDB. If an ID doesn't have a project, nuke it.
+
+8. Silent Failures (The "Media Offline" Dead-End)
+The Issue: If IndexedDB runs out of space, the save fails silently. The user thinks they saved their work, but when they refresh, it's gone.
+
+The Fix: Wrap all IDB writes in a try/catch block. If it fails due to a QuotaExceededError, show a "Disk Full" warning immediately so the user doesn't lose their edit.
+
+9. The "UI Bypass" Security Hole
+The Issue: Even though we built "Flattening," Audit #2 found that the Theater Mode has a hard-coded "Edit" button that bypasses the Remix logic entirely. Also, the Profile Page loads projects directly from a snapshot, meaning anyone can "re-open" your raw project if they find the right URL.
+
+The Fix: Remove the "Edit" button for non-owners and force all non-owner loads through a flattened filter before they hit the Studio.
+
+10. The 60FPS "Rendering Budget" Conflict
+The Issue: You have too many independent "clocks" running. The Audio meters, the Mask animations, the Preview monitor, and the Timeline each have their own requestAnimationFrame loop.
+
+The Impact: On a phone or a weaker laptop, these loops will fight each other, causing the video to stutter (dropped frames) even if the computer is fast.
+
+The Fix: Create a single Global Animation Loop that all components "subscribe" to.
+
+11. The "Deep Clone" UI Freeze
+The Issue: To isolate projects, the code uses JSON.parse(JSON.stringify(tracks)).
+
+The Impact: As your timeline grows to 100+ clips with effects, this "Deep Clone" will take 200ms–500ms. The user will click a tab and the screen will just freeze for half a second.
+
+The Fix: Use a library like immer for "Structural Sharing" or only clone the specific track being edited.
+
+12. The "Gallery" False Promise
+The Issue: Audit #2 noticed that the code talks about a Gallery, but the actual logic to write project IDs into a "Registry" (the list of all your work) is missing.
+
+The Impact: You see a "Gallery" UI, but it will always be empty or show "ghost" projects that don't actually exist in storage.
+
+The Fix: Explicitly write to a project_registry key in IndexedDB every time a project is named or saved.
+
+13. Effect Rendering "Divergence"
+The Issue: The Preview Monitor in the Studio uses one logic to show effects, but the "Baked" remix clip uses a different logic.
+
+The Impact: A user remixes a video, it looks great in the feed, but when they open it in the Studio, the effects look slightly different or disappear.
+
+The Fix: Unify the applyFilter logic so the Studio and the Feed use the exact same function to render effects.

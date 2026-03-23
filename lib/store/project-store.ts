@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import type { Track, TrackType, MediaPoolItem, Marker, ClipEvent, PanCropData, ProjectSettings, HistorySnapshot, SerializedProject } from "./types";
 import { usePlaybackStore } from "./playback-store";
 import { hydrateMediaPool } from "./media-pool-db";
+import { saveAttributionLock } from "./attribution-idb";
 import {
   TRACK_COLORS, TRACK_HEIGHTS,
   createTrack, findClipLocation,
@@ -205,6 +206,16 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     // Compute the new ID before set() so we can reference it in the async follow-up.
     const incomingId = snap.projectId ?? crypto.randomUUID();
 
+    // Attribution lock: write to IDB at fork time so publish-modal reads authoritative values.
+    if (snap.remixedFromHandle) {
+      const rootParentId     = snap.rootParentId     || snap.parentProjectId || undefined;
+      const rootParentHandle = snap.rootParentHandle || snap.remixedFromHandle || undefined;
+      saveAttributionLock(incomingId, {
+        parentProjectId: snap.parentProjectId, remixedFromHandle: snap.remixedFromHandle,
+        rootParentId, rootParentHandle, lockedAt: Date.now(),
+      }).catch(console.warn);
+    }
+
     set((s) => {
       const ids = s.openProjectIds.includes(s.projectId) ? s.openProjectIds : [...s.openProjectIds, s.projectId];
       if (ids.includes(incomingId)) {
@@ -316,96 +327,74 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
 
   timeStretchClip: (clipId, newDuration) =>
     set((s) => ({
-      tracks: s.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.map((c) => {
-          if (c.id !== clipId) return c;
-          const clamped = Math.max(MIN_CLIP_DURATION, Math.round(newDuration));
-          return { ...c, duration: clamped, playbackRate: Math.round((c.duration / clamped) * 100) / 100 };
-        }),
-      })),
+      tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => {
+        if (c.id !== clipId) return c;
+        const clamped = Math.max(MIN_CLIP_DURATION, Math.round(newDuration));
+        return { ...c, duration: clamped, playbackRate: Math.round((c.duration / clamped) * 100) / 100 };
+      }) })),
     })),
 
   joinClips: (clipIds) => set((s) => ({ tracks: performJoinClips(s.tracks, clipIds) })),
-
   setInspectingClipId: (id) => set({ inspectingClipId: id }),
   setActiveUISection: (section) => set({ activeUISection: section }),
   setInspectorSubTab: (tab) => set({ inspectorSubTab: tab }),
   setProjectSettings: (s) => set({ projectSettings: s }),
-
   setTrackAudioParam: (trackId, params) =>
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, ...params } : t) })),
-
   setClipLevel: (clipId, level) =>
     set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => c.id === clipId ? { ...c, level: Math.max(0, Math.min(100, Math.round(level))) } : c) })) })),
-
   setClipFade: (clipId, edge, durationMicros) =>
-    set((s) => ({
-      tracks: s.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.map((c) => {
-          if (c.id !== clipId) return c;
-          if (edge === "in") return { ...c, fadeInDuration: Math.max(0, Math.round(durationMicros)), manualFadeIn: true };
-          return { ...c, fadeOutDuration: Math.max(0, Math.round(durationMicros)), manualFadeOut: true };
-        }),
-      })),
-    })),
-
+    set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => {
+      if (c.id !== clipId) return c;
+      return edge === "in"
+        ? { ...c, fadeInDuration: Math.max(0, Math.round(durationMicros)), manualFadeIn: true }
+        : { ...c, fadeOutDuration: Math.max(0, Math.round(durationMicros)), manualFadeOut: true };
+    }) })) })),
   setTrackColorCorrection: (trackId, params) =>
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, ...params } : t) })),
-
   updateClipPanCrop: (clipId, panCrop) =>
-    set((s) => ({
-      tracks: s.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.map((c) => c.id === clipId ? { ...c, panCrop: { x: 0, y: 0, scale: 1, rotation: 0, ...c.panCrop, ...panCrop } } : c),
-      })),
-    })),
-
+    set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) =>
+      c.id === clipId ? { ...c, panCrop: { x: 0, y: 0, scale: 1, rotation: 0, ...c.panCrop, ...panCrop } } : c) })) })),
   updateClipFxParams: (clipId, params) =>
     set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => c.id === clipId ? { ...c, fxParams: { ...c.fxParams, ...params } } : c) })) })),
-
   loadProject: (snapshot) => set({
     tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
     projectId: crypto.randomUUID(), parentProjectId: undefined,
     selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, historyPast: [], historyFuture: [],
   }),
-
   forkProject: (snapshot) => set({
     tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
-    mediaPool: snapshot.mediaPool ?? [], markers: [],
-    projectId: crypto.randomUUID(), parentProjectId: snapshot.projectId ?? undefined,
+    mediaPool: snapshot.mediaPool ?? [], markers: [], projectId: crypto.randomUUID(),
+    parentProjectId: snapshot.projectId ?? undefined,
     selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, historyPast: [], historyFuture: [],
   }),
-
   setTrackCollapsed: (trackId, collapsed) =>
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, collapsed } : t) })),
-
   setTrackColor: (trackId, color) =>
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, color } : t) })),
-
   addMarker: (marker) => set((s) => ({ markers: [...s.markers, marker] })),
   removeMarker: (id) => set((s) => ({ markers: s.markers.filter((m) => m.id !== id) })),
   setFxMaskEditingClipId: (id) => set({ fxMaskEditingClipId: id }),
-
   updateFxMask: (clipId, mask) =>
-    set((s) => ({
-      tracks: s.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.map((c) =>
-          c.id === clipId
-            ? { ...c, fxParams: { ...c.fxParams, fxMask: { x: 0, y: 0, scale: 1, rotation: 0, ...((c.fxParams?.fxMask as object) ?? {}), ...mask } } }
-            : c
-        ),
-      })),
-    })),
+    set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) =>
+      c.id === clipId
+        ? { ...c, fxParams: { ...c.fxParams, fxMask: { x: 0, y: 0, scale: 1, rotation: 0, ...((c.fxParams?.fxMask as object) ?? {}), ...mask } } }
+        : c) })) })),
 }), {
   name: "synapse-project",
   skipHydration: true,
+  // Tracks and history are heavy — stored in IDB via project-idb.ts / GlobalHydrator subscribe.
+  // Only lightweight registry fields live in localStorage.
   partialize: (s: ProjectState) => ({
-    tracks: s.tracks, duration: s.duration, projectId: s.projectId, name: s.name, parentProjectId: s.parentProjectId, projectSettings: s.projectSettings, markers: s.markers,
+    projectId: s.projectId, duration: s.duration, name: s.name, markers: s.markers,
+    parentProjectId: s.parentProjectId, remixedFromHandle: s.remixedFromHandle,
+    rootParentId: s.rootParentId, rootParentHandle: s.rootParentHandle,
+    projectSettings: s.projectSettings, openProjectIds: s.openProjectIds,
     mediaPool: s.mediaPool.map((m) => ({ ...m, previewUrl: "" })),
-    openProjectIds: s.openProjectIds,
-    savedProjects: Object.fromEntries(Object.entries(s.savedProjects).map(([k, v]) => [k, { ...v, mediaPool: v.mediaPool.map((m) => ({ ...m, previewUrl: "" })) }])),
+    // Strip tracks + history from saved tabs — restored from IDB on next load.
+    savedProjects: Object.fromEntries(Object.entries(s.savedProjects).map(([k, v]) => [k, {
+      ...v, tracks: [], historyPast: [], historyFuture: [],
+      mediaPool: v.mediaPool.map((m) => ({ ...m, previewUrl: "" })),
+    }])),
   }),
 }));

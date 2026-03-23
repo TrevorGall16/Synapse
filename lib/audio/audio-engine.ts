@@ -39,6 +39,12 @@ function generateImpulseResponse(ctx: AudioContext, roomSize: number): AudioBuff
   return buffer;
 }
 
+/** Playback origin: anchors AudioContext time to project playhead position. */
+interface PlaybackOrigin {
+  audioCtxTime: number;    // ctx.currentTime at the moment play was pressed
+  playheadMicros: number;  // playhead position (µs) at that moment
+}
+
 class AudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -48,6 +54,7 @@ class AudioEngine {
   private mutedTracks = new Set<string>();
   private storedVolumes = new Map<string, number>();
   private lastRoomSize = new Map<string, number>();
+  private playbackOrigin: PlaybackOrigin | null = null;
 
   init(): AudioContext {
     if (this.ctx) return this.ctx;
@@ -62,6 +69,21 @@ class AudioEngine {
       this.ctx.resume().catch(() => {});
     }
   }
+
+  /** Expose the AudioContext for clock-sync in the playback loop. */
+  getContext(): AudioContext | null { return this.ctx; }
+
+  /** Anchor playback origin at the given playhead position (µs). Call when Play is pressed or on seek. */
+  setPlaybackOrigin(playheadMicros: number): void {
+    if (!this.ctx) return;
+    this.playbackOrigin = { audioCtxTime: this.ctx.currentTime, playheadMicros };
+  }
+
+  /** Return the current playback origin, or null if not playing. */
+  getPlaybackOrigin(): PlaybackOrigin | null { return this.playbackOrigin; }
+
+  /** Clear the playback origin. Call when playback stops. */
+  clearPlaybackOrigin(): void { this.playbackOrigin = null; }
 
   connectSource(trackId: string, element: HTMLMediaElement): TrackAudioChain | null {
     if (!this.ctx || !this.masterGain) return null;
@@ -285,6 +307,7 @@ class AudioEngine {
     this.mutedTracks.clear();
     this.storedVolumes.clear();
     this.lastRoomSize.clear();
+    this.playbackOrigin = null;
     if (this.ctx) {
       this.ctx.close().catch(() => {});
       this.ctx = null;

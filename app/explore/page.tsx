@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Zap, GitBranch, Flame, Sparkles, Download } from "lucide-react";
 import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
+import { retainMedia } from "@/lib/store/media-pool-db";
 import type { MediaPoolItem } from "@/lib/store/types";
 
 // ── Static community posts — shown alongside (or instead of) user posts ────────
@@ -128,11 +129,13 @@ export default function ExplorePage() {
     const settings = snap?.projectSettings ?? { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" };
 
     // Preserve all media pool items so IDB hydration (keyed by original ID) works for all clips.
+    // Retain each blob so deleting the source post doesn't evict shared assets.
     const flatMedia: MediaPoolItem[] = snap?.mediaPool
       ? [...snap.mediaPool]
       : post.videoUrl
         ? [{ id: crypto.randomUUID(), name: post.title, type: "video" as const, duration, previewUrl: post.videoUrl }]
         : [];
+    if (snap?.mediaPool) snap.mediaPool.forEach((m) => retainMedia(m.id).catch(console.warn));
 
     const trackId = crypto.randomUUID();
     const audioId = crypto.randomUUID();

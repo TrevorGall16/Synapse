@@ -9,7 +9,7 @@ import { useUserStore } from "@/lib/store/user-store";
 import { TheaterMode } from "@/components/feed/theater-mode";
 import { UploadModal } from "@/components/feed/upload-modal";
 import { FeedPostCard } from "@/components/feed/feed-post-card";
-import { saveMediaToDB } from "@/lib/store/media-pool-db";
+import { saveMediaToDB, retainMedia } from "@/lib/store/media-pool-db";
 import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
 
 // ── Demo snapshot ─────────────────────────────────────────────────────────────
@@ -154,12 +154,14 @@ export default function DiscoveryFeedPage() {
     const duration = snap?.duration ?? 30_000_000;
     const settings = snap?.projectSettings ?? { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" };
 
-    // Preserve all media pool items from the snapshot so IDB hydration (keyed by original ID) works.
+    // Preserve all media pool items so IDB hydration (keyed by original ID) works.
+    // Retain each blob in IDB so deleting the source post doesn't evict shared assets.
     const flatMedia: MediaPoolItem[] = snap?.mediaPool
       ? [...snap.mediaPool]
       : post.videoUrl
         ? [{ id: crypto.randomUUID(), name: post.title, type: "video" as const, duration, previewUrl: post.videoUrl }]
         : [];
+    if (snap?.mediaPool) snap.mediaPool.forEach((m) => retainMedia(m.id).catch(console.warn));
 
     const trackId = crypto.randomUUID();
     const audioId = crypto.randomUUID();

@@ -85,13 +85,14 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
       : [];
     // Apply initial filter + transform at t=0
     const efx = effectClipsRef.current.find(
-      (c) => !c.fxParams?.effectDisabled && 0 >= c.startTime && 0 < c.startTime + c.duration
+      (c) => (c.renderedCss || !c.fxParams?.effectDisabled) && 0 >= c.startTime && 0 < c.startTime + c.duration
     );
     const v = videoRef.current;
-    if (v) {
-      const efxP = efx?.fxParams ?? {};
-      v.style.filter    = efx ? clipCssFilter(efxP) : "";
-      v.style.transform = efx ? clipCssTransform(efxP) : "";
+    if (v && efx) {
+      v.style.filter    = efx.renderedCss?.filter    ?? clipCssFilter(efx.fxParams    ?? {});
+      v.style.transform = efx.renderedCss?.transform ?? clipCssTransform(efx.fxParams ?? {});
+    } else if (v) {
+      v.style.filter = ""; v.style.transform = "";
     }
   }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -219,11 +220,13 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [], 
         if (v) {
           const ph = phRef.current;
           const efx = effectClipsRef.current.find(
-            (c) => !c.fxParams?.effectDisabled && ph >= c.startTime && ph < c.startTime + c.duration
+            (c) => (c.renderedCss || !c.fxParams?.effectDisabled) && ph >= c.startTime && ph < c.startTime + c.duration
           );
           if (!efx) {
-            v.style.filter = "";
-            v.style.transform = "";
+            v.style.filter = ""; v.style.transform = "";
+          } else if (efx.renderedCss && !efx.fxParams) {
+            // Published clip: apply pre-rendered CSS (fxParams was stripped at publish time)
+            v.style.filter = efx.renderedCss.filter; v.style.transform = efx.renderedCss.transform;
           } else {
             const efxP = efx.fxParams ?? {};
             const effectType = String(efxP.effectType ?? "none");
