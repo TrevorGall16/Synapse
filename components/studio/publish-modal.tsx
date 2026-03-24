@@ -96,27 +96,23 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
   const [demoVideoId, setDemoVideoId] = useState<string | null>(null);
   const [demoStartTime, setDemoStartTime] = useState(0);
   const [demoDuration, setDemoDuration] = useState(0);
-  const demoProbeRef = useRef<HTMLVideoElement | null>(null);
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Media pool for demo video picker (preset mode only)
   const mediaPool = useProjectStore((s) => presetMode ? s.mediaPool : EMPTY_MEDIA_ARRAY);
   const videoMediaItems = mediaPool.filter((m) => m.type === "video" && m.previewUrl);
 
-  // Probe demo video duration when selection changes
+  // Load demo video into the preview element when selection changes
   useEffect(() => {
     setDemoStartTime(0);
     setDemoDuration(0);
-    if (!demoVideoId) return;
+    const v = previewVideoRef.current;
+    if (!v) return;
+    if (!demoVideoId) { v.src = ""; return; }
     const item = videoMediaItems.find((m) => m.id === demoVideoId);
     if (!item?.previewUrl) return;
-    const v = document.createElement("video");
-    demoProbeRef.current = v;
-    v.preload = "metadata";
-    v.onloadedmetadata = () => {
-      if (demoProbeRef.current !== v) return;
-      setDemoDuration(v.duration);
-    };
     v.src = item.previewUrl;
+    v.load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [demoVideoId]);
 
@@ -311,23 +307,49 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
                       </div>
                       <p className="text-[8px] text-white/20">Attaches a clip from your media pool as a looping showcase preview.</p>
 
-                      {/* Start Offset slider — only when a video is selected and duration is known */}
-                      {demoVideoId && demoDuration > 4 && (
-                        <div className="mt-2 flex flex-col gap-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[9px] text-white/40">Start Offset</span>
-                            <span className="text-[9px] tabular-nums text-white/55">{demoStartTime.toFixed(1)}s</span>
+                      {/* Live preview + start offset scrubber */}
+                      {demoVideoId && (
+                        <div className="mt-2 flex flex-col gap-2">
+                          {/* Preview thumbnail — muted, paused, scrubs with slider */}
+                          <div className="overflow-hidden rounded-lg bg-black" style={{ aspectRatio: "16/9" }}>
+                            <video
+                              ref={previewVideoRef}
+                              muted
+                              playsInline
+                              preload="metadata"
+                              onLoadedMetadata={() => {
+                                const v = previewVideoRef.current;
+                                if (!v) return;
+                                setDemoDuration(v.duration);
+                                v.currentTime = 0;
+                              }}
+                              className="h-full w-full object-contain"
+                            />
                           </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={Math.max(0, demoDuration - 4)}
-                            step={0.1}
-                            value={demoStartTime}
-                            onChange={(e) => setDemoStartTime(Number(e.target.value))}
-                            className="h-1 w-full cursor-pointer accent-purple-400"
-                          />
-                          <p className="text-[8px] text-white/20">Showcase loops from {demoStartTime.toFixed(1)}s → {(demoStartTime + 4).toFixed(1)}s</p>
+
+                          {demoDuration > 4 && (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <span className="text-[9px] text-white/40">Start Offset</span>
+                                <span className="text-[9px] tabular-nums text-white/55">{demoStartTime.toFixed(1)}s</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={Math.max(0, demoDuration - 4)}
+                                step={0.1}
+                                value={demoStartTime}
+                                onChange={(e) => {
+                                  const v = Number(e.target.value);
+                                  setDemoStartTime(v);
+                                  // Seek preview frame synchronously
+                                  if (previewVideoRef.current) previewVideoRef.current.currentTime = v;
+                                }}
+                                className="h-1 w-full cursor-pointer accent-purple-400"
+                              />
+                              <p className="text-[8px] text-white/20">Loops {demoStartTime.toFixed(1)}s → {(demoStartTime + 4).toFixed(1)}s</p>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

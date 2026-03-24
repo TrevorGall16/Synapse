@@ -14,14 +14,14 @@ import { buildTextStyle } from "@/lib/utils/preview-helpers";
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
 const TX: React.CSSProperties = { textShadow: "0 2px 6px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,1)", WebkitTextStroke: "0.5px rgba(0,0,0,0.7)" };
 
-/** Build a deduplicated queue: seed first, then same-author posts, then tag-matched, then rest */
+/** Build a strictly deduplicated queue: seed first, then same-author posts, then tag-matched, then rest */
 function buildQueue(seed: FeedPost, all: FeedPost[]): FeedPost[] {
   const seen = new Set<string>([seed.id]);
-  const byAuthor  = all.filter((p) => p.id !== seed.id && p.user.handle === seed.user.handle);
-  const byTag     = all.filter((p) => !seen.has(p.id) && p.tags.some((t) => seed.tags.includes(t)) && (byAuthor.forEach((a) => seen.add(a.id)), true));
-  const rest      = all.filter((p) => !seen.has(p.id) && !byTag.includes(p));
-  byAuthor.forEach((p) => seen.add(p.id));
+  const byAuthor = all.filter((p) => p.id !== seed.id && p.user.handle === seed.user.handle);
+  byAuthor.forEach((p) => seen.add(p.id)); // populate BEFORE byTag so author posts can't appear twice
+  const byTag = all.filter((p) => !seen.has(p.id) && p.tags.some((t) => seed.tags.includes(t)));
   byTag.forEach((p) => seen.add(p.id));
+  const rest = all.filter((p) => !seen.has(p.id));
   return [seed, ...byAuthor, ...byTag, ...rest].slice(0, 50);
 }
 
@@ -289,7 +289,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
 
         <video ref={videoRef} muted loop={snapshotClips.length === 0} playsInline
           onError={() => setMediaError(true)}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-150 ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
         />
 
         {/* Text overlays */}
@@ -481,14 +481,14 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [] }
         <X size={15} />
       </button>
 
-      {/* Vertical snap-scroll feed */}
+      {/* Vertical snap-scroll feed — deduplicate at render time as a final safety net */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
         className="h-screen overflow-y-scroll snap-y snap-mandatory"
         style={{ scrollbarWidth: "none" }}
       >
-        {queue.map((p) => (
+        {Array.from(new Map(queue.map((p) => [p.id, p])).values()).map((p) => (
           <TheaterCell
             key={p.id}
             post={p}
