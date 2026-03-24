@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
+import { Share2 } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
+import { PublishModal } from "@/components/studio/publish-modal";
 import type { ClipEvent } from "@/lib/store/types";
 
 export function FxInspector() {
@@ -9,6 +12,7 @@ export function FxInspector() {
   const updateClipFxParams = useProjectStore((s) => s.updateClipFxParams);
   const fxMaskEditingClipId = useProjectStore((s) => s.fxMaskEditingClipId);
   const setFxMaskEditingClipId = useProjectStore((s) => s.setFxMaskEditingClipId);
+  const [sharePresetOpen, setSharePresetOpen] = useState(false);
 
   let clip: ClipEvent | undefined;
   if (inspectingClipId) {
@@ -26,7 +30,8 @@ export function FxInspector() {
     );
   }
 
-  const onParam = (key: string, value: unknown) => updateClipFxParams(clip!.id, { [key]: value });
+  // Always merge so individual slider moves don't wipe sibling params or effectType
+  const onParam = (key: string, value: unknown) => updateClipFxParams(clip!.id, { [key]: value }, "merge");
 
   const effectType = String(clip.fxParams?.effectType ?? "none");
   const intensity = Number(clip.fxParams?.intensity ?? 50);
@@ -39,8 +44,23 @@ export function FxInspector() {
 
   return (
     <div className="flex h-full flex-col bg-[#1a1a1a]">
-      <div className="flex items-center border-b border-white/10 px-3 py-2">
+      {sharePresetOpen && clip && (
+        <PublishModal
+          onClose={() => setSharePresetOpen(false)}
+          presetMode={{ fxParams: clip.fxParams ?? {}, effectType: String(clip.fxParams?.effectType ?? "none") }}
+        />
+      )}
+      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
         <span className="truncate text-xs font-semibold text-white/80">Effect Clip</span>
+        {effectType !== "none" && (
+          <button
+            onClick={() => setSharePresetOpen(true)}
+            className="flex items-center gap-1 rounded-lg bg-purple-500/20 px-2 py-1 text-[9px] font-bold text-purple-300 transition-colors hover:bg-purple-500/30"
+            title="Share FX recipe as a community preset"
+          >
+            <Share2 size={9} />Share as Preset
+          </button>
+        )}
       </div>
       <div className="flex flex-col gap-3 overflow-y-auto p-3" onPointerDown={(e) => e.stopPropagation()}>
         {/* Effect Type */}

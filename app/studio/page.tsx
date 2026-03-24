@@ -15,6 +15,7 @@ import { VolumeHud } from "@/components/studio/volume-hud";
 import { StudioTabs } from "@/components/studio/studio-tabs";
 import { ProjectSettingsModal } from "@/components/studio/project-settings-modal";
 import { HistoryPanel } from "@/components/studio/history-panel";
+import { PresetPanel } from "@/components/studio/preset-panel";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useMediaHydration } from "@/lib/hooks/use-media-hydration";
 import { refreshMediaUrl } from "@/lib/store/media-pool-db";
@@ -153,6 +154,16 @@ export default function StudioPage() {
                 >
                   History
                 </button>
+                <button
+                  onClick={() => setLeftTab("presets")}
+                  className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                    leftTab === "presets"
+                      ? "border-b-2 border-white/60 text-white/80"
+                      : "text-white/40 hover:text-white/60"
+                  }`}
+                >
+                  Presets
+                </button>
               </div>
               {/* Tab content */}
               <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
@@ -199,6 +210,7 @@ export default function StudioPage() {
                   </div>
                 )}
                 {leftTab === "history" && <HistoryPanel />}
+                {leftTab === "presets" && <PresetPanel />}
               </div>
             </Panel>
             <Separator className="w-1 bg-white/10 transition-colors hover:bg-white/30" />

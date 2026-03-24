@@ -66,6 +66,9 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const accumY = useRef(0);
   const [levelTooltip, setLevelTooltip] = useState<number | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isDropTarget, setIsDropTarget] = useState(false);
+  const [dropBlockMsg, setDropBlockMsg] = useState<string | null>(null);
+  const [isPulsing, setIsPulsing] = useState(false);
 
   const xPx = (clip.startTime / 1_000_000) * pixelsPerSecond;
   const wPx = (clip.duration / 1_000_000) * pixelsPerSecond;
@@ -332,22 +335,91 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     []
   );
 
+  // ── Preset DnD drop target ───────────────────────────────
+  const isPresetDrag = useCallback((e: React.DragEvent) =>
+    e.dataTransfer.types.includes("application/x-synapse-preset"), []);
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    if (!isPresetDrag(e)) return;
+    // Block audio tracks — FX presets cannot apply to audio
+    if (track?.type === "audio") { e.dataTransfer.dropEffect = "none"; return; }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, [isPresetDrag, track?.type]);
+
+  const onDragEnter = useCallback((e: React.DragEvent) => {
+    if (!isPresetDrag(e)) return;
+    e.preventDefault();
+    if (track?.type === "audio") return;
+    setIsDropTarget(true);
+  }, [isPresetDrag, track?.type]);
+
+  const onDragLeave = useCallback(() => {
+    setIsDropTarget(false);
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDropTarget(false);
+      const raw = e.dataTransfer.getData("application/x-synapse-preset");
+      if (!raw) return;
+      // Block wrong track type
+      if (track?.type === "audio") {
+        setDropBlockMsg("Wrong track type");
+        setTimeout(() => setDropBlockMsg(null), 2000);
+        return;
+      }
+      try {
+        const fxParams = JSON.parse(raw) as Record<string, unknown>;
+        const store = useProjectStore.getState();
+        store.snapshotHistory("Apply Preset");
+        // Shift held → stack (merge) on top of existing params; otherwise replace
+        const mode = e.shiftKey ? "merge" : "replace";
+        store.updateClipFxParams(clip.id, fxParams, mode);
+        store.setSelectedClipIds([clip.id]);
+        // Brief pulse to confirm the drop
+        setIsPulsing(true);
+        setTimeout(() => setIsPulsing(false), 300);
+      } catch {
+        // ignore malformed drag data
+      }
+    },
+    [clip.id, track?.type]
+  );
+
   return (
     <div
-      className={`absolute top-0 flex h-full cursor-grab select-none items-center overflow-hidden active:cursor-grabbing ${
-        isSelected ? "ring-2 ring-white" : ""
+      className={`absolute top-0 flex h-full cursor-grab select-none items-center overflow-hidden transition-transform active:cursor-grabbing ${
+        isSelected ? "ring-2 ring-white" : isDropTarget ? "ring-2 ring-purple-400" : isPulsing ? "ring-2 ring-purple-300" : ""
       } ${hasLeftNeighbor ? "rounded-r" : hasRightNeighbor ? "rounded-l" : "rounded"}`}
       style={{
-        transform: `translate3d(${xPx}px, 0, 0)`,
+        transform: `translate3d(${xPx}px, 0, 0) ${isPulsing ? "scale(1.03)" : ""}`,
         width: wPx,
-        backgroundColor: trackColor + "40",
+        backgroundColor: isPulsing ? trackColor + "70" : trackColor + "40",
         ...(hasLeftNeighbor ? {} : { borderLeft: `2px solid ${trackColor}` }),
       }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onDragOver={onDragOver}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
     >
+      {/* Preset drop highlight */}
+      {isDropTarget && (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-purple-500/25">
+          <span className="rounded bg-purple-900/80 px-1.5 py-0.5 text-[9px] font-bold text-purple-200">Drop FX · Shift=Stack</span>
+        </div>
+      )}
+      {/* Wrong track type toast */}
+      {dropBlockMsg && (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-red-500/20">
+          <span className="rounded bg-red-900/90 px-1.5 py-0.5 text-[9px] font-bold text-red-200">{dropBlockMsg}</span>
+        </div>
+      )}
       {/* Filmstrip — only in expanded mode */}
       {!isCollapsed && track?.type === "video" && media?.previewUrl && (
         <ClipFilmstrip clip={clip} media={media} clipWidthPx={wPx} />

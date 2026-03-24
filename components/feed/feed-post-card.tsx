@@ -169,10 +169,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           <p className="line-clamp-2 text-[11px] font-bold leading-snug text-white">{post.title}</p>
           {post.remixedFromHandle && (
             <div className="mt-1">
-              <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}</span>
-              {post.rootParentHandle && post.rootParentHandle !== post.remixedFromHandle && (
-                <span className="ml-2.5 text-[7px] text-purple-300/45">Original: @{post.rootParentHandle}</span>
-              )}
+              <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}{post.rootParentHandle && <> • Original by @{post.rootParentHandle}</>}</span>
             </div>
           )}
         </div>
@@ -186,10 +183,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           <p className="mb-1 text-xs font-bold leading-snug text-white">{post.title}</p>
           {post.remixedFromHandle && (
             <div className="mb-1">
-              <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}</span>
-              {post.rootParentHandle && post.rootParentHandle !== post.remixedFromHandle && (
-                <span className="ml-2.5 text-[7px] text-purple-300/45">Original: @{post.rootParentHandle}</span>
-              )}
+              <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}{post.rootParentHandle && <> • Original by @{post.rootParentHandle}</>}</span>
             </div>
           )}
           <div className="mb-2 flex flex-wrap gap-1">

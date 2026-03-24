@@ -103,7 +103,9 @@ export default function DiscoveryFeedPage() {
     for (let p = 1; p < loadedPages; p++) extra.push(...generateMorePosts(p));
     return [...MOCK_POSTS, ...extra];
   }, [loadedPages]);
-  const allPosts = useMemo(() => [...userPosts, ...allMockPosts], [userPosts, allMockPosts]);
+  // Exclude preset posts — they have no video and show as "Media Offline" on the home feed
+  const videoUserPosts = useMemo(() => userPosts.filter((p) => !p.type || p.type === "video"), [userPosts]);
+  const allPosts = useMemo(() => [...videoUserPosts, ...allMockPosts], [videoUserPosts, allMockPosts]);
   // Derive reactively so TheaterMode always gets fresh URLs after GlobalHydrator finishes
   const theaterPost = useMemo(
     () => (theaterPostId ? allPosts.find((p) => p.id === theaterPostId) ?? null : null),

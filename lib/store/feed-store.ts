@@ -6,8 +6,23 @@ import type { Track, ProjectSettings, MediaPoolItem } from "./types";
 import { cleanupSnapshotMedia, hydrateMediaPool } from "./media-pool-db";
 import { savePostToIDB, removePostFromIDB, loadAllPostsFromIDB } from "./feed-idb";
 
+export type FeedPostType = "video" | "preset";
+
+export interface PresetData {
+  effectType: string;
+  fxParams: Record<string, unknown>;
+  /** Human-readable label shown on the preset card */
+  label?: string;
+  /** Broad category for filtering in the Explore/Presets panels */
+  category?: "blur" | "distortion" | "color" | "glitch" | "other";
+  /** Pre-computed CSS so cards can render a live preview without running fxParams helpers */
+  previewCss?: { filter: string; transform: string; animation?: string };
+}
+
 export interface FeedPost {
   id: string;
+  /** Discriminator — defaults to "video" when absent (backward-compatible) */
+  type?: FeedPostType;
   user: { handle: string; initial: string; hue: number };
   title: string;
   description?: string;
@@ -19,6 +34,8 @@ export interface FeedPost {
   comments: number;
   featured: boolean;
   videoUrl?: string;
+  /** Present on type="preset" posts — the draggable FX recipe */
+  presetData?: PresetData;
   /** Full project snapshot — present when published from Studio */
   projectSnapshot?: { tracks: Track[]; duration: number; projectSettings: ProjectSettings; mediaPool?: MediaPoolItem[] };
   /** Handle of the publishing user — used to filter posts on Profile page */
@@ -34,6 +51,8 @@ export interface FeedPost {
   rootParentHandle?: string;
   /** Unix ms timestamp of publication — used for sorting on Profile page */
   createdAt?: number;
+  /** For preset demo videos: the second offset to start looping from (default 0) */
+  demoStartTime?: number;
 }
 
 interface FeedState {

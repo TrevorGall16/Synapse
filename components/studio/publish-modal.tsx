@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { X, Globe, Check, ArrowRight, GitBranch } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
@@ -9,10 +9,21 @@ import { useUserStore } from "@/lib/store/user-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { getAttributionLock } from "@/lib/store/attribution-idb";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
-import type { Track, ClipEvent } from "@/lib/store/types";
+import type { Track, ClipEvent, MediaPoolItem } from "@/lib/store/types";
+
+// Stable empty array reference — prevents Zustand getSnapshot infinite loop
+// when the selector conditionally returns [] in non-preset mode.
+const EMPTY_MEDIA_ARRAY: MediaPoolItem[] = [];
+
+export interface PresetPublishMode {
+  fxParams: Record<string, unknown>;
+  effectType: string;
+}
 
 interface PublishModalProps {
   onClose: () => void;
+  /** When set, the modal publishes a preset rather than a project snapshot */
+  presetMode?: PresetPublishMode;
 }
 
 const ACCENTS = ["#7c3aed","#ec4899","#06b6d4","#22c55e","#f59e0b","#ef4444","#a855f7","#38bdf8","#fb923c"];
@@ -66,7 +77,7 @@ function fmtDuration(micros: number): string {
   return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
 }
 
-export function PublishModal({ onClose }: PublishModalProps) {
+export function PublishModal({ onClose, presetMode }: PublishModalProps) {
   const router = useRouter();
   const { profile } = useUserStore();
   const username    = profile?.username    ?? "you";
@@ -81,6 +92,33 @@ export function PublishModal({ onClose }: PublishModalProps) {
   const [scope, setScope] = useState<"timeline" | "selection">("timeline");
   const [published, setPublished] = useState(false);
   const [publishedId, setPublishedId] = useState<string | null>(null);
+  const [presetCat, setPresetCat] = useState<"blur" | "distortion" | "color" | "glitch" | "other">("other");
+  const [demoVideoId, setDemoVideoId] = useState<string | null>(null);
+  const [demoStartTime, setDemoStartTime] = useState(0);
+  const [demoDuration, setDemoDuration] = useState(0);
+  const demoProbeRef = useRef<HTMLVideoElement | null>(null);
+
+  // Media pool for demo video picker (preset mode only)
+  const mediaPool = useProjectStore((s) => presetMode ? s.mediaPool : EMPTY_MEDIA_ARRAY);
+  const videoMediaItems = mediaPool.filter((m) => m.type === "video" && m.previewUrl);
+
+  // Probe demo video duration when selection changes
+  useEffect(() => {
+    setDemoStartTime(0);
+    setDemoDuration(0);
+    if (!demoVideoId) return;
+    const item = videoMediaItems.find((m) => m.id === demoVideoId);
+    if (!item?.previewUrl) return;
+    const v = document.createElement("video");
+    demoProbeRef.current = v;
+    v.preload = "metadata";
+    v.onloadedmetadata = () => {
+      if (demoProbeRef.current !== v) return;
+      setDemoDuration(v.duration);
+    };
+    v.src = item.previewUrl;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demoVideoId]);
 
   // Detect lineage: stored directly on project to survive across community/mock posts
   const parentProjectId   = useProjectStore((s) => s.parentProjectId);
@@ -95,6 +133,42 @@ export function PublishModal({ onClose }: PublishModalProps) {
 
   const handlePublish = async () => {
     if (!title.trim() || published) return;
+
+    // ── Preset publish path ───────────────────────────────────────────────────
+    if (presetMode) {
+      const id  = crypto.randomUUID();
+      const idx = (username.charCodeAt(0) + title.charCodeAt(0)) % ACCENTS.length;
+      const tags = tagsRaw.trim()
+        ? tagsRaw.split(/\s+/).map((t) => (t.startsWith("#") ? t : `#${t}`))
+        : ["#synapse", "#preset"];
+      const demoItem = demoVideoId ? videoMediaItems.find((m) => m.id === demoVideoId) : null;
+      addPost({
+        id,
+        type: "preset",
+        user: { handle: username, initial: displayName[0]?.toUpperCase() ?? "U", hue },
+        title: title.trim(),
+        description: desc.trim() || undefined,
+        tags,
+        bg: BGS[idx],
+        accent: ACCENTS[idx],
+        duration: "0:00",
+        likes: 0, comments: 0, featured: false,
+        videoUrl: demoItem?.previewUrl,
+        demoStartTime: demoItem ? demoStartTime : undefined,
+        authorUsername: username,
+        allowRemix: false,
+        createdAt: Date.now(),
+        presetData: {
+          effectType: presetMode.effectType,
+          fxParams: presetMode.fxParams,
+          label: title.trim(),
+          category: presetCat,
+        },
+      });
+      setPublishedId(id);
+      setPublished(true);
+      return;
+    }
 
     const { tracks, duration: projectDuration, projectSettings, mediaPool, projectId: currentProjectId } = useProjectStore.getState();
     const firstVideo = mediaPool.find((m) => m.type === "video");
@@ -160,7 +234,7 @@ export function PublishModal({ onClose }: PublishModalProps) {
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div className="flex items-center gap-2">
             <Globe size={13} className="text-purple-400" />
-            <span className="text-sm font-bold text-white">Publish to Feed</span>
+            <span className="text-sm font-bold text-white">{presetMode ? "Share Preset" : "Publish to Feed"}</span>
           </div>
           <button onClick={onClose} className="rounded-lg bg-white/8 p-1.5 text-white/45 transition-colors hover:bg-white/15 hover:text-white">
             <X size={13} />
@@ -190,39 +264,112 @@ export function PublishModal({ onClose }: PublishModalProps) {
               <input value={tagsRaw} onChange={(e) => setTagsRaw(e.target.value)} placeholder="#tags separated by spaces"
                 className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white placeholder-white/22 outline-none focus:border-purple-500/40 focus:bg-white/7" />
 
-              {/* Scope toggle */}
-              <div className="flex overflow-hidden rounded-lg border border-white/10 bg-white/4 text-[11px] font-semibold">
-                {(["timeline", "selection"] as const).map((s) => (
-                  <button key={s} type="button" onClick={() => setScope(s)}
-                    className={`flex-1 py-2 capitalize transition-colors ${scope === s ? "bg-purple-500/28 text-purple-200" : "text-white/40 hover:text-white/65"}`}>
-                    {s === "timeline" ? "All Clips" : "Ruler Selection"}
-                  </button>
-                ))}
-              </div>
+              {presetMode ? (
+                /* Preset-specific fields — wrapped in a fragment so both nodes are valid */
+                <>
+                  {/* Category picker */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">Category</span>
+                    <div className="flex flex-wrap gap-1">
+                      {(["blur","glitch","distortion","color","other"] as const).map((c) => (
+                        <button key={c} type="button" onClick={() => setPresetCat(c)}
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize transition-colors ${
+                            presetCat === c ? "bg-purple-500/28 text-purple-200 ring-1 ring-purple-500/40" : "text-white/40 hover:text-white/70"
+                          }`}>
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-[9px] text-white/28">
+                      FX recipe for <span className="font-bold text-purple-300">{presetMode.effectType}</span> will be shared to the Explore Presets feed.
+                    </p>
+                  </div>
 
-              {/* Allow Remix toggle */}
-              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/8 bg-white/3 px-3 py-2.5">
-                <div>
-                  <p className="text-[11px] font-semibold text-white">Allow Others to Remix</p>
-                  <p className="text-[9px] text-white/35">Let the community fork your project timeline</p>
-                </div>
-                <button type="button" onClick={() => setAllowRemix((v) => !v)}
-                  className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${allowRemix ? "bg-purple-500" : "bg-white/15"}`}>
-                  <span className={`absolute top-1 left-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${allowRemix ? "translate-x-5" : "translate-x-0"}`} />
-                </button>
-              </label>
+                  {/* Demo video picker */}
+                  {videoMediaItems.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">Demo Video <span className="normal-case text-white/20">(optional)</span></span>
+                      <div className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/3 p-2">
+                        <button
+                          type="button"
+                          onClick={() => setDemoVideoId(null)}
+                          className={`flex items-center gap-2 rounded px-2 py-1 text-left text-[10px] transition-colors ${!demoVideoId ? "bg-white/10 text-white/80" : "text-white/35 hover:text-white/60"}`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-white/20" />None
+                        </button>
+                        {videoMediaItems.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setDemoVideoId(m.id)}
+                            className={`flex items-center gap-2 rounded px-2 py-1 text-left text-[10px] transition-colors ${demoVideoId === m.id ? "bg-purple-500/20 text-purple-200" : "text-white/35 hover:text-white/60"}`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${demoVideoId === m.id ? "bg-purple-400" : "bg-white/20"}`} />
+                            <span className="truncate">{m.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[8px] text-white/20">Attaches a clip from your media pool as a looping showcase preview.</p>
 
-              <p className="text-[9px] leading-relaxed text-white/28">
-                Project timeline embedded so viewers can{" "}
-                <span className={allowRemix ? "text-purple-300" : "text-white/40"}>
-                  {allowRemix ? "Remix" : "not Remix"}
-                </span>{" "}your edit.
-              </p>
+                      {/* Start Offset slider — only when a video is selected and duration is known */}
+                      {demoVideoId && demoDuration > 4 && (
+                        <div className="mt-2 flex flex-col gap-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] text-white/40">Start Offset</span>
+                            <span className="text-[9px] tabular-nums text-white/55">{demoStartTime.toFixed(1)}s</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(0, demoDuration - 4)}
+                            step={0.1}
+                            value={demoStartTime}
+                            onChange={(e) => setDemoStartTime(Number(e.target.value))}
+                            className="h-1 w-full cursor-pointer accent-purple-400"
+                          />
+                          <p className="text-[8px] text-white/20">Showcase loops from {demoStartTime.toFixed(1)}s → {(demoStartTime + 4).toFixed(1)}s</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* Scope toggle */}
+                  <div className="flex overflow-hidden rounded-lg border border-white/10 bg-white/4 text-[11px] font-semibold">
+                    {(["timeline", "selection"] as const).map((s) => (
+                      <button key={s} type="button" onClick={() => setScope(s)}
+                        className={`flex-1 py-2 capitalize transition-colors ${scope === s ? "bg-purple-500/28 text-purple-200" : "text-white/40 hover:text-white/65"}`}>
+                        {s === "timeline" ? "All Clips" : "Ruler Selection"}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Allow Remix toggle */}
+                  <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/8 bg-white/3 px-3 py-2.5">
+                    <div>
+                      <p className="text-[11px] font-semibold text-white">Allow Others to Remix</p>
+                      <p className="text-[9px] text-white/35">Let the community fork your project timeline</p>
+                    </div>
+                    <button type="button" onClick={() => setAllowRemix((v) => !v)}
+                      className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${allowRemix ? "bg-purple-500" : "bg-white/15"}`}>
+                      <span className={`absolute top-1 left-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${allowRemix ? "translate-x-5" : "translate-x-0"}`} />
+                    </button>
+                  </label>
+
+                  <p className="text-[9px] leading-relaxed text-white/28">
+                    Project timeline embedded so viewers can{" "}
+                    <span className={allowRemix ? "text-purple-300" : "text-white/40"}>
+                      {allowRemix ? "Remix" : "not Remix"}
+                    </span>{" "}your edit.
+                  </p>
+                </>
+              )}
 
               <button onClick={handlePublish} disabled={!title.trim()}
                 className="mt-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white transition-all disabled:opacity-35"
                 style={{ background: "#7c3aedcc" }}>
-                <Globe size={13} />Publish to Feed
+                <Globe size={13} />{presetMode ? "Share Preset" : "Publish to Feed"}
               </button>
             </>
           ) : (
@@ -236,10 +383,10 @@ export function PublishModal({ onClose }: PublishModalProps) {
                 </div>
               </div>
               <button
-                onClick={() => router.push("/")}
+                onClick={() => router.push(presetMode ? "/explore?tab=presets" : "/")}
                 className="flex items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-white/8 py-2.5 text-sm font-semibold text-white/80 transition-colors hover:bg-white/15"
               >
-                View on Feed <ArrowRight size={13} />
+                {presetMode ? "View in Explore" : "View on Feed"} <ArrowRight size={13} />
               </button>
               <button onClick={onClose} className="text-[10px] text-white/30 hover:text-white/55">
                 Stay in Studio

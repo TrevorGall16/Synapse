@@ -2,11 +2,44 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Zap, GitBranch, Flame, Sparkles, Download } from "lucide-react";
+import { Zap, GitBranch, Flame, Sparkles, Download, BookMarked } from "lucide-react";
+import { PresetShowcase } from "@/components/explore/PresetShowcase";
 import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { retainMedia } from "@/lib/store/media-pool-db";
+import { clipCssFilter, clipCssTransform } from "@/lib/utils/svg-filters";
+import { saveCustomPreset } from "@/lib/store/custom-presets-idb";
 import type { MediaPoolItem } from "@/lib/store/types";
+
+// ── Community preset library (mirrors preset-panel.tsx) ────────────────────────
+type PresetCategory = "blur" | "distortion" | "color" | "glitch";
+interface CommunityPreset { id: string; label: string; category: PresetCategory; fxParams: Record<string, unknown> }
+const COMMUNITY_PRESETS: CommunityPreset[] = [
+  { id: "cp-blur-soft",      label: "Soft Focus",       category: "blur",        fxParams: { effectType: "blur", blurAmount: 4, intensity: 60 } },
+  { id: "cp-blur-heavy",     label: "Heavy Blur",       category: "blur",        fxParams: { effectType: "blur", blurAmount: 12, intensity: 80 } },
+  { id: "cp-glitch-fast",    label: "Fast Glitch",      category: "glitch",      fxParams: { effectType: "glitch", speed: 80, intensity: 70 } },
+  { id: "cp-glitch-slow",    label: "Slow Glitch",      category: "glitch",      fxParams: { effectType: "glitch", speed: 25, intensity: 55 } },
+  { id: "cp-strobe-4hz",     label: "Strobe 4hz",       category: "glitch",      fxParams: { effectType: "strobe", speed: 40, intensity: 100 } },
+  { id: "cp-strobe-10hz",    label: "Strobe 10hz",      category: "glitch",      fxParams: { effectType: "strobe", speed: 100, intensity: 100 } },
+  { id: "cp-tunnel",         label: "Hypno Tunnel",     category: "distortion",  fxParams: { effectType: "hypno-tunnel", intensity: 65 } },
+  { id: "cp-ca-light",       label: "Chromatic Lite",   category: "distortion",  fxParams: { effectType: "chromatic-aberration", caOffset: 3, intensity: 50 } },
+  { id: "cp-ca-heavy",       label: "Chromatic Heavy",  category: "distortion",  fxParams: { effectType: "chromatic-aberration", caOffset: 8, intensity: 80 } },
+  { id: "cp-hue-90",         label: "Hue +90°",         category: "color",       fxParams: { effectType: "hue-rotate", hueRotate: 90, intensity: 100 } },
+  { id: "cp-hue-180",        label: "Hue +180°",        category: "color",       fxParams: { effectType: "hue-rotate", hueRotate: 180, intensity: 100 } },
+  { id: "cp-invert",         label: "Invert",           category: "color",       fxParams: { effectType: "invert", intensity: 100 } },
+  { id: "cp-hyper-saturate", label: "Hyper Saturate",   category: "color",       fxParams: { effectType: "none", saturate: 250, contrast: 120 } },
+  { id: "cp-warm",           label: "Warm Tone",        category: "color",       fxParams: { effectType: "none", hueRotate: -15, saturate: 140, brightness: 108 } },
+  { id: "cp-cold",           label: "Cold Tone",        category: "color",       fxParams: { effectType: "none", hueRotate: 20, saturate: 80, brightness: 95 } },
+  { id: "cp-pixelate",       label: "Pixelate",         category: "distortion",  fxParams: { effectType: "pixelate", blockSize: 8, intensity: 70 } },
+];
+
+const PRESET_CATS: { id: "all" | PresetCategory; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "blur", label: "Blurs" },
+  { id: "glitch", label: "Glitch" },
+  { id: "distortion", label: "Distortion" },
+  { id: "color", label: "Color" },
+];
 
 // ── Static community posts — shown alongside (or instead of) user posts ────────
 const COMMUNITY_POSTS: FeedPost[] = [
@@ -86,6 +119,107 @@ function TemplateCard({ post, onRemix, onImport }: { post: FeedPost; onRemix: ()
   );
 }
 
+// Keyframes injected into explore page for animated swatches
+const SWATCH_KF = `
+@keyframes ep-pulse-blur { 0%,100%{filter:blur(0) brightness(1)} 50%{filter:blur(6px) brightness(1.2)} }
+@keyframes ep-jitter { 0%,100%{transform:none} 25%{transform:translateX(-4px) skewX(-5deg)} 75%{transform:translateX(4px) skewX(5deg)} }
+@keyframes ep-warp { 0%,100%{transform:scaleX(1) scaleY(1)} 50%{transform:scaleX(1.07) scaleY(0.94)} }
+@keyframes ep-hue { 0%{filter:hue-rotate(0deg) saturate(1.5)} 100%{filter:hue-rotate(360deg) saturate(1.5)} }
+`;
+function explorerSwatchAnim(category: string): string {
+  switch (category) {
+    case "blur":       return "ep-pulse-blur 2s ease-in-out infinite";
+    case "glitch":     return "ep-jitter 0.4s steps(4) infinite";
+    case "distortion": return "ep-warp 1.8s ease-in-out infinite";
+    case "color":      return "ep-hue 3s linear infinite";
+    default:           return "";
+  }
+}
+
+// ── Preset explore card ────────────────────────────────────────────────────────
+interface PresetExploreCardProps {
+  preset: CommunityPreset;
+  accent?: string;
+  authorHandle?: string;
+  authorHue?: number;
+  authorInitial?: string;
+  description?: string;
+  onSave: () => void;
+  onShowcase: () => void;
+}
+
+function PresetExploreCard({
+  preset, accent = "#7c3aed", authorHandle, authorHue = 270, authorInitial, description, onSave, onShowcase,
+}: PresetExploreCardProps) {
+  const cssFilter    = clipCssFilter(preset.fxParams);
+  const cssTransform = clipCssTransform(preset.fxParams);
+  const anim         = explorerSwatchAnim(preset.category);
+
+  const handleDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("application/x-synapse-preset", JSON.stringify(preset.fxParams));
+  };
+
+  return (
+    <div
+      className="group relative flex cursor-pointer flex-col gap-2 rounded-xl border border-white/8 bg-white/3 p-3 transition-all hover:border-white/20 hover:bg-white/6"
+      onClick={onShowcase}
+    >
+      {/* Draggable animated swatch */}
+      <div
+        draggable
+        onDragStart={handleDragStart}
+        className="relative h-16 w-full cursor-grab overflow-hidden rounded-lg active:cursor-grabbing"
+        style={{ background: "#111" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `linear-gradient(135deg, ${accent}60, ${accent}20)`,
+            filter: cssFilter || undefined,
+            transform: cssTransform || undefined,
+            animation: anim || undefined,
+          }}
+        />
+        <div className="pointer-events-none absolute right-1.5 top-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+          <span className="text-[7px] text-white/30">drag</span>
+        </div>
+      </div>
+
+      {/* Author row */}
+      {authorHandle && (
+        <div className="flex items-center gap-1.5">
+          <div
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[7px] font-bold text-white"
+            style={{ background: `hsl(${authorHue} 55% 30%)` }}
+          >
+            {authorInitial ?? authorHandle[0]?.toUpperCase()}
+          </div>
+          <span className="text-[9px] text-purple-300/70">@{authorHandle}</span>
+        </div>
+      )}
+
+      <div className="flex items-start justify-between gap-1">
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-semibold text-white/80">{preset.label}</p>
+          <p className="text-[9px] capitalize text-white/30">{preset.category}</p>
+          {description && (
+            <p className="mt-0.5 line-clamp-2 text-[8px] leading-snug text-white/35">{description}</p>
+          )}
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onSave(); }}
+          title="Save to Library"
+          className="shrink-0 rounded-lg bg-white/8 p-1.5 text-white/40 transition-colors hover:bg-purple-500/25 hover:text-purple-300"
+        >
+          <BookMarked size={10} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── FX chip ────────────────────────────────────────────────────────────────────
 function FxChip({ name, count, color }: { name: string; count: number; color: string }) {
   const maxCount = TRENDING_FX[0].count;
@@ -110,12 +244,22 @@ export default function ExplorePage() {
   const openProjectInTab = useProjectStore((s) => s.openProjectInTab);
   const addMediaItem = useProjectStore((s) => s.addMediaItem);
   const [toast, setToast] = useState<string | null>(null);
+  const [view, setView] = useState<"videos" | "presets">("videos");
+  const [presetCat, setPresetCat] = useState<"all" | PresetCategory>("all");
+  const [showcase, setShowcase] = useState<{
+    preset: CommunityPreset;
+    post: FeedPost | null;
+    accent?: string;
+  } | null>(null);
 
-  // Merge all published user posts with community posts (no allowRemix filter)
+  // Video posts only — exclude preset-type posts from the video grid
+  const videoUserPosts = useMemo(() => userPosts.filter((p) => !p.type || p.type === "video"), [userPosts]);
+
+  // Merge all published user video posts with community posts (no allowRemix filter)
   const templates = useMemo(() => {
-    const userIds = new Set(userPosts.map((p) => p.id));
-    return [...userPosts, ...COMMUNITY_POSTS.filter((p) => !userIds.has(p.id))];
-  }, [userPosts]);
+    const userIds = new Set(videoUserPosts.map((p) => p.id));
+    return [...videoUserPosts, ...COMMUNITY_POSTS.filter((p) => !userIds.has(p.id))];
+  }, [videoUserPosts]);
 
   const handleRemix = (post: FeedPost) => {
     const remixMeta = {
@@ -179,6 +323,33 @@ export default function ExplorePage() {
     router.push("/studio");
   };
 
+  const handleSavePreset = async (preset: CommunityPreset, authorHandle?: string) => {
+    await saveCustomPreset({
+      id: crypto.randomUUID(),
+      label: preset.label,
+      category: preset.category,
+      effectType: (preset.fxParams.effectType as string) ?? "none",
+      fxParams: preset.fxParams,
+      savedAt: Date.now(),
+      authorHandle,
+    }).catch(console.warn);
+    setToast("Saved to Library");
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const handleShowcaseSave = async () => {
+    if (!showcase) return;
+    await handleSavePreset(showcase.preset, showcase.post?.user.handle);
+    setShowcase(null);
+  };
+
+  const filteredPresets = presetCat === "all"
+    ? COMMUNITY_PRESETS
+    : COMMUNITY_PRESETS.filter((p) => p.category === presetCat);
+
+  // Feed posts that are presets
+  const feedPresets = userPosts.filter((p) => p.type === "preset" && p.presetData);
+
   const handleImport = (post: FeedPost) => {
     const snap = post.projectSnapshot;
     const origMedia = snap?.mediaPool?.find((m) => m.type === "video");
@@ -202,35 +373,138 @@ export default function ExplorePage() {
         <GitBranch size={13} className="text-purple-400" />
         <h1 className="text-sm font-bold text-white">Explore</h1>
         <span className="rounded-full bg-purple-500/18 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-purple-300">Community</span>
+        {/* View toggle */}
+        <div className="ml-auto flex gap-1 rounded-lg bg-white/6 p-0.5">
+          <button
+            onClick={() => setView("videos")}
+            className={`rounded px-3 py-1 text-[10px] font-semibold transition-colors ${view === "videos" ? "bg-white/12 text-white" : "text-white/40 hover:text-white/70"}`}
+          >
+            Videos
+          </button>
+          <button
+            onClick={() => setView("presets")}
+            className={`rounded px-3 py-1 text-[10px] font-semibold transition-colors ${view === "presets" ? "bg-white/12 text-white" : "text-white/40 hover:text-white/70"}`}
+          >
+            Presets
+          </button>
+        </div>
       </div>
 
       <div className="px-5 py-5">
-        {/* Trending FX section */}
-        <div className="mb-6">
-          <div className="mb-3 flex items-center gap-2">
-            <Flame size={11} className="text-orange-400" />
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Trending FX · Last 24 Hours</p>
-          </div>
-          <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
-            {TRENDING_FX.map((fx) => (
-              <FxChip key={fx.name} name={fx.name} count={fx.count} color={fx.color} />
-            ))}
-          </div>
-        </div>
+        {view === "videos" ? (
+          <>
+            {/* Trending FX section */}
+            <div className="mb-6">
+              <div className="mb-3 flex items-center gap-2">
+                <Flame size={11} className="text-orange-400" />
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Trending FX · Last 24 Hours</p>
+              </div>
+              <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
+                {TRENDING_FX.map((fx) => (
+                  <FxChip key={fx.name} name={fx.name} count={fx.count} color={fx.color} />
+                ))}
+              </div>
+            </div>
 
-        {/* Template grid */}
-        <div className="mb-3 flex items-center gap-2">
-          <Sparkles size={11} className="text-white/35" />
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Community Edits</p>
-          <span className="ml-auto text-[9px] text-white/25">{templates.length} posts</span>
-        </div>
+            {/* Template grid */}
+            <div className="mb-3 flex items-center gap-2">
+              <Sparkles size={11} className="text-white/35" />
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Community Edits</p>
+              <span className="ml-auto text-[9px] text-white/25">{templates.length} posts</span>
+            </div>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {templates.map((post) => (
+                <TemplateCard key={post.id} post={post} onRemix={() => handleRemix(post)} onImport={() => handleImport(post)} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <style dangerouslySetInnerHTML={{ __html: SWATCH_KF }} />
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {templates.map((post) => (
-            <TemplateCard key={post.id} post={post} onRemix={() => handleRemix(post)} onImport={() => handleImport(post)} />
-          ))}
-        </div>
+            {/* Category filter */}
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap gap-1.5">
+                {PRESET_CATS.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setPresetCat(c.id)}
+                    className={`rounded-full px-3 py-1 text-[10px] font-semibold transition-colors ${
+                      presetCat === c.id
+                        ? "bg-purple-500/28 text-purple-200 ring-1 ring-purple-500/40"
+                        : "text-white/40 hover:text-white/70"
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+              <span className="ml-auto text-[9px] text-white/25">{filteredPresets.length + feedPresets.length} presets · drag onto clips</span>
+            </div>
+
+            {/* Community presets from feed (user-published) */}
+            {feedPresets.length > 0 && (
+              <div className="mb-6">
+                <div className="mb-3 flex items-center gap-2">
+                  <Sparkles size={11} className="text-purple-400" />
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Published by Community</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                  {feedPresets.map((post) => {
+                    const pd = post.presetData!;
+                    const cp: CommunityPreset = {
+                      id: post.id,
+                      label: post.title,
+                      category: (pd.category ?? "other") as PresetCategory,
+                      fxParams: pd.fxParams,
+                    };
+                    return (
+                      <PresetExploreCard
+                        key={post.id}
+                        preset={cp}
+                        accent={post.accent}
+                        authorHandle={post.user.handle}
+                        authorHue={post.user.hue}
+                        authorInitial={post.user.initial}
+                        description={post.description}
+                        onSave={() => handleSavePreset(cp, post.user.handle)}
+                        onShowcase={() => setShowcase({ preset: cp, post, accent: post.accent })}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Built-in community presets */}
+            <div className="mb-3 flex items-center gap-2">
+              <Sparkles size={11} className="text-white/35" />
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Standard Presets</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {filteredPresets.map((p) => (
+                <PresetExploreCard
+                  key={p.id}
+                  preset={p}
+                  onSave={() => handleSavePreset(p)}
+                  onShowcase={() => setShowcase({ preset: p, post: null })}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </div>
+
+      {/* Preset Showcase Modal */}
+      {showcase && (
+        <PresetShowcase
+          post={showcase.post}
+          preset={showcase.preset}
+          accent={showcase.accent}
+          onClose={() => setShowcase(null)}
+          onSave={handleShowcaseSave}
+        />
+      )}
 
       {toast && (
         <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-full border border-white/14 bg-[#1c1c1c]/95 px-4 py-2.5 shadow-xl backdrop-blur-sm">

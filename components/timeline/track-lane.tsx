@@ -302,7 +302,7 @@ export function TrackLane({ trackId, trackHeight: trackHeightProp }: TrackLanePr
       {isEmpty && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="select-none text-[10px] tracking-widest text-white/15 uppercase">
-            Drag Media Here
+            {track?.type === "effect" ? "Drop FX Here" : "Drag Media Here"}
           </span>
         </div>
       )}

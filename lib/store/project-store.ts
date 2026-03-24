@@ -25,7 +25,7 @@ export interface ProjectState {
   selectedClipIds: string[];
   selectedTrackId: string | null;
   inspectingClipId: string | null;
-  activeUISection: "pool" | "inspector" | "history";
+  activeUISection: "pool" | "inspector" | "history" | "presets";
   inspectorSubTab: "pancrop" | "videofx" | "audiofx";
   snapEnabled: boolean;
   projectSettings: ProjectSettings;
@@ -69,14 +69,14 @@ export interface ProjectState {
   timeStretchClip: (clipId: string, newDuration: number) => void;
   joinClips: (clipIds: string[]) => void;
   setInspectingClipId: (id: string | null) => void;
-  setActiveUISection: (section: "pool" | "inspector" | "history") => void;
+  setActiveUISection: (section: "pool" | "inspector" | "history" | "presets") => void;
   setInspectorSubTab: (tab: "pancrop" | "videofx" | "audiofx") => void;
   setTrackAudioParam: (trackId: string, params: Partial<Pick<Track, "audioPan" | "reverbWet" | "reverbRoomSize" | "delayMs" | "delayFeedback">>) => void;
   setClipLevel: (clipId: string, level: number) => void;
   setClipFade: (clipId: string, edge: "in" | "out", durationMicros: number) => void;
   setTrackColorCorrection: (trackId: string, params: Partial<Pick<Track, "trackBrightness" | "trackContrast" | "trackSaturate" | "trackHueRotate">>) => void;
   updateClipPanCrop: (clipId: string, panCrop: Partial<PanCropData>) => void;
-  updateClipFxParams: (clipId: string, params: Record<string, unknown>) => void;
+  updateClipFxParams: (clipId: string, params: Record<string, unknown>, mode?: "replace" | "merge") => void;
   fxMaskEditingClipId: string | null;
   setFxMaskEditingClipId: (id: string | null) => void;
   updateFxMask: (clipId: string, mask: Partial<PanCropData>) => void;
@@ -84,6 +84,7 @@ export interface ProjectState {
   setTrackColor: (trackId: string, color: string) => void;
   addMarker: (marker: Marker) => void;
   removeMarker: (id: string) => void;
+  removeProject: (id: string) => void;
 }
 
 const MIN_CLIP_DURATION = 33_333;
@@ -193,7 +194,9 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
       const { [id]: _d, ...rest } = s.savedProjects;
       return { openProjectIds: ids, savedProjects: rest };
     }
-    if (ids.length === 0) return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: "", name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, openProjectIds: [], savedProjects: {} };
+    // Last tab closed — blank out the active project but keep savedProjects intact so
+    // the gallery page's "Open" action can still switch back to any saved project.
+    if (ids.length === 0) return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: "", name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, openProjectIds: [], savedProjects: s.savedProjects };
     const prevIdx = s.openProjectIds.indexOf(id);
     const nextId = ids[Math.max(0, prevIdx - 1)];
     const target = s.savedProjects[nextId];
@@ -355,8 +358,11 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
   updateClipPanCrop: (clipId, panCrop) =>
     set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) =>
       c.id === clipId ? { ...c, panCrop: { x: 0, y: 0, scale: 1, rotation: 0, ...c.panCrop, ...panCrop } } : c) })) })),
-  updateClipFxParams: (clipId, params) =>
-    set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => c.id === clipId ? { ...c, fxParams: { ...c.fxParams, ...params } } : c) })) })),
+  updateClipFxParams: (clipId, params, mode = "replace") =>
+    set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) =>
+      c.id === clipId
+        ? { ...c, fxParams: mode === "merge" ? { ...c.fxParams, ...params } : params }
+        : c) })) })),
   loadProject: (snapshot) => set({
     tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
     projectId: crypto.randomUUID(), parentProjectId: undefined,
@@ -374,6 +380,28 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, color } : t) })),
   addMarker: (marker) => set((s) => ({ markers: [...s.markers, marker] })),
   removeMarker: (id) => set((s) => ({ markers: s.markers.filter((m) => m.id !== id) })),
+
+  // Hard-remove a project from all in-memory state (called by Gallery delete).
+  // Unlike closeTab, this also removes it from savedProjects explicitly by ID.
+  removeProject: (id) => set((s) => {
+    const { [id]: _removed, ...restSaved } = s.savedProjects;
+    const ids = s.openProjectIds.filter((x) => x !== id);
+    // If it's a background tab, just drop it from both maps
+    if (id !== s.projectId) {
+      return { openProjectIds: ids, savedProjects: restSaved };
+    }
+    // Active project deleted — blank out if no other tabs remain
+    if (ids.length === 0) {
+      return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: "", name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, openProjectIds: [], savedProjects: restSaved };
+    }
+    // Switch to the adjacent tab
+    const prevIdx = s.openProjectIds.indexOf(id);
+    const nextId = ids[Math.max(0, prevIdx - 1)];
+    const target = restSaved[nextId];
+    if (!target) return { openProjectIds: ids, savedProjects: restSaved };
+    const { [nextId]: _d, ...rest2 } = restSaved;
+    return { ...target, openProjectIds: ids, savedProjects: rest2, selectedClipIds: [], inspectingClipId: null };
+  }),
   setFxMaskEditingClipId: (id) => set({ fxMaskEditingClipId: id }),
   updateFxMask: (clipId, mask) =>
     set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) =>
