@@ -54,7 +54,7 @@ export const useFeedStore = create<FeedState>()(
       addPost: (post) => {
         set((s) => ({ userPosts: [post, ...s.userPosts] }));
         // Persist to IDB asynchronously — blob URLs stripped in savePostToIDB
-        savePostToIDB(post).catch(console.warn);
+        savePostToIDB(post).catch((err) => console.error("[FeedStore] addPost IDB save threw unexpectedly:", err));
       },
 
       removePost: (id) => {
@@ -74,14 +74,32 @@ export const useFeedStore = create<FeedState>()(
       hydrateAllPosts: async () => {
         const idbPosts = await loadAllPostsFromIDB();
         if (!idbPosts.length) return;
+
+        // Hydrate each post independently — one failure must not drop the others.
         const hydrated = await Promise.all(
-          idbPosts.map(async (post) => {
-            if (!post.projectSnapshot?.mediaPool?.length) return post;
-            const pool = await hydrateMediaPool(post.projectSnapshot.mediaPool);
-            return { ...post, projectSnapshot: { ...post.projectSnapshot, mediaPool: pool } };
+          idbPosts.map(async (post): Promise<FeedPost> => {
+            try {
+              if (!post.projectSnapshot?.mediaPool?.length) return post;
+              const pool = await hydrateMediaPool(post.projectSnapshot.mediaPool);
+              // Restore videoUrl from first hydrated video (was stripped on IDB save).
+              const firstVideo = pool.find((m) => m.type === "video");
+              return {
+                ...post,
+                videoUrl: post.videoUrl ?? firstVideo?.previewUrl,
+                projectSnapshot: { ...post.projectSnapshot, mediaPool: pool },
+              };
+            } catch (err) {
+              console.error("[FeedStore] hydrateAllPosts: failed to hydrate post", post.id, err);
+              return post; // return the post without blob URLs rather than dropping it
+            }
           }),
         );
-        set({ userPosts: hydrated });
+
+        // Merge: keep any in-memory posts not yet persisted to IDB (e.g. addPost
+        // called during the same tick as hydration) so they are never silently dropped.
+        const idbIds = new Set(hydrated.map((p) => p.id));
+        const unpersistedInMemory = get().userPosts.filter((p) => !idbIds.has(p.id));
+        set({ userPosts: [...unpersistedInMemory, ...hydrated] });
       },
     }),
     {

@@ -27,10 +27,23 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const tracks = useProjectStore((s) => s.tracks);
   const selectedClipIds = useProjectStore((s) => s.selectedClipIds);
   const media = mediaPool.find((m) => m.id === clip.sourceId);
-  const label = media?.name ?? clip.sourceId;
   const track = tracks.find((t) => t.id === trackId);
   const isSelected = selectedClipIds.includes(clip.id);
   const isCollapsed = trackHeight <= 24;
+
+  // Baked remix clips: embedded FX/text prove this came from a published project.
+  // Adjacent baked clips are styled as one continuous block (no gap border or radius).
+  const isBaked = !!(clip.embeddedEffectClips?.length || clip.embeddedTextClips?.length);
+  const siblings = track?.clips ?? [];
+  const ADJ_US = 1_000; // 1 ms tolerance for "exactly touching"
+  const hasLeftNeighbor  = isBaked && siblings.some((s) =>
+    s.id !== clip.id && Math.abs((s.startTime + s.duration) - clip.startTime) < ADJ_US
+    && !!(s.embeddedEffectClips?.length || s.embeddedTextClips?.length));
+  const hasRightNeighbor = isBaked && siblings.some((s) =>
+    s.id !== clip.id && Math.abs(s.startTime - (clip.startTime + clip.duration)) < ADJ_US
+    && !!(s.embeddedEffectClips?.length || s.embeddedTextClips?.length));
+
+  const label = isBaked ? "Remix Track" : (media?.name ?? clip.sourceId);
 
   const isDragging = useRef(false);
   const hardSnapLock = useRef<number | null>(null); // micros of current hard-snap position
@@ -321,14 +334,14 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
 
   return (
     <div
-      className={`absolute top-0 flex h-full cursor-grab select-none items-center overflow-hidden rounded active:cursor-grabbing ${
+      className={`absolute top-0 flex h-full cursor-grab select-none items-center overflow-hidden active:cursor-grabbing ${
         isSelected ? "ring-2 ring-white" : ""
-      }`}
+      } ${hasLeftNeighbor ? "rounded-r" : hasRightNeighbor ? "rounded-l" : "rounded"}`}
       style={{
         transform: `translate3d(${xPx}px, 0, 0)`,
         width: wPx,
         backgroundColor: trackColor + "40",
-        borderLeft: `2px solid ${trackColor}`,
+        ...(hasLeftNeighbor ? {} : { borderLeft: `2px solid ${trackColor}` }),
       }}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
       onPointerDown={onPointerDown}
@@ -408,20 +421,22 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
         </span>
       )}
 
-      {/* Label + rate badge */}
-      <span className="relative z-10 flex items-center gap-1 truncate px-1.5 text-[10px] font-medium text-white/80 drop-shadow-sm">
-        {(clip.embeddedEffectClips?.length || clip.embeddedTextClips?.length) ? (
-          <span className="flex shrink-0 items-center gap-0.5 rounded bg-purple-500/35 px-1 py-px text-[7px] font-bold text-purple-200" title="Merged FX from original">
-            <Layers size={7} />FX
-          </span>
-        ) : null}
-        <span className="truncate">{label}</span>
-        {clip.playbackRate != null && clip.playbackRate !== 1 && (
-          <span className="shrink-0 rounded bg-white/20 px-0.5 text-[8px] tabular-nums">
-            {Math.round(clip.playbackRate * 100)}%
-          </span>
-        )}
-      </span>
+      {/* Label + rate badge — hidden when baked clip is too narrow to read */}
+      {!(isBaked && wPx < 80) && (
+        <span className="relative z-10 flex items-center gap-1 truncate px-1.5 text-[10px] font-medium text-white/80 drop-shadow-sm">
+          {isBaked ? (
+            <span className="flex shrink-0 items-center gap-0.5 rounded bg-purple-500/35 px-1 py-px text-[7px] font-bold text-purple-200">
+              <Layers size={7} />FX
+            </span>
+          ) : null}
+          <span className="truncate">{label}</span>
+          {clip.playbackRate != null && clip.playbackRate !== 1 && (
+            <span className="shrink-0 rounded bg-white/20 px-0.5 text-[8px] tabular-nums">
+              {Math.round(clip.playbackRate * 100)}%
+            </span>
+          )}
+        </span>
+      )}
 
       {/* Inspector button */}
       {!isCollapsed && (

@@ -27,7 +27,8 @@
       "Bash(find /d/Projects/Synapse/lib -name *.ts -type f)",
       "Bash(npm install:*)",
       "Bash(wc:*)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(cd:*)"
     ]
   }
 }

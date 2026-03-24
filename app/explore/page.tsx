@@ -168,7 +168,14 @@ export default function ExplorePage() {
       { id: audioId, type: "audio" as const, name: "Audio 1", color: "#22c55e", height: 48, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: flatAudioClips },
     ];
 
-    openProjectInTab({ tracks: flatTracks, mediaPool: flatMedia, duration: duration + 5_000_000, projectSettings: settings, name: `Remix: ${post.title}`, ...remixMeta });
+    // Privacy scrub: hide original filenames so remixers never see "IMG_123.mp4" etc.
+    const scrubbedMedia  = flatMedia.map((m) => ({ ...m, name: "Remixed Media" }));
+    const scrubbedTracks = flatTracks.map((t) => ({
+      ...t,
+      clips: t.clips.map((c) => ({ ...c, name: undefined })),
+    }));
+
+    openProjectInTab({ tracks: scrubbedTracks, mediaPool: scrubbedMedia, duration: duration + 5_000_000, projectSettings: settings, name: `Remix: ${post.title}`, ...remixMeta });
     router.push("/studio");
   };
 

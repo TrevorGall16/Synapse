@@ -29,7 +29,10 @@ export async function savePostToIDB(post: FeedPost): Promise<void> {
         }
       : undefined,
   };
-  await idbSafeSet(post.id, safePost, feedDb);
+  const ok = await idbSafeSet(post.id, safePost, feedDb);
+  if (!ok) {
+    console.error("[FeedIDB] savePostToIDB failed — IDB write returned false for post", post.id, `"${post.title}"`);
+  }
 }
 
 export async function removePostFromIDB(id: string): Promise<void> {
