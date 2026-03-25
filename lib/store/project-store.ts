@@ -12,6 +12,15 @@ import {
   computeCrossfades, performJoinClips, performDeleteClips,
 } from "./project-helpers";
 
+/** Revoke any blob: previewUrls in a media pool to free browser memory. */
+function revokeMediaPool(pool: MediaPoolItem[]) {
+  for (const item of pool) {
+    if (item.previewUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(item.previewUrl);
+    }
+  }
+}
+
 export interface ProjectState {
   tracks: Track[];
   mediaPool: MediaPoolItem[];
@@ -169,6 +178,7 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
   setName: (name) => set({ name }),
 
   resetProject: () => set((s) => {
+    revokeMediaPool(s.mediaPool);
     const newId = crypto.randomUUID();
     return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: newId, name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, openProjectIds: [newId], savedProjects: {}, parentProjectId: undefined, remixedFromHandle: undefined, rootParentId: undefined, rootParentHandle: undefined };
   }),
@@ -196,7 +206,7 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     }
     // Last tab closed — blank out the active project but keep savedProjects intact so
     // the gallery page's "Open" action can still switch back to any saved project.
-    if (ids.length === 0) return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: "", name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, openProjectIds: [], savedProjects: s.savedProjects };
+    if (ids.length === 0) { revokeMediaPool(s.mediaPool); return { tracks: DEFAULT_TRACKS, mediaPool: [], markers: [], duration: 300_000_000, projectId: "", name: "Untitled Project", historyPast: [], historyFuture: [], selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, openProjectIds: [], savedProjects: s.savedProjects }; }
     const prevIdx = s.openProjectIds.indexOf(id);
     const nextId = ids[Math.max(0, prevIdx - 1)];
     const target = s.savedProjects[nextId];
@@ -363,16 +373,19 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
       c.id === clipId
         ? { ...c, fxParams: mode === "merge" ? { ...c.fxParams, ...params } : params }
         : c) })) })),
-  loadProject: (snapshot) => set({
-    tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
-    projectId: crypto.randomUUID(), parentProjectId: undefined,
-    selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, historyPast: [], historyFuture: [],
+  loadProject: (snapshot) => set((s) => {
+    revokeMediaPool(s.mediaPool);
+    return { tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
+      projectId: crypto.randomUUID(), parentProjectId: undefined,
+      selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, historyPast: [], historyFuture: [] };
   }),
-  forkProject: (snapshot) => set({
-    tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
-    mediaPool: snapshot.mediaPool ?? [], markers: [], projectId: crypto.randomUUID(),
-    parentProjectId: snapshot.projectId ?? undefined,
-    selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, historyPast: [], historyFuture: [],
+  forkProject: (snapshot) => set((s) => {
+    revokeMediaPool(s.mediaPool);
+    return { tracks: snapshot.tracks, duration: snapshot.duration, projectSettings: snapshot.projectSettings,
+      mediaPool: snapshot.mediaPool ?? [], markers: [], projectId: crypto.randomUUID(),
+      parentProjectId: snapshot.projectId ?? undefined,
+      selectedClipIds: [], selectedTrackId: null, inspectingClipId: null, historyPast: [], historyFuture: [],
+    };
   }),
   setTrackCollapsed: (trackId, collapsed) =>
     set((s) => ({ tracks: s.tracks.map((t) => t.id === trackId ? { ...t, collapsed } : t) })),

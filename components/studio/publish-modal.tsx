@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { smoothStep } from "@/lib/utils/easing";
 import { useRouter } from "next/navigation";
 import { X, Globe, Check, ArrowRight, GitBranch } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore } from "@/lib/store/feed-store";
-import { useUserStore } from "@/lib/store/user-store";
+import { useUserStore, XP_AWARDS } from "@/lib/store/user-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { getAttributionLock } from "@/lib/store/attribution-idb";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
@@ -14,6 +15,83 @@ import type { Track, ClipEvent, MediaPoolItem } from "@/lib/store/types";
 // Stable empty array reference — prevents Zustand getSnapshot infinite loop
 // when the selector conditionally returns [] in non-preset mode.
 const EMPTY_MEDIA_ARRAY: MediaPoolItem[] = [];
+
+// ── Confetti burst ─────────────────────────────────────────────────────────────
+const CONF_COLORS = ["#7c3aed","#ec4899","#06b6d4","#22c55e","#f59e0b","#a855f7","#ef4444","#38bdf8"];
+interface Particle { x: number; y: number; vx: number; vy: number; color: string; rot: number; rspd: number; w: number; h: number; life: number }
+
+function Confetti() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const cx = canvas.width / 2;
+    const cy = canvas.height * 0.45;
+    const particles: Particle[] = Array.from({ length: 90 }, () => {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 4 + Math.random() * 7;
+      return { x: cx, y: cy, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 3,
+        color: CONF_COLORS[Math.floor(Math.random() * CONF_COLORS.length)],
+        rot: Math.random() * Math.PI * 2, rspd: (Math.random() - 0.5) * 0.25,
+        w: 6 + Math.random() * 6, h: 3 + Math.random() * 4, life: 0 };
+    });
+    const TOTAL = 150;
+    let raf = 0;
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      let alive = false;
+      for (const p of particles) {
+        p.life++;
+        if (p.life > TOTAL) continue;
+        alive = true;
+        p.vy += 0.13;
+        p.x += p.vx; p.y += p.vy; p.rot += p.rspd;
+        const alpha = Math.max(0, 1 - p.life / TOTAL);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      }
+      if (alive) raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return <canvas ref={canvasRef} className="pointer-events-none fixed inset-0 z-[70]" />;
+}
+
+// ── Animated impact counter ────────────────────────────────────────────────────
+function ImpactCounter({ target }: { target: number }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    if (target === 0) return;
+    const start = performance.now();
+    const dur = 1500;
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / dur, 1);
+      const ease = smoothStep(t);
+      setDisplay(Math.round(ease * target));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target]);
+  return (
+    <div className="flex flex-col items-center gap-0.5 rounded-xl border border-purple-500/20 bg-purple-500/8 px-4 py-3">
+      <span className="text-[9px] font-semibold uppercase tracking-widest text-purple-300/60">Projected Impact</span>
+      <span className="text-2xl font-black tabular-nums text-purple-200">{display.toLocaleString()}</span>
+      <span className="text-[8px] text-white/25">clips × quality × reach</span>
+    </div>
+  );
+}
 
 export interface PresetPublishMode {
   fxParams: Record<string, unknown>;
@@ -79,19 +157,37 @@ function fmtDuration(micros: number): string {
 
 export function PublishModal({ onClose, presetMode }: PublishModalProps) {
   const router = useRouter();
-  const { profile } = useUserStore();
+  const { profile, addXp } = useUserStore();
   const username    = profile?.username    ?? "you";
   const displayName = profile?.displayName ?? "Synapse User";
   const hue         = profile?.hue         ?? 270;
   const addPost = useFeedStore((s) => s.addPost);
 
-  const [title, setTitle]         = useState("");
-  const [desc, setDesc]           = useState("");
-  const [tagsRaw, setTagsRaw]     = useState("");
-  const [allowRemix, setAllowRemix] = useState(false);
-  const [scope, setScope] = useState<"timeline" | "selection">("timeline");
-  const [published, setPublished] = useState(false);
+  const [title, setTitle]             = useState("");
+  const [desc, setDesc]               = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [tagInput, setTagInput]       = useState("");
+  const [allowRemix, setAllowRemix]   = useState(false);
+  const [scope, setScope]             = useState<"timeline" | "selection">("timeline");
+  const [published, setPublished]     = useState(false);
   const [publishedId, setPublishedId] = useState<string | null>(null);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [impactScore, setImpactScore]   = useState(0);
+
+  // Auto-hide confetti after 2.6s; cancels cleanly if modal unmounts
+  useEffect(() => {
+    if (!showConfetti) return;
+    const t = setTimeout(() => setShowConfetti(false), 2600);
+    return () => clearTimeout(t);
+  }, [showConfetti]);
+
+  const finishPublish = useCallback((id: string, score: number) => {
+    setPublishedId(id);
+    addXp(XP_AWARDS.publish);
+    setImpactScore(score);
+    setShowConfetti(true);
+    setPublished(true);
+  }, [addXp]);
   const [presetCat, setPresetCat] = useState<"blur" | "distortion" | "color" | "glitch" | "other">("other");
   const [demoVideoId, setDemoVideoId] = useState<string | null>(null);
   const [demoStartTime, setDemoStartTime] = useState(0);
@@ -134,9 +230,7 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
     if (presetMode) {
       const id  = crypto.randomUUID();
       const idx = (username.charCodeAt(0) + title.charCodeAt(0)) % ACCENTS.length;
-      const tags = tagsRaw.trim()
-        ? tagsRaw.split(/\s+/).map((t) => (t.startsWith("#") ? t : `#${t}`))
-        : ["#synapse", "#preset"];
+      const tags = selectedTags.length > 0 ? selectedTags : ["#synapse", "#preset"];
       const demoItem = demoVideoId ? videoMediaItems.find((m) => m.id === demoVideoId) : null;
       addPost({
         id,
@@ -161,8 +255,7 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
           category: presetCat,
         },
       });
-      setPublishedId(id);
-      setPublished(true);
+      finishPublish(id, 150 + 350);
       return;
     }
 
@@ -183,9 +276,7 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
     }));
     const id  = crypto.randomUUID();
     const idx = (username.charCodeAt(0) + title.charCodeAt(0)) % ACCENTS.length;
-    const tags = tagsRaw.trim()
-      ? tagsRaw.split(/\s+/).map((t) => (t.startsWith("#") ? t : `#${t}`))
-      : ["#synapse"];
+    const tags = selectedTags.length > 0 ? selectedTags : ["#synapse"];
 
     const finalTracks = consolidateEffectTracks(publishTracks);
 
@@ -218,11 +309,18 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
       createdAt: Date.now(),
     });
 
-    setPublishedId(id);
-    setPublished(true);
+    // Compute impact score: clipCount×150 + effectCount×350 + durationSecs×10
+    const allClips   = finalTracks.flatMap((t) => t.clips);
+    const effectClips = finalTracks.filter((t) => t.type === "effect").flatMap((t) => t.clips);
+    const durationSecs = Math.round(duration / 1_000_000);
+    const score = allClips.length * 150 + effectClips.length * 350 + durationSecs * 10;
+
+    finishPublish(id, score);
   };
 
   return (
+    <>
+    {showConfetti && <Confetti />}
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-white/14 bg-[#1c1c1c] shadow-2xl" onClick={(e) => e.stopPropagation()}>
 
@@ -257,8 +355,59 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
                 className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white placeholder-white/22 outline-none focus:border-purple-500/40 focus:bg-white/7" />
               <textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description…" rows={2} maxLength={300}
                 className="resize-none rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white placeholder-white/22 outline-none focus:border-purple-500/40 focus:bg-white/7" />
-              <input value={tagsRaw} onChange={(e) => setTagsRaw(e.target.value)} placeholder="#tags separated by spaces"
-                className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white placeholder-white/22 outline-none focus:border-purple-500/40 focus:bg-white/7" />
+              {/* ── Tag Cloud ─────────────────────────────────────────────── */}
+              <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/3 p-3">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">Tags</span>
+                {/* Quick-pick presets */}
+                <div className="flex flex-wrap gap-1">
+                  {["#Blonde","#Brunette","#Curvy","#Latex","#HighSensation","#Cinematic","#Glitch","#SlowMo","#Aesthetic"].map((t) => (
+                    <button key={t} type="button"
+                      onClick={() => setSelectedTags((prev) =>
+                        prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+                      )}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+                        selectedTags.includes(t)
+                          ? "bg-purple-500/30 text-purple-200 ring-1 ring-purple-500/50"
+                          : "bg-white/6 text-white/45 hover:bg-white/12 hover:text-white/75"
+                      }`}
+                    >{t}</button>
+                  ))}
+                </div>
+                {/* Custom tag input */}
+                <input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== ",") return;
+                    e.preventDefault();
+                    const t = tagInput.trim().replace(/,$/, "");
+                    if (!t) return;
+                    const tag = t.startsWith("#") ? t : `#${t}`;
+                    if (!selectedTags.includes(tag)) setSelectedTags((prev) => [...prev, tag]);
+                    setTagInput("");
+                  }}
+                  onBlur={() => {
+                    const t = tagInput.trim();
+                    if (!t) return;
+                    const tag = t.startsWith("#") ? t : `#${t}`;
+                    if (!selectedTags.includes(tag)) setSelectedTags((prev) => [...prev, tag]);
+                    setTagInput("");
+                  }}
+                  placeholder="Type a tag, press Enter or comma…"
+                  className="rounded border border-white/10 bg-white/4 px-2 py-1.5 text-[11px] text-white placeholder-white/22 outline-none focus:border-purple-500/40"
+                />
+                {/* Selected chips */}
+                {selectedTags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {selectedTags.map((t) => (
+                      <span key={t} className="flex items-center gap-1 rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold text-purple-200 ring-1 ring-purple-500/30">
+                        {t}
+                        <button type="button" onClick={() => setSelectedTags((prev) => prev.filter((x) => x !== t))} className="text-purple-300/60 hover:text-purple-200">×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {presetMode ? (
                 /* Preset-specific fields — wrapped in a fragment so both nodes are valid */
@@ -401,9 +550,10 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
                 <Check size={16} className="shrink-0 text-green-400" />
                 <div>
                   <p className="text-sm font-bold text-green-300">Published!</p>
-                  <p className="text-[10px] text-white/40">Your edit is live on the feed.</p>
+                  <p className="text-[10px] text-white/40">Your edit is live on the feed. +{XP_AWARDS.publish} XP</p>
                 </div>
               </div>
+              <ImpactCounter target={impactScore} />
               <button
                 onClick={() => router.push(presetMode ? "/explore?tab=presets" : "/")}
                 className="flex items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-white/8 py-2.5 text-sm font-semibold text-white/80 transition-colors hover:bg-white/15"
@@ -418,5 +568,6 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
         </div>
       </div>
     </div>
+    </>
   );
 }

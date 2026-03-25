@@ -2,7 +2,7 @@
 
 import { useRef, useState, useMemo, useEffect } from "react";
 import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch, Download } from "lucide-react";
-import { type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
+import { type FeedPost, isBlobUrl, useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { cleanupSnapshotMedia } from "@/lib/store/media-pool-db";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
@@ -23,9 +23,11 @@ interface FeedPostCardProps {
 
 export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImport, showDelete }: FeedPostCardProps) {
   const currentUsername = useUserStore((s) => s.profile?.username);
+  const likedPostIds = useFeedStore((s) => s.likedPostIds);
+  const toggleLike   = useFeedStore((s) => s.toggleLike);
+  const liked = likedPostIds.includes(post.id);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hovered, setHovered] = useState(false);
-  const [liked, setLiked] = useState(false);
   const [mediaOffline, setMediaOffline] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Gate client-only renders to prevent SSR/hydration mismatch from Math.sin() bar heights
@@ -99,7 +101,8 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   return (
     <article
       className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all duration-200 hover:border-white/20 hover:shadow-2xl hover:-translate-y-0.5"
-      onClick={onOpen} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}
+      onClick={() => { videoRef.current?.play().catch(() => {}); onOpen(); }}
+      onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}
     >
       <div className="relative" style={{ aspectRatio: "9/16", background: post.bg }}>
         {/* Delete confirmation overlay — only reachable when showDelete is true */}
@@ -123,7 +126,11 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
         {/* Video */}
         <video ref={videoRef} src={firstClipSrc || undefined}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
-          style={{ ...(firstClipFilter ? { filter: firstClipFilter } : {}), ...(firstClipTransform ? { transform: firstClipTransform } : {}), ...(firstClipAnimation ? { animation: firstClipAnimation } : {}) }}
+          style={{
+            ...(hovered && firstClipFilter    ? { filter:    firstClipFilter    } : {}),
+            ...(hovered && firstClipTransform ? { transform: firstClipTransform } : {}),
+            ...(hovered && firstClipAnimation ? { animation: firstClipAnimation } : {}),
+          }}
           muted loop playsInline preload="metadata"
           onError={() => setMediaOffline(true)}
         />
@@ -191,7 +198,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button onClick={(e) => { e.stopPropagation(); setLiked((v) => !v); }} className="flex items-center gap-0.5 text-[10px] text-white/60 transition-colors hover:text-red-400">
+              <button onClick={(e) => { e.stopPropagation(); toggleLike(post.id); }} className="flex items-center gap-0.5 text-[10px] text-white/60 transition-colors hover:text-red-400">
                 <Heart size={11} className={liked ? "fill-red-400 text-red-400" : ""} /><span>{fmtK(post.likes + (liked ? 1 : 0))}</span>
               </button>
               <button onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 text-[10px] text-white/60 hover:text-white/90">

@@ -28,7 +28,9 @@
       "Bash(npm install:*)",
       "Bash(wc:*)",
       "Bash(node -e \":*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(python3:*)",
+      "Bash(grep -rn createObjectURL D:/Projects/Synapse --include=*.ts --include=*.tsx)"
     ]
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Zap, GitBranch, Flame, Sparkles, Download, BookMarked } from "lucide-react";
 import { PresetShowcase } from "@/components/explore/PresetShowcase";
@@ -144,16 +144,25 @@ interface PresetExploreCardProps {
   authorHue?: number;
   authorInitial?: string;
   description?: string;
+  /** Feed post — when present, use its videoUrl as thumbnail */
+  post?: FeedPost | null;
   onSave: () => void;
   onShowcase: () => void;
 }
 
 function PresetExploreCard({
-  preset, accent = "#7c3aed", authorHandle, authorHue = 270, authorInitial, description, onSave, onShowcase,
+  preset, accent = "#7c3aed", authorHandle, authorHue = 270, authorInitial, description, post, onSave, onShowcase,
 }: PresetExploreCardProps) {
   const cssFilter    = clipCssFilter(preset.fxParams);
   const cssTransform = clipCssTransform(preset.fxParams);
   const anim         = explorerSwatchAnim(preset.category);
+  const thumbRef     = useRef<HTMLVideoElement>(null);
+
+  // Seek to demoStartTime once metadata loads so we show the right frame
+  const handleThumbMeta = useCallback(() => {
+    const v = thumbRef.current;
+    if (v) v.currentTime = post?.demoStartTime ?? 0;
+  }, [post?.demoStartTime]);
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = "copy";
@@ -165,7 +174,7 @@ function PresetExploreCard({
       className="group relative flex cursor-pointer flex-col gap-2 rounded-xl border border-white/8 bg-white/3 p-3 transition-all hover:border-white/20 hover:bg-white/6"
       onClick={onShowcase}
     >
-      {/* Draggable animated swatch */}
+      {/* Thumbnail: video frame if available, else animated swatch */}
       <div
         draggable
         onDragStart={handleDragStart}
@@ -173,15 +182,31 @@ function PresetExploreCard({
         style={{ background: "#111" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="absolute inset-0"
-          style={{
-            background: `linear-gradient(135deg, ${accent}60, ${accent}20)`,
-            filter: cssFilter || undefined,
-            transform: cssTransform || undefined,
-            animation: anim || undefined,
-          }}
-        />
+        {post?.videoUrl ? (
+          <>
+            <video
+              ref={thumbRef}
+              src={post.videoUrl}
+              muted
+              playsInline
+              preload="metadata"
+              onLoadedMetadata={handleThumbMeta}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            {/* Overlay so text stays readable */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+          </>
+        ) : (
+          <div
+            className="absolute inset-0"
+            style={{
+              background: `linear-gradient(135deg, ${accent}60, ${accent}20)`,
+              filter: cssFilter || undefined,
+              transform: cssTransform || undefined,
+              animation: anim || undefined,
+            }}
+          />
+        )}
         <div className="pointer-events-none absolute right-1.5 top-1.5 opacity-0 transition-opacity group-hover:opacity-100">
           <span className="text-[7px] text-white/30">drag</span>
         </div>
@@ -467,6 +492,7 @@ export default function ExplorePage() {
                         authorHue={post.user.hue}
                         authorInitial={post.user.initial}
                         description={post.description}
+                        post={post}
                         onSave={() => handleSavePreset(cp, post.user.handle)}
                         onShowcase={() => setShowcase({ preset: cp, post, accent: post.accent })}
                       />

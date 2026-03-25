@@ -21,6 +21,10 @@ interface StoredMediaItem {
 
 const DB_PREFIX = "synapse-media-";
 
+// Module-level set of blob URLs created during this page session.
+// hydrateMediaPool skips any item whose previewUrl is already alive here.
+const sessionAliveBlobUrls = new Set<string>();
+
 const MIME_MAP: Record<string, string> = {
   mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", mkv: "video/x-matroska",
   mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", aac: "audio/aac", flac: "audio/flac",
@@ -62,6 +66,7 @@ export async function loadMediaFromDB(): Promise<MediaPoolItem[]> {
     if (!stored) continue;
     const blob = new Blob([stored.data], { type: stored.mimeType });
     const previewUrl = URL.createObjectURL(blob);
+    sessionAliveBlobUrls.add(previewUrl);
     items.push({ id: stored.id, name: stored.name, type: stored.type, duration: stored.duration, previewUrl });
   }
 
@@ -116,25 +121,24 @@ export async function refreshMediaUrl(id: string): Promise<string | null> {
   const stored = await get<StoredMediaItem>(itemKey(id));
   if (!stored) return null;
   const blob = new Blob([stored.data], { type: stored.mimeType });
-  return URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  sessionAliveBlobUrls.add(url);
+  return url;
 }
 
 /** Replace dead blob: URLs in a MediaPool array with fresh ObjectURLs from IDB.
- *  Items not found in IDB (e.g. remote URLs) are returned unchanged. */
+ *  Items not found in IDB (e.g. remote URLs) are returned unchanged.
+ *  Skips items whose previewUrl is still alive in the current page session. */
 export async function hydrateMediaPool(items: MediaPoolItem[]): Promise<MediaPoolItem[]> {
-  const rows: Array<{ id: string; name: string; old: string; new: string; status: string }> = [];
-  const results = await Promise.all(
+  return Promise.all(
     items.map(async (item) => {
       if (item.previewUrl && !item.previewUrl.startsWith("blob:")) return item;
-      const oldUrl = item.previewUrl || "(empty)";
+      // Skip if this blob URL is still alive in the current session
+      if (item.previewUrl && sessionAliveBlobUrls.has(item.previewUrl)) return item;
       const fresh = await refreshMediaUrl(item.id);
-      const status = fresh ? "✓ refreshed" : "✗ NOT IN IDB";
-      rows.push({ id: item.id.slice(0, 8), name: item.name, old: oldUrl.slice(0, 48), new: (fresh ?? "").slice(0, 48), status });
       return fresh ? { ...item, previewUrl: fresh } : item;
     })
   );
-  if (rows.length) console.table(rows);
-  return results;
 }
 
 /** @deprecated Use releaseSnapshotMedia instead — this hard-deletes without reference counting. */

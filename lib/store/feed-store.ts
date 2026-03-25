@@ -53,12 +53,19 @@ export interface FeedPost {
   createdAt?: number;
   /** For preset demo videos: the second offset to start looping from (default 0) */
   demoStartTime?: number;
+  /** Duration of the demo loop window in seconds — if set, video loops demoStartTime…demoStartTime+demoDuration */
+  demoDuration?: number;
+  /** Content category — used for feed filtering */
+  category?: "high-sensation" | "aesthetic" | "cinematic" | "glitch" | "slow-mo";
 }
 
 interface FeedState {
   userPosts: FeedPost[];
+  /** Set of post IDs the current user has liked — persisted to localStorage */
+  likedPostIds: string[];
   addPost:    (post: FeedPost) => void;
   removePost: (id: string) => void;
+  toggleLike: (postId: string) => void;
   hydrateAllPosts: () => Promise<void>;
 }
 
@@ -69,12 +76,19 @@ export const useFeedStore = create<FeedState>()(
   persist(
     (set, get) => ({
       userPosts: [],
+      likedPostIds: [],
 
       addPost: (post) => {
         set((s) => ({ userPosts: [post, ...s.userPosts] }));
         // Persist to IDB asynchronously — blob URLs stripped in savePostToIDB
         savePostToIDB(post).catch((err) => console.error("[FeedStore] addPost IDB save threw unexpectedly:", err));
       },
+
+      toggleLike: (postId) => set((s) => ({
+        likedPostIds: s.likedPostIds.includes(postId)
+          ? s.likedPostIds.filter((id) => id !== postId)
+          : [...s.likedPostIds, postId],
+      })),
 
       removePost: (id) => {
         const post = get().userPosts.find((p) => p.id === id);
@@ -124,8 +138,8 @@ export const useFeedStore = create<FeedState>()(
     {
       name: "synapse-feed-posts",
       // userPosts excluded from localStorage — all post data lives in IDB via feed-idb.ts.
-      // Persist is kept only for its hasHydrated() / onFinishHydration() signalling API.
-      partialize: () => ({}),
+      // likedPostIds is lightweight (array of UUIDs) and safe to keep in localStorage.
+      partialize: (s) => ({ likedPostIds: s.likedPostIds }),
     },
   ),
 );

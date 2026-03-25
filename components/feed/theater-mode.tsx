@@ -1,14 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { X, Zap, Heart, Share2, Play, Pause, MessageCircle, Users, Volume2, VolumeX, GitBranch, WifiOff, Pencil } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
+import { X, Zap, Heart, Share2, Play, Pause, MessageCircle, Users, Volume2, VolumeX, GitBranch, WifiOff, Pencil, History } from "lucide-react";
 import type { FeedPost } from "@/lib/store/feed-store";
 import type { ClipEvent, MediaPoolItem } from "@/lib/store/types";
 import { hydrateMediaPool } from "@/lib/store/media-pool-db";
 import { useHydrationStore } from "@/lib/store/hydration-store";
 import { useUserStore } from "@/lib/store/user-store";
-import { clipCssFilter, clipCssTransform } from "@/lib/utils/svg-filters";
+import { useFeedStore } from "@/lib/store/feed-store";
+import { followCreator, unfollowCreator, isFollowing } from "@/lib/store/social-idb";
+import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { buildTextStyle } from "@/lib/utils/preview-helpers";
+import { parseHashtags } from "@/lib/utils/hashtags";
+
+// ── Gesture lock ───────────────────────────────────────────────────────────────
+// Set synchronously in the click handler (before React batches the state update)
+// so the matching TheaterCell's useLayoutEffect fires within the gesture trust window.
+let _gesturePendingId: string | null = null;
+export function primeTheaterGesture(postId: string) { _gesturePendingId = postId; }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
@@ -31,39 +40,72 @@ interface CellProps {
   cellRef: (el: HTMLDivElement | null) => void;
   onRemix: () => void;
   onCreator: () => void;
+  onHashtagClick: (tag: string) => void;
   globalMuted: boolean;
-  onToggleMute: () => void;
+  /** Registration callback: TheaterCell calls this with its play-controller so TheaterMode's
+   *  IntersectionObserver can drive play/pause through the correct React state path. */
+  onShouldPlay?: (registerCtrl: (play: boolean) => void) => void;
 }
 
-function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleMute }: CellProps) {
+function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, globalMuted, onShouldPlay }: CellProps) {
   const videoRef       = useRef<HTMLVideoElement>(null);
+  const mountedRef     = useRef(true);
   const rafRef         = useRef<number | null>(null);
   const phRef          = useRef(0);
   const lastTsRef      = useRef(0);
-  const loadedClipRef  = useRef<string | null>(null);
+  const loadedClipRef    = useRef<string | null>(null);
+  const loadedClipUrlRef = useRef<string | null>(null); // URL currently loaded in <video>
   const isPlayingRef   = useRef(false);
   const clipsRef       = useRef<Array<ClipEvent & { url: string }>>([]);
   const totalDurRef    = useRef(30_000_000);
   const effectClipsRef = useRef<ClipEvent[]>([]);
   const textClipsRef   = useRef<ClipEvent[]>([]);
   const activeAnimRef  = useRef<string | null>(null);
+  /** Set to true by the gesture useLayoutEffect so the boot useEffect skips its reset */
+  const gesturePlayedRef = useRef(false);
+  const blurVideoRef   = useRef<HTMLVideoElement>(null);
 
-  const [progress, setProgress]       = useState(0);
-  const [isPlaying, setIsPlaying]     = useState(false);
-  const [videoVisible, setVideoVisible] = useState(false);
-  const [mediaError, setMediaError]   = useState(false);
-  const [liked, setLiked]             = useState(false);
-  const [hydratedPool, setHydratedPool] = useState<MediaPoolItem[] | null>(null);
-  const isHydrated = useHydrationStore((s) => s.isHydrated);
+  const [progress, setProgress]           = useState(0);
+  const [isPlaying, setIsPlaying]         = useState(false);
+  const [videoVisible, setVideoVisible]   = useState(false);
+  const [mediaError, setMediaError]       = useState(false);
+  const [following, setFollowing]         = useState(false);
+  const [showPlayOverlay, setShowPlayOverlay] = useState(false);
+  const [showUnmuteToast, setShowUnmuteToast] = useState(false);
+  const [hydratedPool, setHydratedPool]   = useState<MediaPoolItem[] | null>(null);
+  const isHydrated   = useHydrationStore((s) => s.isHydrated);
   const currentUsername = useUserStore((s) => s.profile?.username);
+  const likedPostIds = useFeedStore((s) => s.likedPostIds);
+  const toggleLike   = useFeedStore((s) => s.toggleLike);
+  const liked = likedPostIds.includes(post.id);
+  const isOwn = !!currentUsername && currentUsername === post.authorUsername;
 
-  const poolKey = post.id + "|" + (post.projectSnapshot?.mediaPool?.map((m) => m.previewUrl).join(",") ?? "");
+  // Track mount state to guard async callbacks
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
+  // Load follow state from IDB on mount
+  useEffect(() => {
+    isFollowing(post.user.handle).then(setFollowing).catch(() => {});
+  }, [post.user.handle]);
+
+  const handleFollowToggle = useCallback(async () => {
+    const next = !following;
+    setFollowing(next);
+    try {
+      if (next) await followCreator(post.user.handle);
+      else await unfollowCreator(post.user.handle);
+    } catch { setFollowing(!next); } // revert on error
+  }, [following, post.user.handle]);
+
+  // Key on post.id only — previewUrls must not be part of the key or hydrateMediaPool
+  // will be called again after the store updates with the newly-created blob URLs,
+  // which triggers another hydrateMediaPool call, creating yet more blob URLs (infinite loop).
   useEffect(() => {
     setHydratedPool(null);
     const pool = post.projectSnapshot?.mediaPool;
     if (!pool?.length) return;
     hydrateMediaPool(pool).then(setHydratedPool).catch(() => setHydratedPool(pool));
-  }, [poolKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const snap = post.projectSnapshot;
@@ -99,7 +141,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
     if (!v) return;
     const clip = clips.find((c) => ph >= c.startTime && ph < c.startTime + c.duration) ?? null;
     if (!clip) {
-      if (loadedClipRef.current !== null) { v.pause(); loadedClipRef.current = null; setVideoVisible(false); }
+      if (loadedClipRef.current !== null) { v.pause(); loadedClipRef.current = null; loadedClipUrlRef.current = null; setVideoVisible(false); }
       return;
     }
     if (loadedClipRef.current === clip.id) {
@@ -108,7 +150,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
       return;
     }
     const { id: clipId, url: clipUrl, startTime: clipStart, mediaOffset: clipOffset = 0, duration: clipDur } = clip;
-    loadedClipRef.current = clipId;
+    loadedClipRef.current = clipId; loadedClipUrlRef.current = clipUrl;
     setVideoVisible(false);
     const onMeta = () => {
       v.removeEventListener("loadedmetadata", onMeta);
@@ -121,13 +163,14 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
         setMediaError(false);
         const mediaEndSec = (clipOffset + clipDur) / 1_000_000;
         const reveal = () => {
+          if (!mountedRef.current) return;
           setVideoVisible(true);
           if (isPlayingRef.current) v.play().catch(() => {});
           const guard = () => {
             if (loadedClipRef.current !== clipId) { v.removeEventListener("timeupdate", guard); return; }
             if (v.currentTime >= mediaEndSec) {
               v.removeEventListener("timeupdate", guard);
-              phRef.current = clipStart + clipDur; loadedClipRef.current = null; v.pause();
+              phRef.current = clipStart + clipDur; loadedClipRef.current = null; loadedClipUrlRef.current = null; v.pause();
             }
           };
           v.addEventListener("timeupdate", guard);
@@ -168,6 +211,8 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
               v.style.transform = `scale(${(1 + intensity * 0.2 + Math.sin(phase * Math.PI * 2) * intensity * 0.05).toFixed(3)}) rotate(${((phase * 2 - 1) * intensity * 8).toFixed(1)}deg)`;
             } else {
               v.style.filter = clipCssFilter(efxP); v.style.transform = clipCssTransform(efxP);
+              const anim = clipCssAnimation(efxP);
+              if (activeAnimRef.current !== efx.id) { v.style.animation = anim; activeAnimRef.current = efx.id; }
             }
           }
         }
@@ -178,28 +223,66 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
   }, [syncClip]);
 
   useEffect(() => {
-    if (!isPlaying || snapshotClips.length === 0) {
+    if (!isPlaying) {
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-      if (!isPlaying) videoRef.current?.pause();
+      videoRef.current?.pause();
       return;
     }
-    lastTsRef.current = 0;
-    rafRef.current = requestAnimationFrame(tick);
+    if (snapshotClips.length > 0) {
+      // Snapshot posts: existing rAF tick handles clip sync + FX
+      lastTsRef.current = 0;
+      rafRef.current = requestAnimationFrame(tick);
+    } else {
+      // Simple-video posts: frame-accurate loop check at 60Hz
+      const demoStart = post.demoStartTime ?? 0;
+      const demoDur   = post.demoDuration  ?? 0;
+      let frame = 0;
+      const loopCheck = () => {
+        const v = videoRef.current;
+        // Wait for HAVE_METADATA (readyState >= 1) before trusting currentTime / duration
+        if (!v || v.readyState < 1) { rafRef.current = requestAnimationFrame(loopCheck); return; }
+        if (!v.paused) {
+          const loopEnd = demoDur > 0 ? demoStart + demoDur : 0; // 0 = no rAF snap (ended handles it)
+          if (loopEnd > 0 && v.currentTime >= loopEnd) {
+            // Gate FX before seek — prevents strobe/glitch artifact on the loop frame
+            v.style.filter = ""; v.style.animation = "";
+            v.currentTime = demoStart;
+            const bv = blurVideoRef.current; if (bv) bv.currentTime = demoStart;
+          }
+          // Throttle React state update to ~15fps to avoid 60 re-renders/sec
+          if (++frame % 4 === 0) {
+            const effDur = demoDur > 0 ? demoDur : v.duration;
+            if (effDur > 0) setProgress((v.currentTime - demoStart) / effDur);
+          }
+        }
+        rafRef.current = requestAnimationFrame(loopCheck);
+      };
+      rafRef.current = requestAnimationFrame(loopCheck);
+    }
     return () => { if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } };
-  }, [isPlaying, snapshotClips.length, tick]);
+  }, [isPlaying, snapshotClips.length, tick, post.demoStartTime, post.demoDuration]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Boot: load first clip or simple videoUrl
   useEffect(() => {
     if (isPlayingRef.current) return;
     if (!isHydrated && !!post.projectSnapshot?.mediaPool?.length) return;
-    phRef.current = 0; setProgress(0); setIsPlaying(false); setMediaError(false);
-    loadedClipRef.current = null; lastTsRef.current = 0;
-    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     const clips = clipsRef.current;
     const v = videoRef.current;
+    // Guard: skip if the SAME clip with the SAME URL is already loading.
+    // Allow reload when the URL changed (dead blob replaced by a fresh one after hydration).
+    if (clips.length > 0 && loadedClipRef.current !== null) {
+      const alreadyLoading = clips.find((c) => c.id === loadedClipRef.current);
+      if (alreadyLoading && alreadyLoading.url === loadedClipUrlRef.current) return;
+    }
+    // If the gesture useLayoutEffect already kicked off playback (snapshot posts), skip the reset
+    // so we don't cancel the rAF tick that was just started within the user-gesture trust window.
+    if (gesturePlayedRef.current) { gesturePlayedRef.current = false; return; }
+    phRef.current = 0; setProgress(0); setIsPlaying(false); setMediaError(false);
+    loadedClipRef.current = null; loadedClipUrlRef.current = null; lastTsRef.current = 0;
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     if (clips.length > 0 && v) {
       const clip = clips[0];
-      loadedClipRef.current = clip.id; v.muted = true;
+      loadedClipRef.current = clip.id; loadedClipUrlRef.current = clip.url; v.muted = true;
       const onMeta = () => {
         v.removeEventListener("loadedmetadata", onMeta);
         if (loadedClipRef.current !== clip.id) return;
@@ -208,10 +291,12 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
           v.removeEventListener("seeked", onSeeked);
           if (loadedClipRef.current !== clip.id) return;
           const reveal = () => {
-            setVideoVisible(true); v.play().then(() => setIsPlaying(true)).catch(() => {});
+            if (!mountedRef.current) return;
+            setVideoVisible(true);
+            v.play().then(() => { if (mountedRef.current) setIsPlaying(true); }).catch(() => {});
             const endSec = ((clip.mediaOffset ?? 0) + clip.duration) / 1_000_000;
             v.addEventListener("timeupdate", function g() {
-              if (v.currentTime >= endSec) { v.removeEventListener("timeupdate", g); phRef.current = clip.startTime + clip.duration; loadedClipRef.current = null; v.pause(); }
+              if (v.currentTime >= endSec) { v.removeEventListener("timeupdate", g); phRef.current = clip.startTime + clip.duration; loadedClipRef.current = null; loadedClipUrlRef.current = null; v.pause(); }
             });
           };
           if (v.readyState >= 2) reveal();
@@ -221,8 +306,18 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
       };
       v.addEventListener("loadedmetadata", onMeta); v.src = clip.url; v.load();
     } else if (post.videoUrl && v) {
-      v.src = post.videoUrl; setVideoVisible(true);
-      v.play().then(() => setIsPlaying(true)).catch(() => {});
+      // src is set via JSX + videoVisible via useLayoutEffect — only play if not already started
+      if (!isPlayingRef.current) {
+        if (mountedRef.current) setVideoVisible(true);
+        v.muted = true; // React's muted prop is unreliable — set imperatively before play()
+        v.play()
+          .then(() => {
+            if (!mountedRef.current) return;
+            setIsPlaying(true); setShowPlayOverlay(false);
+            blurVideoRef.current?.play().catch(() => {});
+          })
+          .catch(() => { if (mountedRef.current) setShowPlayOverlay(true); });
+      }
     } else { setVideoVisible(false); if (v) { v.pause(); v.src = ""; } }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post.id, hydratedPool, isHydrated]);
@@ -230,18 +325,100 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
   useEffect(() => {
     if (snapshotClips.length > 0) return;
     const v = videoRef.current; if (!v) return;
-    const onTime = () => { if (v.duration) setProgress(v.currentTime / v.duration); };
-    v.addEventListener("timeupdate", onTime);
-    return () => v.removeEventListener("timeupdate", onTime);
-  }, [snapshotClips.length]);
+    const demoStart = post.demoStartTime ?? 0;
+    // Full-video loop fallback (demoDur=0 case; rAF handles the demoWindow snap-back)
+    const onEnded = () => {
+      v.style.filter = ""; v.style.animation = ""; // gate FX on loop frame
+      v.currentTime = demoStart;
+      v.play().catch(() => {});
+      const bv = blurVideoRef.current;
+      if (bv) { bv.currentTime = demoStart; bv.play().catch(() => {}); }
+    };
+    v.addEventListener("ended", onEnded);
+    return () => v.removeEventListener("ended", onEnded);
+  }, [snapshotClips.length, post.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Immediate play — fires within the user-gesture trust window.
+  // Only executes for the post that matches the pending gesture lock.
+  useLayoutEffect(() => {
+    if (_gesturePendingId !== post.id) return;
+    _gesturePendingId = null; // consume — only one cell plays in the gesture window
+    // Snapshot posts: kick off the rAF tick loop synchronously within the gesture window.
+    // syncClip() will load + play the first clip with gesture-inherited autoplay trust.
+    if (post.projectSnapshot) {
+      gesturePlayedRef.current = true;
+      setIsPlaying(true);
+      return;
+    }
+    if (!post.videoUrl) return;
+    const v = videoRef.current;
+    if (!v) return;
+    // React does not reliably forward the `muted` prop to the DOM element — set it imperatively
+    // so the browser permits autoplay (muted autoplay is always allowed, unmuted is not).
+    v.muted = true;
+    setVideoVisible(true);
+    v.play()
+      .then(() => {
+        console.log("[Theater PLAY_SUCCESS]", post.id);
+        if (!mountedRef.current) return;
+        setIsPlaying(true);
+        setShowPlayOverlay(false);
+        if (v.muted) { setShowUnmuteToast(true); setTimeout(() => { if (mountedRef.current) setShowUnmuteToast(false); }, 3500); }
+        blurVideoRef.current?.play().catch(() => {});
+      })
+      .catch((err: Error) => {
+        console.warn("[Theater PLAY_BLOCKED]", err.name, err.message);
+        if (mountedRef.current) setShowPlayOverlay(true);
+      });
+  }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pause/resume CSS animations (strobe, glitch) in sync with video play state
+  useEffect(() => {
+    const v = videoRef.current; if (!v) return;
+    v.style.animationPlayState = isPlaying ? "running" : "paused";
+  }, [isPlaying]);
 
   const togglePlay = useCallback(() => {
     if (clipsRef.current.length === 0) {
       const v = videoRef.current; if (!v) return;
       if (isPlayingRef.current) { v.pause(); setIsPlaying(false); }
-      else { v.play().then(() => setIsPlaying(true)).catch(() => {}); }
+      else {
+        v.play()
+          .then(() => { setIsPlaying(true); setShowPlayOverlay(false); })
+          .catch(() => {});
+      }
     } else { setIsPlaying((p) => !p); }
   }, []);
+
+  // Expose a play/pause controller to the parent (IntersectionObserver path).
+  // For snapshot posts this sets React state so the rAF tick loop starts/stops;
+  // for simple-video posts it drives the <video> element directly.
+  const ioPlayRef = useRef<((shouldPlay: boolean) => void) | null>(null);
+  useEffect(() => {
+    ioPlayRef.current = (shouldPlay: boolean) => {
+      if (shouldPlay) {
+        if (clipsRef.current.length > 0) {
+          // Snapshot post — start the rAF tick so syncClip loads + plays the clip
+          if (!isPlayingRef.current) setIsPlaying(true);
+        } else {
+          const v = videoRef.current; if (!v) return;
+          v.muted = true; // ensure muted before play — React prop unreliable
+          v.play()
+            .then(() => { if (mountedRef.current) { setIsPlaying(true); setVideoVisible(true); setShowPlayOverlay(false); blurVideoRef.current?.play().catch(() => {}); } })
+            .catch(() => { if (mountedRef.current) setShowPlayOverlay(true); });
+        }
+      } else {
+        if (clipsRef.current.length > 0) {
+          setIsPlaying(false);
+        } else {
+          const v = videoRef.current; if (!v) return;
+          v.pause(); v.currentTime = 0; setIsPlaying(false);
+        }
+      }
+    };
+    if (onShouldPlay) onShouldPlay((shouldPlay: boolean) => { ioPlayRef.current?.(shouldPlay); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onShouldPlay]);
 
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -249,19 +426,31 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
     setProgress(ratio);
     if (clipsRef.current.length > 0) {
       phRef.current = ratio * totalDurRef.current;
-      loadedClipRef.current = null;
+      loadedClipRef.current = null; loadedClipUrlRef.current = null;
       syncClip(phRef.current);
     } else {
       const v = videoRef.current; if (v?.duration) v.currentTime = ratio * v.duration;
     }
   }, [syncClip]);
 
+  // For preset posts (no snapshot) apply fxParams as CSS — filter + transform + animation
+  const presetVideoStyle = useMemo(() => {
+    if (!post.presetData?.fxParams) return {};
+    const p = post.presetData.fxParams;
+    const f = clipCssFilter(p);
+    const t = clipCssTransform(p);
+    const a = clipCssAnimation(p);
+    return { ...(f ? { filter: f } : {}), ...(t ? { transform: t } : {}), ...(a ? { animation: a } : {}) };
+  }, [post.presetData]);
+
   const isBlobPost = post.videoUrl?.startsWith("blob:");
   const remixAllowed = post.allowRemix !== false;
+  // Resolved src for the main video element — undefined for snapshot posts (src set imperatively)
+  const stableSrc = !post.projectSnapshot && post.videoUrl ? post.videoUrl : undefined;
 
   return (
     <div ref={cellRef} className="relative flex h-screen w-full snap-start items-center justify-center bg-black">
-      <div className="group relative h-full w-full overflow-hidden" style={{ background: post.bg }}>
+      <div className="group relative h-full w-full overflow-hidden">
 
         {hydratedPool === null && !!post.projectSnapshot?.mediaPool?.length && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/80">
@@ -287,9 +476,57 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
           </div>
         )}
 
-        <video ref={videoRef} muted loop={snapshotClips.length === 0} playsInline
+        {/* Blurred backdrop — same src, behind the main video; non-snapshot posts only */}
+        {stableSrc && (
+          <video
+            ref={blurVideoRef}
+            src={stableSrc}
+            muted playsInline autoPlay loop preload="auto"
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-[0] h-full w-full object-cover opacity-60 blur-[80px]"
+          />
+        )}
+
+        {/* Debug: log the src value to verify it is non-null before handing it to the video */}
+        {process.env.NODE_ENV === "development" && console.log("[Theater] Video SRC assigned:", stableSrc, "postId:", post.id) as never}
+
+        <video
+          ref={videoRef}
+          src={stableSrc}
+          muted={true} autoPlay playsInline preload="auto"
           onError={() => setMediaError(true)}
-          className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-150 ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
+          onLoadedMetadata={() => {
+            const v = videoRef.current; if (!v) return;
+            const start = post.demoStartTime ?? 0;
+            if (start > 0 && !post.projectSnapshot) v.currentTime = start;
+          }}
+          onLoadedData={() => {
+            // Fallback play: fires when first frame is available; catches cases where
+            // useLayoutEffect ran before the video had data and play() was blocked.
+            const v = videoRef.current;
+            if (!v || isPlayingRef.current || post.projectSnapshot) return;
+            v.play()
+              .then(() => {
+                if (!mountedRef.current) return;
+                setIsPlaying(true); setVideoVisible(true); setShowPlayOverlay(false);
+                blurVideoRef.current?.play().catch(() => {});
+              })
+              .catch((err: Error) => console.warn("[Theater onLoadedData BLOCKED]", err.name));
+          }}
+          onCanPlay={() => {
+            // Final fallback: browser signals it can play but isPlaying still false
+            const v = videoRef.current;
+            if (!v || isPlayingRef.current || post.projectSnapshot) return;
+            v.play()
+              .then(() => {
+                if (!mountedRef.current) return;
+                setIsPlaying(true); setVideoVisible(true); setShowPlayOverlay(false);
+                blurVideoRef.current?.play().catch(() => {});
+              })
+              .catch(() => {});
+          }}
+          style={{ ...presetVideoStyle, animationPlayState: isPlaying ? "running" : "paused" }}
+          className={`absolute inset-0 z-[10] h-full w-full object-contain transition-opacity duration-150 ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
         />
 
         {/* Text overlays */}
@@ -320,30 +557,56 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
           )}
         </div>
 
-        {/* Mute toggle */}
-        <button onClick={onToggleMute} className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/50 text-white/80 backdrop-blur-sm transition-colors hover:bg-white/15">
-          {globalMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-        </button>
+        {/* Play-blocked overlay — covers 100% of the cell, cleared on tap */}
+        {showPlayOverlay && (
+          <button onClick={togglePlay} className="absolute inset-0 z-30 flex h-full w-full flex-col items-center justify-center gap-3 bg-black/60 backdrop-blur-sm">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white/15 ring-2 ring-white/30">
+              <Play size={36} className="ml-1.5 text-white" fill="white" />
+            </div>
+            <span className="text-sm font-bold text-white/80">Tap to Play</span>
+          </button>
+        )}
+
+        {/* "Click to Unmute" toast */}
+        {showUnmuteToast && (
+          <div className="pointer-events-none absolute left-1/2 top-6 z-20 -translate-x-1/2 rounded-full bg-black/70 px-4 py-1.5 text-[11px] font-semibold text-white/80 backdrop-blur-sm">
+            Tap the speaker to unmute
+          </div>
+        )}
 
         {/* Info overlay */}
         <div className="absolute bottom-8 left-4 right-20 pr-2">
-          <button onClick={onCreator} className="mb-2 flex items-center gap-2.5 text-left">
+          {/* div + role="button" avoids nested-button hydration error (Follow btn is inside) */}
+          <div role="button" tabIndex={0} onClick={onCreator} onKeyDown={(e) => e.key === "Enter" && onCreator()} className="mb-2 flex cursor-pointer items-center gap-2.5">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white/25" style={{ background: `hsl(${post.user.hue} 55% 28%)` }}>{post.user.initial}</div>
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold text-white" style={TX}>@{post.user.handle}</span>
-              <span className="flex items-center gap-0.5 rounded-full border border-white/25 bg-black/50 px-1.5 py-0.5 text-[9px] font-semibold text-white/80 backdrop-blur-sm"><Users size={8} />Follow</span>
+              {!isOwn && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleFollowToggle(); }}
+                  className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold backdrop-blur-sm transition-colors ${
+                    following
+                      ? "border-purple-400/40 bg-purple-500/20 text-purple-200"
+                      : "border-white/25 bg-black/50 text-white/80 hover:bg-white/10"
+                  }`}
+                >
+                  <Users size={8} />{following ? "Following" : "Follow"}
+                </button>
+              )}
             </div>
-          </button>
+          </div>
           <h2 className="mb-1.5 line-clamp-2 text-xl font-bold leading-snug text-white" style={TX}>{post.title}</h2>
-          {post.description && <p className="mb-2 line-clamp-2 text-base leading-relaxed text-white/90" style={TX}>{post.description}</p>}
+          {post.description && <p className="mb-2 line-clamp-2 text-base leading-relaxed text-white/90" style={TX}>{parseHashtags(post.description, onHashtagClick)}</p>}
           <div className="flex flex-wrap gap-1.5">
-            {post.tags.map((t) => <span key={t} className="rounded-full bg-black/50 px-2 py-0.5 text-base font-medium text-white/85 backdrop-blur-sm" style={TX}>{t}</span>)}
+            {post.tags.map((t) => (
+              <button key={t} onClick={() => onHashtagClick(t)} className="rounded-full bg-black/50 px-2 py-0.5 text-base font-medium text-white/85 backdrop-blur-sm hover:bg-purple-500/20 hover:text-purple-200 transition-colors" style={TX}>{t}</button>
+            ))}
           </div>
         </div>
 
-        {/* Action column */}
-        <div className="absolute bottom-6 right-3 flex flex-col items-center gap-4">
-          <button onClick={() => setLiked((v) => !v)} className="flex flex-col items-center gap-1">
+        {/* Action column — right sidebar, bottom-aligned, clear of top controls and scrubber */}
+        <div className="absolute bottom-14 right-3 flex flex-col items-center gap-3">
+          <button onClick={() => toggleLike(post.id)} className="flex flex-col items-center gap-1">
             <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${liked ? "border-red-500/40 bg-red-500/30" : "border-white/15 bg-black/40 hover:bg-white/12"}`}>
               <Heart size={20} className={liked ? "fill-red-400 text-red-400" : "text-white"} />
             </div>
@@ -357,12 +620,14 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, globalMuted, onToggleM
             <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/12"><Share2 size={20} className="text-white" /></div>
             <span className="text-[9px] font-semibold text-white" style={TX}>Share</span>
           </button>
-          <button onClick={onRemix} className="flex flex-col items-center gap-1">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/15">
-              <Pencil size={15} className="text-white/80" />
-            </div>
-            <span className="text-[9px] font-semibold text-white/70" style={TX}>Edit</span>
-          </button>
+          {isOwn && (
+            <button onClick={onRemix} className="flex flex-col items-center gap-1">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/15">
+                <Pencil size={15} className="text-white/80" />
+              </div>
+              <span className="text-[9px] font-semibold text-white/70" style={TX}>Edit</span>
+            </button>
+          )}
           <button onClick={remixAllowed ? onRemix : undefined} className={`flex flex-col items-center gap-1 ${remixAllowed ? "" : "opacity-35 cursor-not-allowed"}`}>
             <div className="flex h-14 w-14 items-center justify-center rounded-full transition-all active:scale-95"
               style={remixAllowed ? { background: post.accent, boxShadow: `0 0 28px ${post.accent}99` } : { background: "#333" }}>
@@ -387,17 +652,23 @@ interface TheaterModeProps {
   onClose: () => void;
   onRemix: () => void;
   onCreator: () => void;
+  onHashtagClick?: (tag: string) => void;
   allPosts?: FeedPost[];
   onNavigate?: (post: FeedPost) => void;
 }
 
-export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [] }: TheaterModeProps) {
-  const [queue, setQueue]       = useState<FeedPost[]>(() => buildQueue(post, allPosts));
-  const [muted, setMuted]       = useState(true);
+export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick, allPosts = [] }: TheaterModeProps) {
+  const [queue, setQueue]             = useState<FeedPost[]>(() => buildQueue(post, allPosts));
+  const [muted, setMuted]             = useState(true);
+  const [activePostId, setActivePostId] = useState(post.id);
+  const [showVersions, setShowVersions] = useState(false);
   const scrollRef               = useRef<HTMLDivElement>(null);
   const cellRefs                = useRef<Map<string, HTMLDivElement>>(new Map());
+  const elementToPid            = useRef<WeakMap<HTMLDivElement, string>>(new WeakMap());
   const observerRef             = useRef<IntersectionObserver | null>(null);
   const activeVideoRef          = useRef<HTMLVideoElement | null>(null);
+  /** Maps post.id → the play-controller registered by TheaterCell via onShouldPlay */
+  const cellPlayCtrl            = useRef<Map<string, (play: boolean) => void>>(new Map());
 
   // Rebuild queue when seed post changes
   useEffect(() => { setQueue(buildQueue(post, allPosts)); }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -429,14 +700,27 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [] }
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          const video = entry.target.querySelector("video") as HTMLVideoElement | null;
-          if (!video) continue;
+          const pid = elementToPid.current.get(entry.target as HTMLDivElement);
+          const ctrl = pid ? cellPlayCtrl.current.get(pid) : undefined;
           if (entry.isIntersecting) {
-            activeVideoRef.current = video;
-            video.play().catch(() => {});
+            const video = entry.target.querySelector("video") as HTMLVideoElement | null;
+            if (video) activeVideoRef.current = video;
+            if (pid) setActivePostId(pid);
+            // Use the cell's own play controller so snapshot posts start their rAF tick.
+            // Fall back to direct video.play() only if the controller hasn't registered yet
+            // (e.g. the cell just mounted and the useEffect hasn't fired).
+            if (ctrl) {
+              ctrl(true);
+            } else {
+              video?.play().catch(() => {});
+            }
           } else {
-            video.pause();
-            video.currentTime = 0;
+            if (ctrl) {
+              ctrl(false);
+            } else {
+              const video = entry.target.querySelector("video") as HTMLVideoElement | null;
+              if (video) { video.pause(); video.currentTime = 0; }
+            }
           }
         }
       },
@@ -465,21 +749,114 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [] }
   const setCellRef = useCallback((postId: string) => (el: HTMLDivElement | null) => {
     if (el) {
       cellRefs.current.set(postId, el);
+      elementToPid.current.set(el, postId);
       observerRef.current?.observe(el);
     } else {
       cellRefs.current.delete(postId);
+      cellPlayCtrl.current.delete(postId);
+      // WeakMap self-cleans when el is GC'd — no delete needed
     }
   }, []);
 
+  /** Called by TheaterCell once its play controller is ready; maps postId → controller */
+  const setPlayCtrl = useCallback((postId: string) => (ctrl: (play: boolean) => void) => {
+    cellPlayCtrl.current.set(postId, ctrl);
+  }, []);
+
+  const activePost = useMemo(() => queue.find((p) => p.id === activePostId) ?? queue[0], [queue, activePostId]);
+  const versionSiblings = useMemo(() => {
+    if (!activePost) return [];
+    const root = activePost.rootParentId ?? (activePost.remixedFromPostId ? activePost.id : null);
+    if (!root && !activePost.remixedFromPostId) return [];
+    return allPosts.filter((p) =>
+      p.id !== activePost.id &&
+      (p.rootParentId === root || p.rootParentId === activePost.id || p.remixedFromPostId === activePost.id)
+    );
+  }, [activePost, allPosts]);
+
   return (
     <div className="fixed inset-0 z-50 bg-black">
-      {/* Close */}
-      <button
-        onClick={onClose}
-        className="fixed right-4 top-4 z-[60] flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/60 text-white/70 backdrop-blur-sm transition-colors hover:bg-white/15 hover:text-white"
-      >
-        <X size={15} />
-      </button>
+      {/* Top-right controls: Versions | Mute | Close */}
+      <div className="fixed right-4 top-4 z-[100] flex items-center gap-2">
+        {versionSiblings.length > 0 && (
+          <button
+            onClick={() => setShowVersions((v) => !v)}
+            title="Versions"
+            className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-[11px] font-semibold backdrop-blur-sm transition-colors ${
+              showVersions
+                ? "border-purple-400/50 bg-purple-500/25 text-purple-200"
+                : "border-white/20 bg-black/60 text-white/70 hover:bg-white/15 hover:text-white"
+            }`}
+          >
+            <History size={13} />
+            {versionSiblings.length}
+          </button>
+        )}
+        <button
+          onClick={() => setMuted((v) => !v)}
+          title={muted ? "Unmute" : "Mute"}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/80 text-white drop-shadow-lg backdrop-blur-sm transition-colors hover:bg-black/90"
+        >
+          {muted ? <VolumeX size={16} className="text-white" /> : <Volume2 size={16} className="text-white" />}
+        </button>
+        <button
+          onClick={onClose}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/80 text-white/90 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
+        >
+          <X size={15} />
+        </button>
+      </div>
+
+      {/* Versions drawer */}
+      {showVersions && (
+        <div className="fixed right-0 top-0 z-[55] flex h-full w-64 flex-col border-l border-white/10 bg-black/90 backdrop-blur-md">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+            <span className="text-xs font-bold text-white/80">Versions ({versionSiblings.length})</span>
+            <button onClick={() => setShowVersions(false)} className="text-white/40 hover:text-white"><X size={13} /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+            {versionSiblings.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => {
+                  const el = cellRefs.current.get(p.id);
+                  if (el) { el.scrollIntoView({ behavior: "smooth" }); }
+                  else {
+                    setQueue((prev) => prev.some((q) => q.id === p.id) ? prev : [p, ...prev]);
+                    setTimeout(() => cellRefs.current.get(p.id)?.scrollIntoView({ behavior: "smooth" }), 120);
+                  }
+                  setShowVersions(false);
+                }}
+                className="flex w-full items-start gap-3 border-b border-white/5 px-4 py-3 text-left transition-colors hover:bg-white/5"
+              >
+                <div
+                  className="h-14 w-10 shrink-0 overflow-hidden rounded-md"
+                  style={{ background: p.bg ?? "#1a1a1a" }}
+                >
+                  {p.videoUrl && (
+                    <video
+                      src={p.videoUrl}
+                      muted playsInline preload="none"
+                      className="h-full w-full object-cover"
+                      onLoadedMetadata={(e) => { (e.currentTarget as HTMLVideoElement).currentTime = p.demoStartTime ?? 0; }}
+                    />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-semibold text-white/90">{p.title}</p>
+                  <p className="text-[10px] text-white/40">@{p.user.handle}</p>
+                  {p.remixedFromHandle && (
+                    <div className="mt-1 flex items-center gap-1">
+                      <GitBranch size={8} className="text-purple-400" />
+                      <span className="text-[9px] text-purple-300">@{p.remixedFromHandle}</span>
+                    </div>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Vertical snap-scroll feed — deduplicate at render time as a final safety net */}
       <div
@@ -495,8 +872,9 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, allPosts = [] }
             cellRef={setCellRef(p.id)}
             onRemix={onRemix}
             onCreator={onCreator}
+            onHashtagClick={onHashtagClick ?? (() => {})}
             globalMuted={muted}
-            onToggleMute={() => setMuted((v) => !v)}
+            onShouldPlay={setPlayCtrl(p.id)}
           />
         ))}
       </div>

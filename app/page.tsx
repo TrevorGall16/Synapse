@@ -6,7 +6,7 @@ import { Zap, TrendingUp, Upload, User, ArrowUp, Trash2 } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
-import { TheaterMode } from "@/components/feed/theater-mode";
+import { TheaterMode, primeTheaterGesture } from "@/components/feed/theater-mode";
 import { UploadModal } from "@/components/feed/upload-modal";
 import { FeedPostCard } from "@/components/feed/feed-post-card";
 import { saveMediaToDB, retainMedia } from "@/lib/store/media-pool-db";
@@ -39,7 +39,7 @@ const MOCK_POSTS: FeedPost[] = [
   { id: "9", user: { handle: "bpmviz",      initial: "B", hue: 45  }, title: "Beat-Sync Flash Grid",      tags: ["#dnb","#reactive"],       bg: "#180e00", accent: "#fb923c", duration: "0:48", likes: 3027, comments: 184, featured: false },
 ];
 
-const STATIC_TAGS = Array.from(new Set(MOCK_POSTS.flatMap((p) => p.tags)));
+const OFFICIAL_CATEGORIES = ["#Blonde", "#Brunette", "#Curvy", "#Latex", "#HighSensation", "#Cinematic", "#Glitch", "#SlowMo", "#Aesthetic"];
 
 // ── Deterministic infinite-scroll generator ───────────────────────────────────
 function generateMorePosts(pageNum: number): FeedPost[] {
@@ -76,6 +76,7 @@ export default function DiscoveryFeedPage() {
   const [theaterPostId, setTheaterPostId] = useState<string | null>(null);
   const [showUpload, setShowUpload]   = useState(false);
   const [activeTag, setActiveTag]     = useState<string | null>(null);
+  const [feedSort, setFeedSort]       = useState<"latest" | "popular" | "trending">("latest");
   const [toast, setToast]             = useState<string | null>(null);
 
   const [loadedPages, setLoadedPages]     = useState(1);
@@ -85,6 +86,7 @@ export default function DiscoveryFeedPage() {
 
   const userPosts      = useFeedStore((s) => s.userPosts);
   const removePost     = useFeedStore((s) => s.removePost);
+  const likedPostIds   = useFeedStore((s) => s.likedPostIds);
   const offlineCount   = useFeedStore((s) => s.userPosts.filter((p) => isBlobUrl(p.videoUrl)).length);
   const currentProfile = useUserStore((s) => s.profile);
   const cleanupOffline = useCallback(() => {
@@ -111,12 +113,28 @@ export default function DiscoveryFeedPage() {
     () => (theaterPostId ? allPosts.find((p) => p.id === theaterPostId) ?? null : null),
     [theaterPostId, allPosts],
   );
-  const allTags  = useMemo(() => {
-    const seen = new Set(STATIC_TAGS);
-    userPosts.flatMap((p) => p.tags).forEach((t) => seen.add(t));
-    return Array.from(seen);
-  }, [userPosts]);
-  const displayPosts = activeTag ? allPosts.filter((p) => p.tags.includes(activeTag)) : allPosts;
+  const displayPosts = useMemo(() => {
+    const base = activeTag ? allPosts.filter((p) => p.tags.includes(activeTag)) : allPosts;
+    if (feedSort === "latest") return base;
+    if (feedSort === "popular") {
+      return [...base].sort((a, b) => {
+        const aL = a.likes + (likedPostIds.includes(a.id) ? 1 : 0);
+        const bL = b.likes + (likedPostIds.includes(b.id) ? 1 : 0);
+        return bL - aL;
+      });
+    }
+    // Trending: (likes + 1) / (hoursAgo + 2)^1.5
+    const now = Date.now();
+    return [...base].sort((a, b) => {
+      const aAge = a.createdAt ? (now - a.createdAt) / 3_600_000 : 48;
+      const bAge = b.createdAt ? (now - b.createdAt) / 3_600_000 : 48;
+      const aL   = a.likes + (likedPostIds.includes(a.id) ? 1 : 0);
+      const bL   = b.likes + (likedPostIds.includes(b.id) ? 1 : 0);
+      const aScore = (aL + 1) / Math.pow(aAge + 2, 1.5);
+      const bScore = (bL + 1) / Math.pow(bAge + 2, 1.5);
+      return bScore - aScore;
+    });
+  }, [activeTag, allPosts, feedSort, likedPostIds]);
 
   // Infinite scroll — load more when sentinel enters viewport
   useEffect(() => {
@@ -267,11 +285,24 @@ export default function DiscoveryFeedPage() {
         </div>
       </div>
 
-      {/* Niche filter bar */}
+      {/* Sort + Niche filter bar */}
       <div className="shrink-0 overflow-x-auto border-b border-white/8 px-4 py-2 scrollbar-none">
         <div className="flex gap-1.5" style={{ width: "max-content" }}>
+          {/* Sort pills — always visible at start */}
+          {(["latest", "popular", "trending"] as const).map((s) => (
+            <button key={s} onClick={() => setFeedSort(s)}
+              className={`whitespace-nowrap rounded-full px-5 py-2 text-sm font-bold uppercase tracking-widest transition-colors ${
+                feedSort === s
+                  ? s === "trending" ? "bg-orange-500/25 text-orange-200 ring-1 ring-orange-500/40"
+                    : s === "popular" ? "bg-red-500/20 text-red-300 ring-1 ring-red-500/35"
+                    : "bg-purple-500/28 text-purple-200 ring-1 ring-purple-500/40"
+                  : "bg-white/5 text-white/40 hover:bg-white/12 hover:text-white/65"
+              }`}
+            >{s === "trending" ? "🔥 Trending" : s === "popular" ? "❤️ Popular" : "Latest"}</button>
+          ))}
+          <div className="mx-1 w-px self-stretch bg-white/10" />
           <Chip label="All" active={!activeTag} onClick={() => setActiveTag(null)} />
-          {allTags.map((tag) => (
+          {OFFICIAL_CATEGORIES.map((tag) => (
             <Chip key={tag} label={tag} active={activeTag === tag} onClick={() => setActiveTag(activeTag === tag ? null : tag)} />
           ))}
         </div>
@@ -287,7 +318,7 @@ export default function DiscoveryFeedPage() {
               {displayPosts.map((post) => (
                 <FeedPostCard
                   key={post.id} post={post}
-                  onOpen={() => setTheaterPostId(post.id)}
+                  onOpen={() => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
                   onRemix={() => handleRemix(post)}
                   onImport={() => handleImport(post)}
                   onCreator={() => router.push(`/profile/${post.user.handle}`)}
@@ -316,6 +347,12 @@ export default function DiscoveryFeedPage() {
           onClose={() => setTheaterPostId(null)}
           onRemix={() => { handleRemix(theaterPost!); setTheaterPostId(null); }}
           onCreator={() => { router.push(`/profile/${theaterPost!.user.handle}`); setTheaterPostId(null); }}
+          onHashtagClick={(tag) => {
+            const normalised = tag.startsWith("#") ? tag : `#${tag}`;
+            setTheaterPostId(null);
+            setActiveTag(normalised);
+            scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+          }}
           allPosts={allPosts}
           onNavigate={(p) => setTheaterPostId(p.id)}
         />
