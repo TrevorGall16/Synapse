@@ -42,12 +42,9 @@ interface CellProps {
   onCreator: () => void;
   onHashtagClick: (tag: string) => void;
   globalMuted: boolean;
-  /** Registration callback: TheaterCell calls this with its play-controller so TheaterMode's
-   *  IntersectionObserver can drive play/pause through the correct React state path. */
-  onShouldPlay?: (registerCtrl: (play: boolean) => void) => void;
 }
 
-function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, globalMuted, onShouldPlay }: CellProps) {
+function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, globalMuted }: CellProps) {
   const videoRef       = useRef<HTMLVideoElement>(null);
   const mountedRef     = useRef(true);
   const rafRef         = useRef<number | null>(null);
@@ -64,6 +61,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   /** Set to true by the gesture useLayoutEffect so the boot useEffect skips its reset */
   const gesturePlayedRef = useRef(false);
   const blurVideoRef   = useRef<HTMLVideoElement>(null);
+  const animationRef   = useRef<number | null>(null);
 
   const [progress, setProgress]           = useState(0);
   const [isPlaying, setIsPlaying]         = useState(false);
@@ -233,33 +231,21 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
       lastTsRef.current = 0;
       rafRef.current = requestAnimationFrame(tick);
     } else {
-      // Simple-video posts: frame-accurate loop check at 60Hz
-      const demoStart = post.demoStartTime ?? 0;
-      const demoDur   = post.demoDuration  ?? 0;
-      let frame = 0;
-      const loopCheck = () => {
-        const v = videoRef.current;
-        // Wait for HAVE_METADATA (readyState >= 1) before trusting currentTime / duration
-        if (!v || v.readyState < 1) { rafRef.current = requestAnimationFrame(loopCheck); return; }
-        if (!v.paused) {
-          const loopEnd = demoDur > 0 ? demoStart + demoDur : 0; // 0 = no rAF snap (ended handles it)
-          if (loopEnd > 0 && v.currentTime >= loopEnd) {
-            // Gate FX before seek — prevents strobe/glitch artifact on the loop frame
-            v.style.filter = ""; v.style.animation = "";
-            v.currentTime = demoStart;
-            const bv = blurVideoRef.current; if (bv) bv.currentTime = demoStart;
-          }
-          // Throttle React state update to ~15fps to avoid 60 re-renders/sec
-          if (++frame % 4 === 0) {
-            const effDur = demoDur > 0 ? demoDur : v.duration;
-            if (effDur > 0) setProgress((v.currentTime - demoStart) / effDur);
-          }
+      // Simple-video posts: drive progress bar from native currentTime/duration
+      const updateProgress = () => {
+        if (!videoRef.current) return;
+        const { currentTime, duration } = videoRef.current;
+        if (duration > 0 && !isNaN(duration)) {
+          setProgress((currentTime / duration) * 100);
         }
-        rafRef.current = requestAnimationFrame(loopCheck);
+        animationRef.current = requestAnimationFrame(updateProgress);
       };
-      rafRef.current = requestAnimationFrame(loopCheck);
+      animationRef.current = requestAnimationFrame(updateProgress);
     }
-    return () => { if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; } };
+    return () => {
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      if (animationRef.current) { cancelAnimationFrame(animationRef.current); animationRef.current = null; }
+    };
   }, [isPlaying, snapshotClips.length, tick, post.demoStartTime, post.demoDuration]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Boot: load first clip or simple videoUrl
@@ -381,44 +367,15 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   const togglePlay = useCallback(() => {
     if (clipsRef.current.length === 0) {
       const v = videoRef.current; if (!v) return;
-      if (isPlayingRef.current) { v.pause(); setIsPlaying(false); }
+      if (isPlayingRef.current) { v.pause(); }
       else {
         v.play()
-          .then(() => { setIsPlaying(true); setShowPlayOverlay(false); })
-          .catch(() => {});
+          .then(() => { setShowPlayOverlay(false); })
+          .catch((err: Error) => { console.warn("[Theater togglePlay BLOCKED]", err.name, err.message); });
       }
     } else { setIsPlaying((p) => !p); }
   }, []);
 
-  // Expose a play/pause controller to the parent (IntersectionObserver path).
-  // For snapshot posts this sets React state so the rAF tick loop starts/stops;
-  // for simple-video posts it drives the <video> element directly.
-  const ioPlayRef = useRef<((shouldPlay: boolean) => void) | null>(null);
-  useEffect(() => {
-    ioPlayRef.current = (shouldPlay: boolean) => {
-      if (shouldPlay) {
-        if (clipsRef.current.length > 0) {
-          // Snapshot post — start the rAF tick so syncClip loads + plays the clip
-          if (!isPlayingRef.current) setIsPlaying(true);
-        } else {
-          const v = videoRef.current; if (!v) return;
-          v.muted = true; // ensure muted before play — React prop unreliable
-          v.play()
-            .then(() => { if (mountedRef.current) { setIsPlaying(true); setVideoVisible(true); setShowPlayOverlay(false); blurVideoRef.current?.play().catch(() => {}); } })
-            .catch(() => { if (mountedRef.current) setShowPlayOverlay(true); });
-        }
-      } else {
-        if (clipsRef.current.length > 0) {
-          setIsPlaying(false);
-        } else {
-          const v = videoRef.current; if (!v) return;
-          v.pause(); v.currentTime = 0; setIsPlaying(false);
-        }
-      }
-    };
-    if (onShouldPlay) onShouldPlay((shouldPlay: boolean) => { ioPlayRef.current?.(shouldPlay); });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onShouldPlay]);
 
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -447,6 +404,9 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   const remixAllowed = post.allowRemix !== false;
   // Resolved src for the main video element — undefined for snapshot posts (src set imperatively)
   const stableSrc = !post.projectSnapshot && post.videoUrl ? post.videoUrl : undefined;
+  if (!post.projectSnapshot && post.videoUrl && !stableSrc) {
+    console.error("[Theater] stableSrc resolved to undefined despite videoUrl being set", { postId: post.id, videoUrl: post.videoUrl });
+  }
 
   return (
     <div ref={cellRef} className="relative flex h-screen w-full snap-start items-center justify-center bg-black">
@@ -483,7 +443,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
             src={stableSrc}
             muted playsInline autoPlay loop preload="auto"
             aria-hidden
-            className="pointer-events-none absolute inset-0 z-[0] h-full w-full object-cover opacity-60 blur-[80px]"
+            className="pointer-events-none absolute inset-0 z-[0] h-full w-full object-cover opacity-50 blur-3xl scale-110"
           />
         )}
 
@@ -494,6 +454,8 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
           ref={videoRef}
           src={stableSrc}
           muted={true} autoPlay playsInline preload="auto"
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
           onError={() => setMediaError(true)}
           onLoadedMetadata={() => {
             const v = videoRef.current; if (!v) return;
@@ -535,17 +497,17 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
           return r ? <div key={c.id} className="pointer-events-none absolute inset-0 z-[8]"><span style={r.style}>{r.displayText}</span></div> : null;
         })}
 
-        <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{ height: "35%", background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }} />
+        <div className="absolute bottom-0 left-0 right-0 z-[35] pointer-events-none" style={{ height: "35%", background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }} />
 
         {/* Play/Pause tap zone */}
-        <button onClick={togglePlay} className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+        <button onClick={togglePlay} className="absolute inset-0 z-[20] flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/25 bg-black/45 backdrop-blur-sm">
             {isPlaying ? <Pause size={24} className="text-white" fill="white" /> : <Play size={24} className="ml-1 text-white" fill="white" />}
           </div>
         </button>
 
         {/* Badges top-left */}
-        <div className="absolute left-3 top-3 flex items-center gap-1.5">
+        <div className="absolute left-3 top-3 z-[40] flex items-center gap-1.5">
           {post.featured && <span className="rounded-full bg-amber-400/90 px-2 py-0.5 text-[9px] font-bold uppercase text-black">Hot</span>}
           {post.duration !== "—" && <span className="rounded-full bg-black/60 px-2 py-0.5 text-[9px] tabular-nums text-white/70 backdrop-blur-sm">{post.duration}</span>}
           {isBlobPost && <span className="rounded-full bg-orange-500/70 px-2 py-0.5 text-[9px] font-semibold text-white backdrop-blur-sm">Local</span>}
@@ -575,7 +537,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
         )}
 
         {/* Info overlay */}
-        <div className="absolute bottom-8 left-4 right-20 pr-2">
+        <div className="absolute bottom-8 left-4 right-20 z-[40] pr-2">
           {/* div + role="button" avoids nested-button hydration error (Follow btn is inside) */}
           <div role="button" tabIndex={0} onClick={onCreator} onKeyDown={(e) => e.key === "Enter" && onCreator()} className="mb-2 flex cursor-pointer items-center gap-2.5">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white/25" style={{ background: `hsl(${post.user.hue} 55% 28%)` }}>{post.user.initial}</div>
@@ -605,7 +567,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
         </div>
 
         {/* Action column — right sidebar, bottom-aligned, clear of top controls and scrubber */}
-        <div className="absolute bottom-14 right-3 flex flex-col items-center gap-3">
+        <div className="absolute bottom-14 right-3 z-[40] flex flex-col items-center gap-3">
           <button onClick={() => toggleLike(post.id)} className="flex flex-col items-center gap-1">
             <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${liked ? "border-red-500/40 bg-red-500/30" : "border-white/15 bg-black/40 hover:bg-white/12"}`}>
               <Heart size={20} className={liked ? "fill-red-400 text-red-400" : "text-white"} />
@@ -638,8 +600,8 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
         </div>
 
         {/* Scrubber */}
-        <div onClick={handleSeek} className="absolute bottom-0 left-0 right-0 h-2 cursor-pointer bg-white/15 hover:h-3 transition-all">
-          <div className="h-full rounded-r-full transition-none" style={{ width: `${progress * 100}%`, background: post.accent }} />
+        <div onClick={handleSeek} className="absolute bottom-0 left-0 right-0 z-[40] h-2 cursor-pointer bg-white/15 hover:h-3 transition-all">
+          <div className="h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: post.accent }} />
         </div>
       </div>
     </div>
@@ -667,8 +629,6 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
   const elementToPid            = useRef<WeakMap<HTMLDivElement, string>>(new WeakMap());
   const observerRef             = useRef<IntersectionObserver | null>(null);
   const activeVideoRef          = useRef<HTMLVideoElement | null>(null);
-  /** Maps post.id → the play-controller registered by TheaterCell via onShouldPlay */
-  const cellPlayCtrl            = useRef<Map<string, (play: boolean) => void>>(new Map());
 
   // Rebuild queue when seed post changes
   useEffect(() => { setQueue(buildQueue(post, allPosts)); }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -701,26 +661,13 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
       (entries) => {
         for (const entry of entries) {
           const pid = elementToPid.current.get(entry.target as HTMLDivElement);
-          const ctrl = pid ? cellPlayCtrl.current.get(pid) : undefined;
+          const video = entry.target.querySelector("video") as HTMLVideoElement | null;
           if (entry.isIntersecting) {
-            const video = entry.target.querySelector("video") as HTMLVideoElement | null;
             if (video) activeVideoRef.current = video;
             if (pid) setActivePostId(pid);
-            // Use the cell's own play controller so snapshot posts start their rAF tick.
-            // Fall back to direct video.play() only if the controller hasn't registered yet
-            // (e.g. the cell just mounted and the useEffect hasn't fired).
-            if (ctrl) {
-              ctrl(true);
-            } else {
-              video?.play().catch(() => {});
-            }
+            video?.play().catch(() => {});
           } else {
-            if (ctrl) {
-              ctrl(false);
-            } else {
-              const video = entry.target.querySelector("video") as HTMLVideoElement | null;
-              if (video) { video.pause(); video.currentTime = 0; }
-            }
+            if (video) { video.pause(); video.currentTime = 0; }
           }
         }
       },
@@ -753,14 +700,8 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
       observerRef.current?.observe(el);
     } else {
       cellRefs.current.delete(postId);
-      cellPlayCtrl.current.delete(postId);
       // WeakMap self-cleans when el is GC'd — no delete needed
     }
-  }, []);
-
-  /** Called by TheaterCell once its play controller is ready; maps postId → controller */
-  const setPlayCtrl = useCallback((postId: string) => (ctrl: (play: boolean) => void) => {
-    cellPlayCtrl.current.set(postId, ctrl);
   }, []);
 
   const activePost = useMemo(() => queue.find((p) => p.id === activePostId) ?? queue[0], [queue, activePostId]);
@@ -874,7 +815,6 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
             onCreator={onCreator}
             onHashtagClick={onHashtagClick ?? (() => {})}
             globalMuted={muted}
-            onShouldPlay={setPlayCtrl(p.id)}
           />
         ))}
       </div>

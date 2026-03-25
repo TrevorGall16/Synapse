@@ -88,13 +88,18 @@ export const useUserStore = create<UserState>()(
               }
             : DEFAULT_PROFILE);
         const s = state as (UserState & Record<string, unknown>) | undefined;
-        useUserStore.setState({
-          hasHydrated: true,
-          profile: migratedProfile,
-          xp:       (s?.xp       as number) ?? 0,
-          level:    (s?.level    as number) ?? 0,
-          rankName: (s?.rankName as string) ?? "Novice",
-          streak:   (s?.streak   as number) ?? 0,
+        // queueMicrotask defers until after create() returns and useUserStore is
+        // fully assigned — prevents TDZ ReferenceError when localStorage
+        // rehydration fires synchronously during store initialization.
+        queueMicrotask(() => {
+          useUserStore.setState({
+            hasHydrated: true,
+            profile: migratedProfile,
+            xp:       (s?.xp       as number) ?? 0,
+            level:    (s?.level    as number) ?? 0,
+            rankName: (s?.rankName as string) ?? "Novice",
+            streak:   (s?.streak   as number) ?? 0,
+          });
         });
       },
     }
