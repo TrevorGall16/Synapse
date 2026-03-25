@@ -2,8 +2,11 @@
 
 import { useMemo, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Zap, GitBranch, Flame, Sparkles, Download, BookMarked } from "lucide-react";
+import { Zap, GitBranch, Sparkles, Download, BookMarked } from "lucide-react";
 import { PresetShowcase } from "@/components/explore/PresetShowcase";
+import { StatsGrid } from "@/components/explore/stats-grid";
+import { getTrendingData } from "@/lib/stats";
+import { TheaterMode } from "@/components/feed/theater-mode";
 import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { retainMedia } from "@/lib/store/media-pool-db";
@@ -53,23 +56,13 @@ const COMMUNITY_POSTS: FeedPost[] = [
   { id: "cx8", user: { handle: "bpmviz",      initial: "B", hue: 45  }, title: "Beat-Sync Flash Grid",      tags: ["#dnb","#reactive"],       bg: "#180e00", accent: "#fb923c", duration: "0:48", likes: 3027, comments: 184, featured: false, allowRemix: true },
 ];
 
-// ── Trending FX (mock — represents last-24h usage counts) ─────────────────────
-const TRENDING_FX = [
-  { name: "Glitch",          count: 47, color: "#ec4899" },
-  { name: "Blur",            count: 38, color: "#06b6d4" },
-  { name: "Color Shift",     count: 29, color: "#a855f7" },
-  { name: "Strobe",          count: 22, color: "#f59e0b" },
-  { name: "Pixel Sort",      count: 18, color: "#22c55e" },
-  { name: "Scan Lines",      count: 14, color: "#38bdf8" },
-  { name: "Chromatic Aber.", count: 11, color: "#fb923c" },
-  { name: "VHS Grain",       count:  9, color: "#ef4444" },
-];
 
 // ── Template card ──────────────────────────────────────────────────────────────
-function TemplateCard({ post, onRemix, onImport }: { post: FeedPost; onRemix: () => void; onImport: () => void }) {
+function TemplateCard({ post, onRemix, onImport, onOpen }: { post: FeedPost; onRemix: () => void; onImport: () => void; onOpen: () => void }) {
   return (
-    <article className="group relative overflow-hidden rounded-xl border border-white/8 transition-all hover:border-white/20 hover:-translate-y-0.5"
-      style={{ background: post.bg }}>
+    <article className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all duration-300 ease-out hover:border-white/20 hover:-translate-y-0.5 hover:scale-[1.02]"
+      style={{ background: post.bg }}
+      onClick={onOpen}>
       <div className="relative" style={{ aspectRatio: "9/16" }}>
         {post.videoUrl ? (
           <video src={post.videoUrl} muted loop playsInline preload="metadata"
@@ -103,11 +96,11 @@ function TemplateCard({ post, onRemix, onImport }: { post: FeedPost; onRemix: ()
             ))}
           </div>
           <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={onImport}
+            <button onClick={(e) => { e.stopPropagation(); onImport(); }}
               className="flex items-center justify-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 text-[10px] font-semibold text-white/60 transition-all hover:bg-white/8 active:scale-95">
               <Download size={9} />Import
             </button>
-            <button onClick={onRemix}
+            <button onClick={(e) => { e.stopPropagation(); onRemix(); }}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
               style={{ background: `${post.accent}cc`, boxShadow: `0 0 12px ${post.accent}50` }}>
               <Zap size={9} />Remix This
@@ -125,6 +118,8 @@ const SWATCH_KF = `
 @keyframes ep-jitter { 0%,100%{transform:none} 25%{transform:translateX(-4px) skewX(-5deg)} 75%{transform:translateX(4px) skewX(5deg)} }
 @keyframes ep-warp { 0%,100%{transform:scaleX(1) scaleY(1)} 50%{transform:scaleX(1.07) scaleY(0.94)} }
 @keyframes ep-hue { 0%{filter:hue-rotate(0deg) saturate(1.5)} 100%{filter:hue-rotate(360deg) saturate(1.5)} }
+@keyframes ep-showcase-in { from{opacity:0;transform:scale(1.04)} to{opacity:1;transform:scale(1)} }
+@keyframes ep-theater-in  { from{opacity:0;transform:scale(1.06)} to{opacity:1;transform:scale(1)} }
 `;
 function explorerSwatchAnim(category: string): string {
   switch (category) {
@@ -169,7 +164,7 @@ function PresetExploreCard({
 
   return (
     <div
-      className="group relative flex cursor-pointer flex-col gap-2 rounded-xl border border-white/8 bg-white/3 p-3 transition-all hover:border-white/20 hover:bg-white/6"
+      className="group relative flex cursor-pointer flex-col gap-2 rounded-xl border border-white/8 bg-white/3 p-3 transition-all duration-300 ease-out hover:border-white/20 hover:bg-white/6 hover:scale-[1.02]"
       onClick={onShowcase}
     >
       {/* Thumbnail: video frame if available, else animated swatch */}
@@ -243,22 +238,6 @@ function PresetExploreCard({
   );
 }
 
-// ── FX chip ────────────────────────────────────────────────────────────────────
-function FxChip({ name, count, color }: { name: string; count: number; color: string }) {
-  const maxCount = TRENDING_FX[0].count;
-  return (
-    <div className="flex shrink-0 flex-col gap-1.5 rounded-xl border border-white/8 bg-white/4 px-4 py-3 min-w-[96px]">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold text-white">{name}</span>
-        <span className="text-[10px] font-bold tabular-nums" style={{ color }}>{count}</span>
-      </div>
-      <div className="h-1 rounded-full bg-white/8">
-        <div className="h-full rounded-full transition-all" style={{ width: `${(count / maxCount) * 100}%`, background: color }} />
-      </div>
-      <span className="text-[9px] text-white/30">uses · last 24h</span>
-    </div>
-  );
-}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function ExplorePage() {
@@ -274,9 +253,16 @@ export default function ExplorePage() {
     post: FeedPost | null;
     accent?: string;
   } | null>(null);
+  const [theaterPost, setTheaterPost] = useState<FeedPost | null>(null);
 
   // Video posts only — exclude preset-type posts from the video grid
   const videoUserPosts = useMemo(() => userPosts.filter((p) => !p.type || p.type === "video"), [userPosts]);
+
+  // Live stats derived from all posts (user + community mock)
+  const stats = useMemo(
+    () => getTrendingData([...videoUserPosts, ...userPosts.filter((p) => p.type === "preset"), ...COMMUNITY_POSTS]),
+    [videoUserPosts, userPosts],
+  );
 
   // Merge all published user video posts with community posts (no allowRemix filter)
   const templates = useMemo(() => {
@@ -373,6 +359,12 @@ export default function ExplorePage() {
   // Feed posts that are presets
   const feedPresets = userPosts.filter((p) => p.type === "preset" && p.presetData);
 
+  const handleStudioLoad = (p: FeedPost) => {
+    if (p.projectSnapshot) openProjectInTab({ ...p.projectSnapshot, name: p.title });
+    setTheaterPost(null);
+    router.push("/studio");
+  };
+
   const handleImport = (post: FeedPost) => {
     const snap = post.projectSnapshot;
     const origMedia = snap?.mediaPool?.find((m) => m.type === "video");
@@ -413,20 +405,16 @@ export default function ExplorePage() {
         </div>
       </div>
 
+      {/* Keyframes — always rendered so showcase animation works in both views */}
+      <style dangerouslySetInnerHTML={{ __html: SWATCH_KF }} />
+
       <div className="px-5 py-5">
         {view === "videos" ? (
           <>
-            {/* Trending FX section */}
+            {/* Live stats grid */}
             <div className="mb-6">
-              <div className="mb-3 flex items-center gap-2">
-                <Flame size={11} className="text-orange-400" />
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Trending FX · Last 24 Hours</p>
-              </div>
-              <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
-                {TRENDING_FX.map((fx) => (
-                  <FxChip key={fx.name} name={fx.name} count={fx.count} color={fx.color} />
-                ))}
-              </div>
+              <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-white/40">Community Trends</p>
+              <StatsGrid data={stats} />
             </div>
 
             {/* Template grid */}
@@ -437,14 +425,12 @@ export default function ExplorePage() {
             </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {templates.map((post) => (
-                <TemplateCard key={post.id} post={post} onRemix={() => handleRemix(post)} onImport={() => handleImport(post)} />
+                <TemplateCard key={post.id} post={post} onRemix={() => handleRemix(post)} onImport={() => handleImport(post)} onOpen={() => setTheaterPost(post)} />
               ))}
             </div>
           </>
         ) : (
           <>
-            <style dangerouslySetInnerHTML={{ __html: SWATCH_KF }} />
-
             {/* Category filter */}
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <div className="flex flex-wrap gap-1.5">
@@ -519,8 +505,9 @@ export default function ExplorePage() {
         )}
       </div>
 
-      {/* Preset Showcase Modal */}
+      {/* Preset Showcase Modal — CSS zoom-out fade on entry */}
       {showcase && (
+        <div style={{ animation: "ep-showcase-in 0.22s cubic-bezier(0.22,1,0.36,1) both" }}>
         <PresetShowcase
           post={showcase.post}
           preset={showcase.preset}
@@ -528,6 +515,25 @@ export default function ExplorePage() {
           onClose={() => setShowcase(null)}
           onSave={handleShowcaseSave}
         />
+        </div>
+      )}
+
+      {/* ── Theater Mode — zoom-out CSS fade on open ──────────────────────── */}
+      {theaterPost && (
+        <div
+          key={theaterPost.id}
+          className="fixed inset-0 z-[100]"
+          style={{ animation: "ep-theater-in 0.28s cubic-bezier(0.22,1,0.36,1) both" }}
+        >
+          <TheaterMode
+            post={theaterPost}
+            onClose={() => setTheaterPost(null)}
+            onRemix={() => handleStudioLoad(theaterPost)}
+            onCreator={() => { setTheaterPost(null); router.push(`/profile/${theaterPost.user.handle}`); }}
+            allPosts={templates}
+            onNavigate={(p) => setTheaterPost(p)}
+          />
+        </div>
       )}
 
       {toast && (

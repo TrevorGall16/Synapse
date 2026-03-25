@@ -91,6 +91,7 @@ export default function DiscoveryFeedPage() {
   const likedPostIds   = useFeedStore((s) => s.likedPostIds);
   const offlineCount   = useFeedStore((s) => s.userPosts.filter((p) => isBlobUrl(p.videoUrl)).length);
   const searchQuery    = useSearchStore((s) => s.searchQuery);
+  const setSearchQuery = useSearchStore((s) => s.setSearchQuery);
   const currentProfile = useUserStore((s) => s.profile);
   const cleanupOffline = useCallback(() => {
     const { userPosts: posts, removePost: rp } = useFeedStore.getState();
@@ -322,9 +323,24 @@ export default function DiscoveryFeedPage() {
             >{s === "trending" ? "🔥 Trending" : s === "popular" ? "❤️ Popular" : "Latest"}</button>
           ))}
           <div className="mx-1 w-px self-stretch bg-white/10" />
-          <Chip label="All" active={!activeTag} onClick={() => setActiveTag(null)} />
+          <Chip label="All" active={!activeTag} onClick={() => {
+            setActiveTag(null);
+            setSearchQuery("");
+            window.history.replaceState(null, "", "/");
+          }} />
           {OFFICIAL_CATEGORIES.map((tag) => (
-            <Chip key={tag} label={tag} active={activeTag === tag} onClick={() => setActiveTag(activeTag === tag ? null : tag)} />
+            <Chip key={tag} label={tag} active={activeTag === tag} onClick={() => {
+              const next = activeTag === tag ? null : tag;
+              setActiveTag(next);
+              if (next) {
+                const term = next.replace(/^#/, "");
+                setSearchQuery(term);
+                window.history.replaceState(null, "", `/?search=${encodeURIComponent(term)}`);
+              } else {
+                setSearchQuery("");
+                window.history.replaceState(null, "", "/");
+              }
+            }} />
           ))}
         </div>
       </div>

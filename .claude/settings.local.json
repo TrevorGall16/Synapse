@@ -35,7 +35,9 @@
       "Bash(grep -l \"TheaterMode\\\\|TheaterCell\\\\|theater\" D:/Projects/Synapse/.next/static/chunks/*.js)",
       "Bash(xargs grep:*)",
       "Bash(grep -l 'DEBUG TRACER' D:/Projects/Synapse/.next/dev/server/chunks/ssr/*.js)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(node:*)",
+      "Bash(echo \"exit:$?\")"
     ]
   }
 }

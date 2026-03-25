@@ -2,25 +2,26 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff } from "lucide-react";
+import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2 } from "lucide-react";
 import { useUserStore, DEFAULT_PROFILE } from "@/lib/store/user-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useProjectsRegistry } from "@/lib/store/projects-registry";
 import { TheaterMode } from "@/components/feed/theater-mode";
 import { cleanupSnapshotMedia } from "@/lib/store/media-pool-db";
+import { getTrendingData } from "@/lib/stats";
 
 // ── Mock creator profiles ─────────────────────────────────────────────────────
-const CREATOR_MAP: Record<string, { displayName: string; bio: string; hue: number; followers: number; following: number; postCount: number }> = {
-  aurora_vj:   { displayName: "Aurora VJ",   bio: "Strobing visuals & hypnotic loops.",              hue: 270, followers: 8420,  following: 312, postCount: 47 },
-  neon_cut:    { displayName: "Neon Cut",     bio: "RGB splits and glitch art. EDM edit machine.",    hue: 340, followers: 5130,  following: 198, postCount: 31 },
-  spectral_x:  { displayName: "Spectral X",  bio: "Psy visuals, tunnel loops, trippy transitions.",  hue: 200, followers: 11200, following: 427, postCount: 63 },
-  "hue.shift": { displayName: "Hue Shift",   bio: "Chromatic aberration and VFX packs.",             hue: 30,  followers: 2980,  following: 155, postCount: 18 },
-  "deep.freq": { displayName: "Deep Freq",   bio: "Pixel sorting, lo-fi, experimental cuts.",        hue: 150, followers: 6740,  following: 281, postCount: 39 },
-  void_signal: { displayName: "Void Signal", bio: "Industrial noise, infrared palette.",             hue: 0,   followers: 4890,  following: 167, postCount: 28 },
-  prismatic:   { displayName: "Prismatic",   bio: "Kaleidoscope edits, ambient crossfades.",         hue: 300, followers: 14300, following: 503, postCount: 82 },
-  "lo.form":   { displayName: "Lo Form",     bio: "Retrowave, VHS grain, scan-line aesthetics.",     hue: 185, followers: 3720,  following: 224, postCount: 22 },
-  bpmviz:      { displayName: "BPM Viz",     bio: "Beat-synced flash grids. DnB reactive visuals.",  hue: 45,  followers: 9160,  following: 390, postCount: 54 },
+const CREATOR_MAP: Record<string, { displayName: string; bio: string; hue: number; followers: number; following: number; postCount: number; totalLikes: number; remixes: number }> = {
+  aurora_vj:   { displayName: "Aurora VJ",   bio: "Strobing visuals & hypnotic loops.",              hue: 270, followers: 8420,  following: 312, postCount: 47, totalLikes: 2600,  remixes: 12 },
+  neon_cut:    { displayName: "Neon Cut",     bio: "RGB splits and glitch art. EDM edit machine.",    hue: 340, followers: 5130,  following: 198, postCount: 31, totalLikes: 1400,  remixes: 8  },
+  spectral_x:  { displayName: "Spectral X",  bio: "Psy visuals, tunnel loops, trippy transitions.",  hue: 200, followers: 11200, following: 427, postCount: 63, totalLikes: 4800,  remixes: 21 },
+  "hue.shift": { displayName: "Hue Shift",   bio: "Chromatic aberration and VFX packs.",             hue: 30,  followers: 2980,  following: 155, postCount: 18, totalLikes: 690,   remixes: 4  },
+  "deep.freq": { displayName: "Deep Freq",   bio: "Pixel sorting, lo-fi, experimental cuts.",        hue: 150, followers: 6740,  following: 281, postCount: 39, totalLikes: 2100,  remixes: 11 },
+  void_signal: { displayName: "Void Signal", bio: "Industrial noise, infrared palette.",             hue: 0,   followers: 4890,  following: 167, postCount: 28, totalLikes: 1350,  remixes: 6  },
+  prismatic:   { displayName: "Prismatic",   bio: "Kaleidoscope edits, ambient crossfades.",         hue: 300, followers: 14300, following: 503, postCount: 82, totalLikes: 7800,  remixes: 31 },
+  "lo.form":   { displayName: "Lo Form",     bio: "Retrowave, VHS grain, scan-line aesthetics.",     hue: 185, followers: 3720,  following: 224, postCount: 22, totalLikes: 930,   remixes: 5  },
+  bpmviz:      { displayName: "BPM Viz",     bio: "Beat-synced flash grids. DnB reactive visuals.",  hue: 45,  followers: 9160,  following: 390, postCount: 54, totalLikes: 3650,  remixes: 17 },
 };
 const MOCK_ACCENT: Record<string, string> = {
   aurora_vj: "#7c3aed", neon_cut: "#ec4899", spectral_x: "#06b6d4", "hue.shift": "#f59e0b",
@@ -71,7 +72,7 @@ function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, 
   }, [firstClipOffset]);
 
   return (
-    <article className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all hover:border-white/20 hover:-translate-y-0.5"
+    <article className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all duration-300 ease-out hover:scale-[1.02] hover:border-white/20"
       onClick={onOpen} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
       <div className="relative" style={{ aspectRatio: "9/16", background: bgColor }}>
         {/* Delete confirmation overlay */}
@@ -219,6 +220,22 @@ export default function ProfilePage() {
   const mockCount = isOwnProfile ? 0 : (creator?.postCount ?? 0);
   const pubCount  = isOwnProfile ? unifiedPosts.length : mockCount;
 
+  // ── Stats from lib/stats.ts (own profile) or CREATOR_MAP (mock) ──────────
+  const profileStats = useMemo(() => getTrendingData(
+    isOwnProfile ? allUserPosts : []
+  ), [allUserPosts, isOwnProfile]);
+
+  const totalLikes = useMemo(() => {
+    if (!isOwnProfile) return CREATOR_MAP[username]?.totalLikes ?? 0;
+    return (profileStats.creators[0]?.totalLikes) ?? allUserPosts.reduce((s, p) => s + p.likes, 0);
+  }, [profileStats, allUserPosts, isOwnProfile, username]);
+
+  const recipeUses = useMemo(() => {
+    if (!isOwnProfile) return CREATOR_MAP[username]?.remixes ?? 0;
+    const myHandle = currentUser.username;
+    return allUserPosts.filter((p) => p.remixedFromHandle === myHandle || p.remixedFromHandle === "you").length;
+  }, [allUserPosts, isOwnProfile, username, currentUser.username]);
+
   // ── Loading gate — AFTER all hook declarations ────────────────────────────
   if (isOwnProfile && (!storeProfile || !hasHydrated) && !forceRender) return (
     <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
@@ -278,27 +295,62 @@ export default function ProfilePage() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* Banner */}
-        <div className="relative h-32 shrink-0" style={{ background: `linear-gradient(135deg, ${bannerBg}, ${accent}22)` }}>
-          <div className="absolute inset-0 opacity-10"
+        {/* ── High-sensation banner ──────────────────────────────────────────── */}
+        <div className="relative h-44 shrink-0 overflow-hidden"
+          style={{ background: `linear-gradient(135deg, ${bannerBg} 0%, ${accent}28 55%, ${bannerBg} 100%)` }}>
+          {/* diagonal grid */}
+          <div className="absolute inset-0 opacity-[0.07]"
             style={{ backgroundImage: `repeating-linear-gradient(45deg, ${accent} 0px, ${accent} 1px, transparent 1px, transparent 20px)` }} />
+          {/* chromatic aberration blobs */}
+          <div className="pointer-events-none absolute inset-0" style={{ mixBlendMode: "screen" }}>
+            <div className="absolute h-64 w-64 rounded-full"
+              style={{ top: "-15%", right: "10%", background: `radial-gradient(circle, ${accent}55 0%, transparent 70%)`, filter: "blur(52px)", transform: "translate(5px,-3px)" }} />
+            <div className="absolute h-72 w-72 rounded-full"
+              style={{ bottom: "-25%", left: "8%",  background: `radial-gradient(circle, ${accent}30 0%, transparent 70%)`, filter: "blur(64px)", transform: "translate(-4px,4px)" }} />
+          </div>
+          {/* SVG fractalNoise grain */}
+          <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.07]" xmlns="http://www.w3.org/2000/svg">
+            <filter id="pg-grain">
+              <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" stitchTiles="stitch" />
+              <feColorMatrix type="saturate" values="0" />
+            </filter>
+            <rect width="100%" height="100%" filter="url(#pg-grain)" />
+          </svg>
         </div>
 
-        {/* Avatar + info */}
-        <div className="relative px-6 pb-5">
-          <div className="relative -mt-8 mb-3 flex items-end justify-between">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold text-white ring-[3px] ring-[#141414]"
-              style={{ background: `hsl(${profile.hue} 55% 32%)` }}>
+        {/* ── Avatar + info ──────────────────────────────────────────────────── */}
+        <div className="relative px-6 pb-5" style={{ animation: "profile-card-in 0.34s cubic-bezier(0.22,1,0.36,1) both" }}>
+          <div className="relative -mt-9 mb-3 flex items-end justify-between">
+            {/* Avatar — larger ring, slight shadow glow */}
+            <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full text-2xl font-bold text-white ring-4 ring-[#141414]"
+              style={{ background: `hsl(${profile.hue} 55% 32%)`, boxShadow: `0 0 24px ${accent}44` }}>
               {profile.displayName[0].toUpperCase()}
             </div>
+            {/* ── Action buttons ─────────────────────────────────────────── */}
             {isOwnProfile ? (
-              <button onClick={() => setShowEdit(true)} className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/70 transition-colors hover:bg-white/14">
-                <Edit3 size={11} />Edit Profile
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setShowEdit(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/70 transition-all duration-200 hover:scale-[1.02] hover:bg-white/14">
+                  <Edit3 size={11} />Edit Profile
+                </button>
+                <button onClick={() => setTab("drafts")}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-transparent px-3 py-1.5 text-[11px] font-semibold text-white/40 transition-all duration-200 hover:scale-[1.02] hover:bg-white/8 hover:text-white/60">
+                  <Edit3 size={11} />Drafts
+                </button>
+              </div>
             ) : (
-              <button className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold text-white transition-colors" style={{ background: `${accent}cc` }}>
-                <Users size={11} />Follow
-              </button>
+              <div className="flex gap-2">
+                <button
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold text-white transition-all duration-200 hover:scale-[1.02]"
+                  style={{ background: `${accent}cc` }}>
+                  <Users size={11} />Follow
+                </button>
+                <button
+                  className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/60 transition-all duration-200 hover:scale-[1.02] hover:bg-white/14"
+                  onClick={() => { if (navigator.share) navigator.share({ title: profile.displayName, url: window.location.href }).catch(() => {}); else navigator.clipboard.writeText(window.location.href).catch(() => {}); }}>
+                  <Share2 size={11} />Share
+                </button>
+              </div>
             )}
           </div>
 
@@ -306,7 +358,8 @@ export default function ProfilePage() {
           <p className="text-[11px] text-white/45">@{username}</p>
           <p className="mt-1.5 text-xs text-white/65">{profile.bio}</p>
 
-          <div className="mt-3 flex items-center gap-5">
+          {/* ── Stats row ────────────────────────────────────────────────── */}
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-bold text-white">{profile.followers >= 1000 ? `${(profile.followers / 1000).toFixed(1)}k` : profile.followers}</span>
               <span className="text-[11px] text-white/40">Followers</span>
@@ -315,9 +368,20 @@ export default function ProfilePage() {
               <span className="text-sm font-bold text-white">{profile.following}</span>
               <span className="text-[11px] text-white/40">Following</span>
             </div>
+            <div className="mx-0.5 h-3 w-px self-center bg-white/12" />
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-bold text-white">{pubCount}</span>
-              <span className="text-[11px] text-white/40">Published</span>
+              <span className="text-[11px] text-white/40">Posts</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-bold text-white" style={{ color: `${accent}` }}>
+                {totalLikes >= 1000 ? `${(totalLikes / 1000).toFixed(1)}k` : totalLikes}
+              </span>
+              <span className="text-[11px] text-white/40">Likes</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm font-bold text-white">{recipeUses}</span>
+              <span className="text-[11px] text-white/40">Remixes</span>
             </div>
           </div>
         </div>
@@ -381,6 +445,13 @@ export default function ProfilePage() {
           )}
         </div>
       </div>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes profile-card-in {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      ` }} />
     </div>
   );
 }
