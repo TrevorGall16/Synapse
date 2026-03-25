@@ -51,9 +51,9 @@ export interface FeedPost {
   rootParentHandle?: string;
   /** Unix ms timestamp of publication — used for sorting on Profile page */
   createdAt?: number;
-  /** For preset demo videos: the second offset to start looping from (default 0) */
+  /** Playback start offset in MICROSECONDS (1s = 1_000_000) */
   demoStartTime?: number;
-  /** Duration of the demo loop window in seconds — if set, video loops demoStartTime…demoStartTime+demoDuration */
+  /** Duration of the demo loop window in MICROSECONDS — Theater Mode loops demoStartTime…demoStartTime+demoDuration */
   demoDuration?: number;
   /** Content category — used for feed filtering */
   category?: "high-sensation" | "aesthetic" | "cinematic" | "glitch" | "slow-mo";

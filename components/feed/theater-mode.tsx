@@ -48,7 +48,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   const videoRef       = useRef<HTMLVideoElement>(null);
   const mountedRef     = useRef(true);
   const rafRef         = useRef<number | null>(null);
-  const phRef          = useRef(0);
+  const phRef          = useRef(post.demoStartTime || 0);
   const lastTsRef      = useRef(0);
   const loadedClipRef    = useRef<string | null>(null);
   const loadedClipUrlRef = useRef<string | null>(null); // URL currently loaded in <video>
@@ -58,6 +58,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   const effectClipsRef = useRef<ClipEvent[]>([]);
   const textClipsRef   = useRef<ClipEvent[]>([]);
   const activeAnimRef  = useRef<string | null>(null);
+  const hudRef         = useRef<HTMLDivElement>(null);
   /** Set to true by the gesture useLayoutEffect so the boot useEffect skips its reset */
   const gesturePlayedRef = useRef(false);
   const animationRef   = useRef<number | null>(null);
@@ -136,14 +137,23 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
     const clips = clipsRef.current;
     const v = videoRef.current;
     if (!v) return;
+    const hasMasterClock = !!post.demoDuration;
     const clip = clips.find((c) => ph >= c.startTime && ph < c.startTime + c.duration) ?? null;
     if (!clip) {
-      if (loadedClipRef.current !== null) { v.pause(); loadedClipRef.current = null; loadedClipUrlRef.current = null; setVideoVisible(false); }
+      // When demoDuration controls the loop, don't pause/unload — the playhead may
+      // be between clip boundaries but still within the valid selection window.
+      if (!hasMasterClock && loadedClipRef.current !== null) {
+        v.pause(); loadedClipRef.current = null; loadedClipUrlRef.current = null; setVideoVisible(false);
+      }
       return;
     }
-    if (loadedClipRef.current === clip.id) {
+    // If the same source URL is already loaded, just keep playing — don't reload.
+    // This lets the playhead cross clip boundaries without interrupting playback
+    // when the underlying video file is the same (common in single-video recipes).
+    if (loadedClipRef.current === clip.id || loadedClipUrlRef.current === clip.url) {
       if (v.readyState >= 2) setVideoVisible(true);
       if (isPlayingRef.current && v.paused) v.play().catch(() => {});
+      if (loadedClipRef.current !== clip.id) loadedClipRef.current = clip.id;
       return;
     }
     const { id: clipId, url: clipUrl, startTime: clipStart, mediaOffset: clipOffset = 0, duration: clipDur } = clip;
@@ -163,14 +173,17 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
           if (!mountedRef.current) return;
           setVideoVisible(true);
           if (isPlayingRef.current) v.play().catch(() => {});
-          const guard = () => {
-            if (loadedClipRef.current !== clipId) { v.removeEventListener("timeupdate", guard); return; }
-            if (v.currentTime >= mediaEndSec) {
-              v.removeEventListener("timeupdate", guard);
-              phRef.current = clipStart + clipDur; loadedClipRef.current = null; loadedClipUrlRef.current = null; v.pause();
-            }
-          };
-          v.addEventListener("timeupdate", guard);
+          // timeupdate guard only for multi-clip sequencing without master clock
+          if (!hasMasterClock) {
+            const guard = () => {
+              if (loadedClipRef.current !== clipId) { v.removeEventListener("timeupdate", guard); return; }
+              if (v.currentTime >= mediaEndSec) {
+                v.removeEventListener("timeupdate", guard);
+                phRef.current = clipStart + clipDur; loadedClipRef.current = null; loadedClipUrlRef.current = null; v.pause();
+              }
+            };
+            v.addEventListener("timeupdate", guard);
+          }
         };
         if (v.readyState >= 2) reveal();
         else { const onCp = () => { v.removeEventListener("canplay", onCp); if (loadedClipRef.current === clipId) reveal(); }; v.addEventListener("canplay", onCp); }
@@ -187,31 +200,41 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
       // Guard: never wrap at less than 2 seconds — prevents ghost loops from empty-timeline publishes
       const dur = Math.max(totalDurRef.current, 2_000_000);
       if (dur > 0) {
-        phRef.current = (phRef.current + Math.min(ts - lastTsRef.current, 100) * 1000) % dur;
         const v = videoRef.current;
-        // Smart selection loop: for snapshot posts with a demo window, enforce the boundary imperatively
-        // NOTE: demoStartTime/demoDuration are in MICROSECONDS, video.currentTime is in SECONDS
+        // ── Unified Master Clock ──────────────────────────────────────
+        // For snapshot posts: derive playhead from video.currentTime (single source of truth)
+        // demoStartTime/demoDuration are MICROSECONDS, video.currentTime is SECONDS
+        const startUs = post.demoStartTime || 0;
+        const demoDurUs = post.demoDuration || 1_000_000;
+        const endUs = startUs + demoDurUs;
         if (post.projectSnapshot && v) {
-          const demoStartUs = post.demoStartTime ?? 0;
-          const demoDurUs   = post.demoDuration  ?? 0;
-          if (demoDurUs > 0 && v.currentTime >= (demoStartUs + demoDurUs) / 1_000_000) {
-            v.currentTime = demoStartUs / 1_000_000;
+          const playheadUs = Math.round(v.currentTime * 1_000_000);
+          // Strict selection clamping: force video back if outside ruler range
+          if (playheadUs < startUs || playheadUs >= endUs - 50_000) {
+            console.warn("!!! LOOP TRIGGERED !!!", { playheadUs, startUs, endUs, vidTime: v.currentTime });
+            v.currentTime = startUs / 1_000_000;
+          }
+          // Derive phRef from video time so text/FX/syncClip all agree
+          phRef.current = Math.round(v.currentTime * 1_000_000);
+          // Progress re-based to selection (0-100%)
+          const relativeUs = phRef.current - startUs;
+          setProgress(Math.max(0, Math.min(100, (relativeUs / demoDurUs) * 100)));
+        } else {
+          // Non-snapshot: advance phRef from rAF delta as before
+          phRef.current = (phRef.current + Math.min(ts - lastTsRef.current, 100) * 1000) % dur;
+          if (v && v.duration > 0 && isFinite(v.duration)) {
+            setProgress((v.currentTime / v.duration) * 100);
+          } else {
+            setProgress((phRef.current / dur) * 100);
           }
         }
-        // Progress: use native video time when available for accuracy
-        if (v && v.duration > 0 && isFinite(v.duration)) {
-          const demoStartS = (post.demoStartTime ?? 0) / 1_000_000;
-          const demoDurS   = (post.demoDuration  ?? 0) / 1_000_000;
-          const windowS    = demoDurS > 0 ? demoDurS : v.duration;
-          const elapsed    = Math.max(0, v.currentTime - demoStartS);
-          setProgress((elapsed / windowS) * 100);
-        } else {
-          setProgress((phRef.current / dur) * 100);
-        }
         syncClip(phRef.current);
+        // ── Effect clips: use unified playheadUs ──────────────────────
+        let activeEfxId: string | null = null;
         if (v) {
           const ph = phRef.current;
           const efx = effectClipsRef.current.find((c) => (c.renderedCss || !c.fxParams?.effectDisabled) && ph >= c.startTime && ph < c.startTime + c.duration);
+          activeEfxId = efx?.id ?? null;
           if (!efx) {
             v.style.filter = ""; v.style.transform = "";
             if (activeAnimRef.current !== null) { v.style.animation = ""; activeAnimRef.current = null; }
@@ -231,6 +254,18 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
               if (activeAnimRef.current !== efx.id) { v.style.animation = anim; activeAnimRef.current = efx.id; }
             }
           }
+        }
+        // ── Diagnostic HUD update (direct DOM, no re-renders) ─────────
+        if (hudRef.current && v) {
+          hudRef.current.textContent =
+            `VID TIME: ${v.currentTime.toFixed(3)}s\n` +
+            `PLAYHEAD (Us): ${phRef.current}\n` +
+            `LOOP START (Us): ${startUs}\n` +
+            `LOOP END (Us): ${endUs}\n` +
+            `DEMO DUR (Us): ${demoDurUs}\n` +
+            `CLIP LOADED: ${loadedClipRef.current ?? "none"}\n` +
+            `ACTIVE EFX: ${activeEfxId ?? "none"}\n` +
+            `VIDEO PAUSED: ${v.paused}`;
         }
       }
     }
@@ -281,7 +316,8 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
     // If the gesture useLayoutEffect already kicked off playback (snapshot posts), skip the reset
     // so we don't cancel the rAF tick that was just started within the user-gesture trust window.
     if (gesturePlayedRef.current) { gesturePlayedRef.current = false; return; }
-    phRef.current = 0; setProgress(0); setIsPlaying(false); setMediaError(false);
+    const initPh = post.demoStartTime || 0;
+    phRef.current = initPh; setProgress(0); setIsPlaying(false); setMediaError(false);
     loadedClipRef.current = null; loadedClipUrlRef.current = null; lastTsRef.current = 0;
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     if (clips.length > 0 && v) {
@@ -290,7 +326,9 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
       const onMeta = () => {
         v.removeEventListener("loadedmetadata", onMeta);
         if (loadedClipRef.current !== clip.id) return;
-        v.currentTime = (clip.mediaOffset ?? 0) / 1_000_000;
+        const startS = Math.max(0, (initPh - clip.startTime + (clip.mediaOffset ?? 0)) / 1_000_000);
+        console.log("Initial Seek:", startS, { initPh, clipStart: clip.startTime, mediaOffset: clip.mediaOffset ?? 0 });
+        v.currentTime = startS;
         const onSeeked = () => {
           v.removeEventListener("seeked", onSeeked);
           if (loadedClipRef.current !== clip.id) return;
@@ -298,10 +336,6 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
             if (!mountedRef.current) return;
             setVideoVisible(true);
             v.play().then(() => { if (mountedRef.current) setIsPlaying(true); }).catch(() => {});
-            const endSec = ((clip.mediaOffset ?? 0) + clip.duration) / 1_000_000;
-            v.addEventListener("timeupdate", function g() {
-              if (v.currentTime >= endSec) { v.removeEventListener("timeupdate", g); phRef.current = clip.startTime + clip.duration; loadedClipRef.current = null; loadedClipUrlRef.current = null; v.pause(); }
-            });
           };
           if (v.readyState >= 2) reveal();
           else { const onCp = () => { v.removeEventListener("canplay", onCp); if (loadedClipRef.current === clip.id) reveal(); }; v.addEventListener("canplay", onCp); }
@@ -334,6 +368,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
     // syncClip() will load + play the first clip with gesture-inherited autoplay trust.
     if (post.projectSnapshot) {
       gesturePlayedRef.current = true;
+      phRef.current = post.demoStartTime || 0;
       setIsPlaying(true);
       return;
     }
@@ -485,6 +520,9 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
           style={{ ...presetVideoStyle, animationPlayState: isPlaying ? "running" : "paused" }}
           className={`absolute inset-0 z-[10] h-full w-full object-contain transition-opacity duration-150 ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
         />
+
+        {/* Diagnostic HUD — temporary, remove after debugging */}
+        <div ref={hudRef} className="absolute left-2 top-2 z-[100] whitespace-pre rounded bg-black/80 p-2 font-mono text-[10px] leading-relaxed text-green-400 pointer-events-none" />
 
         {/* Text overlays — z-[15]: above video (z-[10]), below UI chrome (z-[20]+) */}
         {textClipsRef.current.filter((c) => phRef.current >= c.startTime && phRef.current < c.startTime + c.duration).map((c) => {

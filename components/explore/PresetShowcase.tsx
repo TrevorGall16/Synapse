@@ -50,19 +50,19 @@ export function PresetShowcase({ post, preset, accent = "#7c3aed", onClose, onSa
     if (e.target === e.currentTarget) onClose();
   }, [onClose]);
 
-  const demoStart = post?.demoStartTime ?? 0;
+  const demoStartS = (post?.demoStartTime ?? 0) / 1_000_000;
 
   // Seek to demoStart when the video first loads
   const handleLoadedMetadata = useCallback(() => {
     const v = videoRef.current;
-    if (v && demoStart > 0) v.currentTime = demoStart;
-  }, [demoStart]);
+    if (v && demoStartS > 0) v.currentTime = demoStartS;
+  }, [demoStartS]);
 
   // Loop a 4-second window starting at demoStart
   const handleTimeUpdate = useCallback(() => {
     const v = videoRef.current;
-    if (v && v.currentTime > demoStart + 4) v.currentTime = demoStart;
-  }, [demoStart]);
+    if (v && v.currentTime > demoStartS + 4) v.currentTime = demoStartS;
+  }, [demoStartS]);
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = "copy";

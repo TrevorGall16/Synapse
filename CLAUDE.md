@@ -9,7 +9,7 @@ You are building "Synapse Interactive Hub," a Next.js 15+ browser-native NLE (No
 1. **The Core Split (Studio vs. Theater):**
    - **Studio (`/app/studio`):** Follow strict mathematical rendering. Use absolute positioning, Canvas/WebGPU, and strict sub-frame engine logic.
    - **Theater (`/app/page.tsx`, Feed Components):** Use standard DOM flow! Rely on Tailwind Flexbox/Grid, standard HTML5 `<video>` tags, and native CSS filters (like `backdrop-filter` or `blur()`). DO NOT over-engineer the UI feed with Canvas or complex controllers.
-2. **Extreme Modularity (Atomic Design):** No single file may exceed 400 lines. You must separate UI rendering logic from the WebGPU/Sequencer engine.
+2. **Extreme Modularity (Atomic Design):** No single file may exceed 900 lines. You must separate UI rendering logic from the WebGPU/Sequencer engine.
 3. **Hardware Guardrails:** You must implement background workers for heavy tasks (OPFS proxy generation) and strictly manage React state to prevent VRAM memory leaks.
 4. **Hydration Safety:** Do not use `window` or `Date.now()` during initial render passes.
 

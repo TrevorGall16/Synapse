@@ -244,7 +244,7 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
         duration: "0:00",
         likes: 0, comments: 0, featured: false,
         videoUrl: demoItem?.previewUrl,
-        demoStartTime: demoItem ? demoStartTime : undefined,
+        demoStartTime: demoItem ? Math.round(demoStartTime * 1_000_000) : undefined,
         authorUsername: username,
         allowRemix: false,
         createdAt: Date.now(),
@@ -297,6 +297,11 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
       duration: fmtDuration(duration),
       likes: 0, comments: 0, featured: false,
       videoUrl: firstVideo?.previewUrl,
+      // demoStartTime / demoDuration tell Theater Mode exactly which window to loop.
+      // Clips are already rebased so the selection starts at t=0 — demoStartTime must
+      // match, otherwise Theater Mode seeks into the raw media by the original ruler offset.
+      demoStartTime: 0,
+      demoDuration: duration,
       // snapshot.duration adds a 1s tail buffer past the last clip so the theater-mode
       // rAF modulo wraps AFTER every clip has fully played (not mid-last-frame).
       projectSnapshot: { tracks: finalTracks, duration: duration + 1_000_000, projectSettings, mediaPool },
