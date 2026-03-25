@@ -158,11 +158,9 @@ function PresetExploreCard({
   const anim         = explorerSwatchAnim(preset.category);
   const thumbRef     = useRef<HTMLVideoElement>(null);
 
-  // Seek to demoStartTime once metadata loads so we show the right frame
   const handleThumbMeta = useCallback(() => {
-    const v = thumbRef.current;
-    if (v) v.currentTime = post?.demoStartTime ?? 0;
-  }, [post?.demoStartTime]);
+    // no-op: let the thumbnail play from the natural start
+  }, []);
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.effectAllowed = "copy";

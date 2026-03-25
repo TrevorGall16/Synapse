@@ -60,7 +60,6 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   const activeAnimRef  = useRef<string | null>(null);
   /** Set to true by the gesture useLayoutEffect so the boot useEffect skips its reset */
   const gesturePlayedRef = useRef(false);
-  const blurVideoRef   = useRef<HTMLVideoElement>(null);
   const animationRef   = useRef<number | null>(null);
 
   const [progress, setProgress]           = useState(0);
@@ -185,12 +184,31 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
 
   const tick = useCallback((ts: number) => {
     if (lastTsRef.current > 0) {
-      const dur = totalDurRef.current;
+      // Guard: never wrap at less than 2 seconds — prevents ghost loops from empty-timeline publishes
+      const dur = Math.max(totalDurRef.current, 2_000_000);
       if (dur > 0) {
         phRef.current = (phRef.current + Math.min(ts - lastTsRef.current, 100) * 1000) % dur;
-        setProgress(phRef.current / dur);
-        syncClip(phRef.current);
         const v = videoRef.current;
+        // Smart selection loop: for snapshot posts with a demo window, enforce the boundary imperatively
+        // NOTE: demoStartTime/demoDuration are in MICROSECONDS, video.currentTime is in SECONDS
+        if (post.projectSnapshot && v) {
+          const demoStartUs = post.demoStartTime ?? 0;
+          const demoDurUs   = post.demoDuration  ?? 0;
+          if (demoDurUs > 0 && v.currentTime >= (demoStartUs + demoDurUs) / 1_000_000) {
+            v.currentTime = demoStartUs / 1_000_000;
+          }
+        }
+        // Progress: use native video time when available for accuracy
+        if (v && v.duration > 0 && isFinite(v.duration)) {
+          const demoStartS = (post.demoStartTime ?? 0) / 1_000_000;
+          const demoDurS   = (post.demoDuration  ?? 0) / 1_000_000;
+          const windowS    = demoDurS > 0 ? demoDurS : v.duration;
+          const elapsed    = Math.max(0, v.currentTime - demoStartS);
+          setProgress((elapsed / windowS) * 100);
+        } else {
+          setProgress((phRef.current / dur) * 100);
+        }
+        syncClip(phRef.current);
         if (v) {
           const ph = phRef.current;
           const efx = effectClipsRef.current.find((c) => (c.renderedCss || !c.fxParams?.effectDisabled) && ph >= c.startTime && ph < c.startTime + c.duration);
@@ -235,7 +253,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
       const updateProgress = () => {
         if (!videoRef.current) return;
         const { currentTime, duration } = videoRef.current;
-        if (duration > 0 && !isNaN(duration)) {
+        if (duration > 0 && isFinite(duration) && !isNaN(duration)) {
           setProgress((currentTime / duration) * 100);
         }
         animationRef.current = requestAnimationFrame(updateProgress);
@@ -246,7 +264,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
       if (animationRef.current) { cancelAnimationFrame(animationRef.current); animationRef.current = null; }
     };
-  }, [isPlaying, snapshotClips.length, tick, post.demoStartTime, post.demoDuration]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPlaying, snapshotClips.length, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Boot: load first clip or simple videoUrl
   useEffect(() => {
@@ -300,29 +318,12 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
           .then(() => {
             if (!mountedRef.current) return;
             setIsPlaying(true); setShowPlayOverlay(false);
-            blurVideoRef.current?.play().catch(() => {});
           })
           .catch(() => { if (mountedRef.current) setShowPlayOverlay(true); });
       }
     } else { setVideoVisible(false); if (v) { v.pause(); v.src = ""; } }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post.id, hydratedPool, isHydrated]);
-
-  useEffect(() => {
-    if (snapshotClips.length > 0) return;
-    const v = videoRef.current; if (!v) return;
-    const demoStart = post.demoStartTime ?? 0;
-    // Full-video loop fallback (demoDur=0 case; rAF handles the demoWindow snap-back)
-    const onEnded = () => {
-      v.style.filter = ""; v.style.animation = ""; // gate FX on loop frame
-      v.currentTime = demoStart;
-      v.play().catch(() => {});
-      const bv = blurVideoRef.current;
-      if (bv) { bv.currentTime = demoStart; bv.play().catch(() => {}); }
-    };
-    v.addEventListener("ended", onEnded);
-    return () => v.removeEventListener("ended", onEnded);
-  }, [snapshotClips.length, post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Immediate play — fires within the user-gesture trust window.
   // Only executes for the post that matches the pending gesture lock.
@@ -350,7 +351,6 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
         setIsPlaying(true);
         setShowPlayOverlay(false);
         if (v.muted) { setShowUnmuteToast(true); setTimeout(() => { if (mountedRef.current) setShowUnmuteToast(false); }, 3500); }
-        blurVideoRef.current?.play().catch(() => {});
       })
       .catch((err: Error) => {
         console.warn("[Theater PLAY_BLOCKED]", err.name, err.message);
@@ -380,13 +380,22 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    setProgress(ratio);
+    setProgress(ratio * 100);
     if (clipsRef.current.length > 0) {
       phRef.current = ratio * totalDurRef.current;
       loadedClipRef.current = null; loadedClipUrlRef.current = null;
       syncClip(phRef.current);
     } else {
-      const v = videoRef.current; if (v?.duration) v.currentTime = ratio * v.duration;
+      const v = videoRef.current;
+      if (v?.duration) {
+        if (post.projectSnapshot) {
+          const demoStartS = (post.demoStartTime ?? 0) / 1_000_000;
+          const demoDurS   = (post.demoDuration  ?? 0) / 1_000_000 || v.duration;
+          v.currentTime = demoStartS + ratio * demoDurS;
+        } else {
+          v.currentTime = ratio * v.duration;
+        }
+      }
     }
   }, [syncClip]);
 
@@ -404,6 +413,8 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   const remixAllowed = post.allowRemix !== false;
   // Resolved src for the main video element — undefined for snapshot posts (src set imperatively)
   const stableSrc = !post.projectSnapshot && post.videoUrl ? post.videoUrl : undefined;
+  // Blur backdrop source: use videoUrl for ALL post types (snapshot posts set videoUrl = firstVideo.previewUrl)
+  const blurSrc = post.videoUrl ?? snapshotClips[0]?.url;
   if (!post.projectSnapshot && post.videoUrl && !stableSrc) {
     console.error("[Theater] stableSrc resolved to undefined despite videoUrl being set", { postId: post.id, videoUrl: post.videoUrl });
   }
@@ -412,13 +423,15 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
     <div ref={cellRef} className="relative flex h-screen w-full snap-start items-center justify-center bg-black">
       <div className="group relative h-full w-full overflow-hidden">
 
+        {/* Black cover during initial load */}
+        {!videoVisible && !mediaError && <div className="absolute inset-0 z-[2] bg-black" />}
+
         {hydratedPool === null && !!post.projectSnapshot?.mediaPool?.length && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/80">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/10 border-t-white/50" />
             <p className="text-[10px] text-white/50">Loading media…</p>
           </div>
         )}
-        {!videoVisible && !mediaError && <div className="absolute inset-0 bg-black" />}
 
         {/* Waveform BG on error */}
         <div className={`absolute inset-0 flex items-end gap-[3px] px-3 pb-28 transition-opacity duration-300 ${mediaError ? "opacity-20" : "opacity-0"}`} aria-hidden>
@@ -436,17 +449,6 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
           </div>
         )}
 
-        {/* Blurred backdrop — same src, behind the main video; non-snapshot posts only */}
-        {stableSrc && (
-          <video
-            ref={blurVideoRef}
-            src={stableSrc}
-            muted playsInline autoPlay loop preload="auto"
-            aria-hidden
-            className="pointer-events-none absolute inset-0 z-[0] h-full w-full object-cover opacity-50 blur-3xl scale-110"
-          />
-        )}
-
         {/* Debug: log the src value to verify it is non-null before handing it to the video */}
         {process.env.NODE_ENV === "development" && console.log("[Theater] Video SRC assigned:", stableSrc, "postId:", post.id) as never}
 
@@ -457,11 +459,6 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onError={() => setMediaError(true)}
-          onLoadedMetadata={() => {
-            const v = videoRef.current; if (!v) return;
-            const start = post.demoStartTime ?? 0;
-            if (start > 0 && !post.projectSnapshot) v.currentTime = start;
-          }}
           onLoadedData={() => {
             // Fallback play: fires when first frame is available; catches cases where
             // useLayoutEffect ran before the video had data and play() was blocked.
@@ -471,7 +468,6 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
               .then(() => {
                 if (!mountedRef.current) return;
                 setIsPlaying(true); setVideoVisible(true); setShowPlayOverlay(false);
-                blurVideoRef.current?.play().catch(() => {});
               })
               .catch((err: Error) => console.warn("[Theater onLoadedData BLOCKED]", err.name));
           }}
@@ -483,7 +479,6 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
               .then(() => {
                 if (!mountedRef.current) return;
                 setIsPlaying(true); setVideoVisible(true); setShowPlayOverlay(false);
-                blurVideoRef.current?.play().catch(() => {});
               })
               .catch(() => {});
           }}
@@ -491,16 +486,16 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
           className={`absolute inset-0 z-[10] h-full w-full object-contain transition-opacity duration-150 ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
         />
 
-        {/* Text overlays */}
+        {/* Text overlays — z-[15]: above video (z-[10]), below UI chrome (z-[20]+) */}
         {textClipsRef.current.filter((c) => phRef.current >= c.startTime && phRef.current < c.startTime + c.duration).map((c) => {
           const r = buildTextStyle(c, phRef.current);
-          return r ? <div key={c.id} className="pointer-events-none absolute inset-0 z-[8]"><span style={r.style}>{r.displayText}</span></div> : null;
+          return r ? <div key={c.id} className="pointer-events-none absolute inset-0 z-[15]"><span style={r.style}>{r.displayText}</span></div> : null;
         })}
 
         <div className="absolute bottom-0 left-0 right-0 z-[35] pointer-events-none" style={{ height: "35%", background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }} />
 
         {/* Play/Pause tap zone */}
-        <button onClick={togglePlay} className="absolute inset-0 z-[20] flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+        <button onClick={togglePlay} className="absolute inset-x-0 top-0 bottom-12 z-[20] flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/25 bg-black/45 backdrop-blur-sm">
             {isPlaying ? <Pause size={24} className="text-white" fill="white" /> : <Play size={24} className="ml-1 text-white" fill="white" />}
           </div>
@@ -600,9 +595,14 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
         </div>
 
         {/* Scrubber */}
-        <div onClick={handleSeek} className="absolute bottom-0 left-0 right-0 z-[40] h-2 cursor-pointer bg-white/15 hover:h-3 transition-all">
+        <div onClick={handleSeek} className="absolute bottom-0 left-0 right-0 z-[50] h-2 cursor-pointer pointer-events-auto bg-white/15 hover:h-3 transition-all">
           <div className="h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: post.accent }} />
         </div>
+
+        {/* Mirror blur — fixed behind the entire cell, immune to container bg-black */}
+        {blurSrc && (
+          <video src={blurSrc} className="fixed inset-0 w-full h-full object-cover blur-3xl opacity-60 scale-110 -z-[1] pointer-events-none" muted playsInline autoPlay loop />
+        )}
       </div>
     </div>
   );
@@ -628,7 +628,6 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
   const cellRefs                = useRef<Map<string, HTMLDivElement>>(new Map());
   const elementToPid            = useRef<WeakMap<HTMLDivElement, string>>(new WeakMap());
   const observerRef             = useRef<IntersectionObserver | null>(null);
-  const activeVideoRef          = useRef<HTMLVideoElement | null>(null);
 
   // Rebuild queue when seed post changes
   useEffect(() => { setQueue(buildQueue(post, allPosts)); }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -660,15 +659,9 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
           const pid = elementToPid.current.get(entry.target as HTMLDivElement);
-          const video = entry.target.querySelector("video") as HTMLVideoElement | null;
-          if (entry.isIntersecting) {
-            if (video) activeVideoRef.current = video;
-            if (pid) setActivePostId(pid);
-            video?.play().catch(() => {});
-          } else {
-            if (video) { video.pause(); video.currentTime = 0; }
-          }
+          if (pid) setActivePostId(pid);
         }
       },
       { threshold: 0.6 }
@@ -779,7 +772,6 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
                       src={p.videoUrl}
                       muted playsInline preload="none"
                       className="h-full w-full object-cover"
-                      onLoadedMetadata={(e) => { (e.currentTarget as HTMLVideoElement).currentTime = p.demoStartTime ?? 0; }}
                     />
                   )}
                 </div>

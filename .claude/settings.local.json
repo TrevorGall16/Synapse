@@ -30,7 +30,12 @@
       "Bash(node -e \":*)",
       "Bash(cd:*)",
       "Bash(python3:*)",
-      "Bash(grep -rn createObjectURL D:/Projects/Synapse --include=*.ts --include=*.tsx)"
+      "Bash(grep -rn createObjectURL D:/Projects/Synapse --include=*.ts --include=*.tsx)",
+      "Bash(find D:/Projects/Synapse/.next/static/chunks -name *.js -newer D:/Projects/Synapse/components/feed/theater-mode.tsx)",
+      "Bash(grep -l \"TheaterMode\\\\|TheaterCell\\\\|theater\" D:/Projects/Synapse/.next/static/chunks/*.js)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -l 'DEBUG TRACER' D:/Projects/Synapse/.next/dev/server/chunks/ssr/*.js)",
+      "Bash(grep:*)"
     ]
   }
 }
