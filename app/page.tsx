@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { Zap, TrendingUp, Upload, User, ArrowUp, Trash2 } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
+import { useSearchStore } from "@/lib/store/search-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { TheaterMode, primeTheaterGesture } from "@/components/feed/theater-mode";
+import { GlobalSearch } from "@/components/feed/global-search";
 import { UploadModal } from "@/components/feed/upload-modal";
 import { FeedPostCard } from "@/components/feed/feed-post-card";
 import { saveMediaToDB, retainMedia } from "@/lib/store/media-pool-db";
@@ -88,6 +90,7 @@ export default function DiscoveryFeedPage() {
   const removePost     = useFeedStore((s) => s.removePost);
   const likedPostIds   = useFeedStore((s) => s.likedPostIds);
   const offlineCount   = useFeedStore((s) => s.userPosts.filter((p) => isBlobUrl(p.videoUrl)).length);
+  const searchQuery    = useSearchStore((s) => s.searchQuery);
   const currentProfile = useUserStore((s) => s.profile);
   const cleanupOffline = useCallback(() => {
     const { userPosts: posts, removePost: rp } = useFeedStore.getState();
@@ -135,6 +138,21 @@ export default function DiscoveryFeedPage() {
       return bScore - aScore;
     });
   }, [activeTag, allPosts, feedSort, likedPostIds]);
+
+  // Search filter — applied after tag + sort so it composes with existing controls.
+  // Operates on displayPosts only; allPosts stays untouched so TheaterMode never re-mounts.
+  const filteredPosts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return displayPosts;
+    // Strip leading @ or # so users can type either form
+    const raw = q.startsWith("@") || q.startsWith("#") ? q.slice(1) : q;
+    return displayPosts.filter((post) =>
+      post.title.toLowerCase().includes(raw) ||
+      post.user.handle.toLowerCase().includes(raw) ||
+      post.tags.some((t) => t.toLowerCase().replace("#", "").includes(raw)) ||
+      (post.category?.toLowerCase().includes(raw))
+    );
+  }, [displayPosts, searchQuery]);
 
   // Infinite scroll — load more when sentinel enters viewport
   useEffect(() => {
@@ -285,6 +303,9 @@ export default function DiscoveryFeedPage() {
         </div>
       </div>
 
+      {/* Search bar */}
+      <GlobalSearch />
+
       {/* Sort + Niche filter bar */}
       <div className="shrink-0 overflow-x-auto border-b border-white/8 px-4 py-2 scrollbar-none">
         <div className="flex gap-1.5" style={{ width: "max-content" }}>
@@ -311,11 +332,12 @@ export default function DiscoveryFeedPage() {
       {/* Scrollable grid */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         <div className="px-6 py-5">
-          {activeTag && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{displayPosts.length} result{displayPosts.length !== 1 ? "s" : ""} for <span className="text-purple-300/80">{activeTag}</span></p>}
-          {!activeTag && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">Community Edits</p>}
-          {displayPosts.length > 0 ? (
+          {activeTag && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-purple-300/80">{activeTag}</span></p>}
+          {!activeTag && !searchQuery && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">Community Edits</p>}
+          {!activeTag && searchQuery && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-purple-300/80">{searchQuery}</span></p>}
+          {filteredPosts.length > 0 ? (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {displayPosts.map((post) => (
+              {filteredPosts.map((post) => (
                 <FeedPostCard
                   key={post.id} post={post}
                   onOpen={() => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
@@ -330,8 +352,8 @@ export default function DiscoveryFeedPage() {
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-              <p className="text-sm font-semibold text-white/25">No results for {activeTag}</p>
-              <button onClick={() => setActiveTag(null)} className="mt-3 text-[11px] text-purple-400/70 hover:text-purple-300">Clear filter</button>
+              <p className="text-sm font-semibold text-white/25">No results for {searchQuery || activeTag}</p>
+              <button onClick={() => { setActiveTag(null); }} className="mt-3 text-[11px] text-purple-400/70 hover:text-purple-300">Clear filter</button>
             </div>
           )}
         </div>

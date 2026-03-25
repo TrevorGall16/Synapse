@@ -18,6 +18,8 @@ import { parseHashtags } from "@/lib/utils/hashtags";
 // so the matching TheaterCell's useLayoutEffect fires within the gesture trust window.
 let _gesturePendingId: string | null = null;
 export function primeTheaterGesture(postId: string) { _gesturePendingId = postId; }
+/** Flipped to true on first explicit tap-to-play; subsequent cells can play without muted fallback. */
+let _hasInteracted = false;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
@@ -42,9 +44,10 @@ interface CellProps {
   onCreator: () => void;
   onHashtagClick: (tag: string) => void;
   globalMuted: boolean;
+  isActive: boolean;
 }
 
-function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, globalMuted }: CellProps) {
+function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, globalMuted, isActive }: CellProps) {
   const videoRef       = useRef<HTMLVideoElement>(null);
   const mountedRef     = useRef(true);
   const rafRef         = useRef<number | null>(null);
@@ -58,10 +61,10 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   const effectClipsRef = useRef<ClipEvent[]>([]);
   const textClipsRef   = useRef<ClipEvent[]>([]);
   const activeAnimRef  = useRef<string | null>(null);
-  const hudRef         = useRef<HTMLDivElement>(null);
   /** Set to true by the gesture useLayoutEffect so the boot useEffect skips its reset */
   const gesturePlayedRef = useRef(false);
   const animationRef   = useRef<number | null>(null);
+  const idleTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [progress, setProgress]           = useState(0);
   const [isPlaying, setIsPlaying]         = useState(false);
@@ -70,6 +73,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   const [following, setFollowing]         = useState(false);
   const [showPlayOverlay, setShowPlayOverlay] = useState(false);
   const [showUnmuteToast, setShowUnmuteToast] = useState(false);
+  const [isIdle, setIsIdle]                   = useState(false);
   const [hydratedPool, setHydratedPool]   = useState<MediaPoolItem[] | null>(null);
   const isHydrated   = useHydrationStore((s) => s.isHydrated);
   const currentUsername = useUserStore((s) => s.profile?.username);
@@ -94,6 +98,16 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
       else await unfollowCreator(post.user.handle);
     } catch { setFollowing(!next); } // revert on error
   }, [following, post.user.handle]);
+
+  // Idle timer: 2 s of no mouse movement while playing → ghost UI (cursor, scrubber, center icon)
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    setIsIdle(false);
+    if (isPlayingRef.current)
+      idleTimerRef.current = setTimeout(() => { if (mountedRef.current) setIsIdle(true); }, 2000);
+  }, []); // reads only stable refs
+
+  const handleMouseMove = useCallback(() => { if (isPlayingRef.current) resetIdleTimer(); }, [resetIdleTimer]);
 
   // Key on post.id only — previewUrls must not be part of the key or hydrateMediaPool
   // will be called again after the store updates with the newly-created blob URLs,
@@ -255,18 +269,6 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
             }
           }
         }
-        // ── Diagnostic HUD update (direct DOM, no re-renders) ─────────
-        if (hudRef.current && v) {
-          hudRef.current.textContent =
-            `VID TIME: ${v.currentTime.toFixed(3)}s\n` +
-            `PLAYHEAD (Us): ${phRef.current}\n` +
-            `LOOP START (Us): ${startUs}\n` +
-            `LOOP END (Us): ${endUs}\n` +
-            `DEMO DUR (Us): ${demoDurUs}\n` +
-            `CLIP LOADED: ${loadedClipRef.current ?? "none"}\n` +
-            `ACTIVE EFX: ${activeEfxId ?? "none"}\n` +
-            `VIDEO PAUSED: ${v.paused}`;
-        }
       }
     }
     lastTsRef.current = ts;
@@ -399,6 +401,29 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
     v.style.animationPlayState = isPlaying ? "running" : "paused";
   }, [isPlaying]);
 
+  // Idle timer: arm while playing, disarm on pause
+  useEffect(() => {
+    if (isPlaying) { resetIdleTimer(); }
+    else { if (idleTimerRef.current) clearTimeout(idleTimerRef.current); setIsIdle(false); }
+  }, [isPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => { if (idleTimerRef.current) clearTimeout(idleTimerRef.current); }, []);
+
+  // Scroll-driven play/pause — fires when the IntersectionObserver hands off activePostId
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!isActive) {
+      v?.pause();
+      setIsPlaying(false);
+      return;
+    }
+    if (!v || isPlayingRef.current) return;
+    v.muted = true;
+    v.play()
+      .then(() => { if (mountedRef.current) { setIsPlaying(true); setShowPlayOverlay(false); } })
+      .catch(() => { if (mountedRef.current) setShowPlayOverlay(true); });
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const togglePlay = useCallback(() => {
     if (clipsRef.current.length === 0) {
       const v = videoRef.current; if (!v) return;
@@ -455,8 +480,11 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   }
 
   return (
-    <div ref={cellRef} className="relative flex h-screen w-full snap-start items-center justify-center bg-black">
-      <div className="group relative h-full w-full overflow-hidden">
+    <div ref={cellRef} className="relative flex h-screen w-full snap-start snap-always items-center justify-center bg-black">
+      <div
+        className={`group relative h-full w-full overflow-hidden ${isIdle && isPlaying ? "cursor-none" : "cursor-auto"}`}
+        onMouseMove={handleMouseMove}
+      >
 
         {/* Black cover during initial load */}
         {!videoVisible && !mediaError && <div className="absolute inset-0 z-[2] bg-black" />}
@@ -483,9 +511,6 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
             <p className="text-xs font-semibold text-white/40">Media Offline</p>
           </div>
         )}
-
-        {/* Debug: log the src value to verify it is non-null before handing it to the video */}
-        {process.env.NODE_ENV === "development" && console.log("[Theater] Video SRC assigned:", stableSrc, "postId:", post.id) as never}
 
         <video
           ref={videoRef}
@@ -517,12 +542,9 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
               })
               .catch(() => {});
           }}
-          style={{ ...presetVideoStyle, animationPlayState: isPlaying ? "running" : "paused" }}
+          style={{ ...presetVideoStyle, animationPlayState: isPlaying ? "running" : "paused", willChange: "transform" }}
           className={`absolute inset-0 z-[10] h-full w-full object-contain transition-opacity duration-150 ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
         />
-
-        {/* Diagnostic HUD — temporary, remove after debugging */}
-        <div ref={hudRef} className="absolute left-2 top-2 z-[100] whitespace-pre rounded bg-black/80 p-2 font-mono text-[10px] leading-relaxed text-green-400 pointer-events-none" />
 
         {/* Text overlays — z-[15]: above video (z-[10]), below UI chrome (z-[20]+) */}
         {textClipsRef.current.filter((c) => phRef.current >= c.startTime && phRef.current < c.startTime + c.duration).map((c) => {
@@ -532,8 +554,11 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
 
         <div className="absolute bottom-0 left-0 right-0 z-[35] pointer-events-none" style={{ height: "35%", background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }} />
 
-        {/* Play/Pause tap zone */}
-        <button onClick={togglePlay} className="absolute inset-x-0 top-0 bottom-12 z-[20] flex items-center justify-center opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+        {/* Play/Pause: visible when paused; hidden instantly when playing or idle */}
+        <button
+          onClick={togglePlay}
+          className={`absolute inset-x-0 top-0 bottom-12 z-[20] flex items-center justify-center transition-opacity duration-150 ${!isPlaying && !isIdle ? "opacity-100" : "opacity-0"}`}
+        >
           <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/25 bg-black/45 backdrop-blur-sm">
             {isPlaying ? <Pause size={24} className="text-white" fill="white" /> : <Play size={24} className="ml-1 text-white" fill="white" />}
           </div>
@@ -554,7 +579,10 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
 
         {/* Play-blocked overlay — covers 100% of the cell, cleared on tap */}
         {showPlayOverlay && (
-          <button onClick={togglePlay} className="absolute inset-0 z-30 flex h-full w-full flex-col items-center justify-center gap-3 bg-black/60 backdrop-blur-sm">
+          <button
+            onClick={() => { _hasInteracted = true; togglePlay(); }}
+            className="absolute inset-0 z-30 flex h-full w-full flex-col items-center justify-center gap-3 bg-black/60 backdrop-blur-sm"
+          >
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white/15 ring-2 ring-white/30">
               <Play size={36} className="ml-1.5 text-white" fill="white" />
             </div>
@@ -632,8 +660,11 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
           </button>
         </div>
 
-        {/* Scrubber */}
-        <div onClick={handleSeek} className="absolute bottom-0 left-0 right-0 z-[50] h-2 cursor-pointer pointer-events-auto bg-white/15 hover:h-3 transition-all">
+        {/* Scrubber — ghosts out with the rest of the UI when idle */}
+        <div
+          onClick={handleSeek}
+          className={`absolute bottom-0 left-0 right-0 z-[50] h-2 cursor-pointer bg-white/15 hover:h-3 transition-all duration-300 ${isIdle && isPlaying ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"}`}
+        >
           <div className="h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: post.accent }} />
         </div>
 
@@ -840,6 +871,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
           <TheaterCell
             key={p.id}
             post={p}
+            isActive={activePostId === p.id}
             cellRef={setCellRef(p.id)}
             onRemix={onRemix}
             onCreator={onCreator}
