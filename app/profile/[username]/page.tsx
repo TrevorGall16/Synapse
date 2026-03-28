@@ -185,7 +185,7 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
 type ViewMode = "grid" | "compact";
 type Tab = "published" | "drafts" | "liked";
 
-// ── Helpers for List View metadata ───────────────────────────────────────────
+// ── Helpers for Compact Row metadata ─────────────────────────────────────────
 
 function fmtDurationMicros(micros: number): string {
   const secs = Math.floor(micros / 1_000_000);
