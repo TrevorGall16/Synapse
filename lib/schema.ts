@@ -24,6 +24,7 @@ export const DESCRIPTION_MAX = 300;
 export const COLLECTION_NAME_MAX = 80;
 export const COLLECTION_DESC_MAX = 500;
 
+export const USERNAME_MAX     = 40;
 export const DISPLAY_NAME_MAX = 40;
 export const BIO_MAX          = 160;
 
@@ -323,7 +324,7 @@ export const CollectionSchema = z.object({
 // must not cause validation failures on older clients.
 
 export const UserProfileSchema = z.object({
-  username:    z.string().min(1).max(40),
+  username:    z.string().min(1).max(USERNAME_MAX),
   displayName: z.string().min(1).max(DISPLAY_NAME_MAX),
   bio:         z.string().max(BIO_MAX),
   hue:         z.number().int().min(0).max(359),
@@ -344,7 +345,7 @@ export function coerceUserProfile(raw: unknown): ValidatedUserProfile {
     bio: "Making edits in Synapse", hue: 270,
     followers: 0, following: 0,
   };
-  if (!raw || typeof raw !== "object") return DEFAULT;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT;
   const r = raw as Record<string, unknown>;
   return {
     username:    typeof r.username    === "string" && r.username.length > 0 ? r.username    : DEFAULT.username,
