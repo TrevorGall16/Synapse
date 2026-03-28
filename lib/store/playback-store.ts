@@ -58,13 +58,10 @@ export interface PlaybackState {
       /** Duration of the demo window in micros. */
       demoDuration?: number;
       /**
-       * Provide the source FeedPost to let the store evaluate remix policy
-       * directly via canRemix(post) — the authoritative, first-principles check.
-       * When post is absent, remixAllowed must be explicitly true as a
-       * pre-validated fallback token. Either path is blocked if policy fails.
+       * The source FeedPost — required so the store can evaluate remix policy
+       * directly via canRemix(post). No fallback tokens accepted.
        */
-      post?: FeedPost;
-      remixAllowed?: boolean;
+      post: FeedPost;
     }
   ) => void;
 }
@@ -116,13 +113,12 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   toggleRippleMode: () => set((s) => ({ rippleMode: !s.rippleMode })),
 
   loadSnapshot: (snap, meta) => {
-    // Authoritative policy gate: evaluate via canRemix(post) when the source post
-    // is available (first-principles check); fall back to the caller-supplied token.
-    // Either path: absent = denied, protecting against policy bypass.
-    const allowed = meta.post ? canRemix(meta.post) : meta.remixAllowed === true;
-    if (!allowed) {
-      console.warn("[loadSnapshot] blocked — remix policy not satisfied. Pass meta.post or set meta.remixAllowed=true after calling canRemix().");
-      return;
+    // Zero-trust policy gate: always evaluate canRemix against the source post.
+    // No fallback tokens, no caller trust. Failure = hard error + no state mutation.
+    if (!canRemix(meta.post)) {
+      const msg = `[loadSnapshot] BLOCKED — remix policy denied for post ${meta.post.id}. State was NOT mutated.`;
+      console.error(msg);
+      throw new Error(msg);
     }
 
     const { demoStartTime, demoDuration } = meta;

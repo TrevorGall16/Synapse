@@ -7,7 +7,9 @@
  * Design rules:
  *  - NEVER use .parse() — it throws and can crash the session. Always use .safeParse().
  *  - Structural invariants (IDs, numeric ranges, enum membership) are STRICT.
- *  - Forward-compatible extension fields use .passthrough() on object schemas.
+ *  - Core edit models use .strict() — unknown fields cause hard rejection.
+ *  - Feed/ingest models use .strip() — unknown fields are silently dropped.
+ *  - .passthrough() is ONLY permitted in the legacy_v1 adapter (FxParamsLegacySchema).
  *  - fxParams uses discriminated unions for known effect types; unknown types fall
  *    through to a legacy z.record adapter rather than hard-failing.
  *  - Recursive types (ClipEvent → embeddedEffectClips) use z.lazy().
@@ -63,42 +65,44 @@ const _fxBase = { intensity: z.number().min(0).max(100).optional() };
 
 const FxParamsKnownSchema = z.discriminatedUnion("effectType", [
   z.object({ effectType: z.literal("blur"),
-    blurAmount: z.number().min(0).max(50).optional(), ..._fxBase }).passthrough(),
+    blurAmount: z.number().min(0).max(50).optional(), ..._fxBase }),
   z.object({ effectType: z.literal("glitch"),
-    speed: z.number().min(0).max(100).optional(), ..._fxBase }).passthrough(),
+    speed: z.number().min(0).max(100).optional(), ..._fxBase }),
   z.object({ effectType: z.literal("strobe"),
-    speed: z.number().min(0).max(100).optional(), ..._fxBase }).passthrough(),
+    speed: z.number().min(0).max(100).optional(), ..._fxBase }),
   z.object({ effectType: z.literal("chromatic-aberration"),
-    caOffset: z.number().min(0).max(30).optional(), ..._fxBase }).passthrough(),
-  z.object({ effectType: z.literal("hypno-tunnel"), ..._fxBase }).passthrough(),
+    caOffset: z.number().min(0).max(30).optional(), ..._fxBase }),
+  z.object({ effectType: z.literal("hypno-tunnel"), ..._fxBase }),
   z.object({ effectType: z.literal("hue-rotate"),
-    hueRotate: z.number().min(-360).max(360).optional(), ..._fxBase }).passthrough(),
-  z.object({ effectType: z.literal("invert"), ..._fxBase }).passthrough(),
+    hueRotate: z.number().min(-360).max(360).optional(), ..._fxBase }),
+  z.object({ effectType: z.literal("invert"), ..._fxBase }),
   z.object({ effectType: z.literal("pixelate"),
-    blockSize: z.number().min(1).max(64).optional(), ..._fxBase }).passthrough(),
+    blockSize: z.number().min(1).max(64).optional(), ..._fxBase }),
   z.object({ effectType: z.literal("none"),
     saturate:   z.number().optional(),
     contrast:   z.number().optional(),
     brightness: z.number().optional(),
     hueRotate:  z.number().optional(),
-    ..._fxBase }).passthrough(),
+    ..._fxBase }),
 ]);
 
 /**
- * Versioned legacy adapter — validates the base fields present on ALL effects
- * (effectType as a non-empty string when supplied, intensity clamped to 0-100)
- * while passing unknown extras through. Replaces the prior raw z.record which
- * accepted any value type on any key including non-serialisable shapes.
+ * ── legacy_v1 adapter ──────────────────────────────────────────────────────
+ * The ONLY schema permitted to use .passthrough(). Validates base fields
+ * present on ALL effects (effectType, intensity) while forwarding unknown
+ * extras so older saved data can still load. New code MUST NOT add
+ * .passthrough() anywhere else — use .strict() (edit models) or .strip()
+ * (feed models) instead.
  */
 const FxParamsLegacySchema = z.object({
   effectType: z.string().optional(),
   intensity:  z.number().min(0).max(100).optional(),
-}).passthrough();
+}).passthrough(); // legacy_v1 — sole permitted .passthrough()
 
 /** Accepts known effect shapes strictly; unknown/legacy effectTypes via structured adapter. */
 export const FxParamsSchema = z.union([
   FxParamsKnownSchema,
-  FxParamsLegacySchema, // legacy adapter: effectType absent or unrecognised
+  FxParamsLegacySchema, // legacy_v1 adapter: effectType absent or unrecognised
 ]);
 
 // ── JSON-safe recursive value schema ─────────────────────────────────────────
@@ -133,7 +137,7 @@ const EffectInstanceSchema = z.object({
   type:       z.string(),
   parameters: z.record(z.string(), JsonValueSchema),
   keyframes:  z.array(KeyframeSchema).optional(),
-}).passthrough();
+}).strict();
 
 // ── PanCropData ───────────────────────────────────────────────────────────────
 
@@ -151,7 +155,7 @@ const PanCropDataSchema = z.object({
   maskFeather: z.number().optional(),
   maskInvert:  z.boolean().optional(),
   masks:       z.array(z.object({ id: z.string(), points: z.array(z.object({ x: z.number(), y: z.number() })), type: z.enum(["add", "subtract"]) })).optional(),
-}).passthrough();
+}).strict();
 
 // ── ClipEvent (recursive — embeddedEffectClips / embeddedTextClips) ───────────
 
@@ -180,7 +184,7 @@ export const ClipEventSchema: z.ZodType<any> = z.lazy(() =>
     embeddedEffectClips: z.array(ClipEventSchema).optional(),
     /** Baked text from source's text tracks — validated as ClipEvent[] */
     embeddedTextClips:   z.array(ClipEventSchema).optional(),
-  }).passthrough()
+  })
 );
 
 // ── Track ─────────────────────────────────────────────────────────────────────
@@ -206,7 +210,7 @@ const TrackSchema = z.object({
   reverbRoomSize:  z.number().min(0).max(1).optional(),
   delayMs:         z.number().nonnegative().optional(),
   delayFeedback:   z.number().min(0).max(1).optional(),
-}).passthrough();
+});
 
 // ── HistorySnapshot & HistoryData ─────────────────────────────────────────────
 
@@ -258,7 +262,7 @@ const PresetDataSchema = z.object({
   label:       z.string().optional(),
   category:    z.enum(["blur", "distortion", "color", "glitch", "other"]).optional(),
   previewCss:  RenderedCssSchema.optional(),
-}).passthrough();
+}).strip();
 
 // ── FeedPost ──────────────────────────────────────────────────────────────────
 
@@ -292,7 +296,7 @@ export const FeedPostSchema = z.object({
   demoStartTime: z.number().nonnegative().optional(),
   demoDuration:  z.number().positive().optional(),
   category:      z.enum(["high-sensation", "aesthetic", "cinematic", "glitch", "slow-mo"]).optional(),
-}).passthrough();
+}).strip();
 
 // ── Exported inferred types ───────────────────────────────────────────────────
 

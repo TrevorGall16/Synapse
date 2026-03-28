@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { smoothStep } from "@/lib/utils/easing";
 import { useRouter } from "next/navigation";
+import { registerTickCallback, unregisterTickCallback } from "@/lib/store/global-ticker";
+import { Confetti } from "@/components/ui/confetti";
 import { X, Globe, Check, ArrowRight, GitBranch } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore } from "@/lib/store/feed-store";
@@ -17,73 +19,20 @@ import type { Track, ClipEvent, MediaPoolItem } from "@/lib/store/types";
 // when the selector conditionally returns [] in non-preset mode.
 const EMPTY_MEDIA_ARRAY: MediaPoolItem[] = [];
 
-// ── Confetti burst ─────────────────────────────────────────────────────────────
-const CONF_COLORS = ["#7c3aed","#ec4899","#06b6d4","#22c55e","#f59e0b","#a855f7","#ef4444","#38bdf8"];
-interface Particle { x: number; y: number; vx: number; vy: number; color: string; rot: number; rspd: number; w: number; h: number; life: number }
-
-function Confetti() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    canvas.width  = window.innerWidth;
-    canvas.height = window.innerHeight;
-    const cx = canvas.width / 2;
-    const cy = canvas.height * 0.45;
-    const particles: Particle[] = Array.from({ length: 90 }, () => {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 4 + Math.random() * 7;
-      return { x: cx, y: cy, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 3,
-        color: CONF_COLORS[Math.floor(Math.random() * CONF_COLORS.length)],
-        rot: Math.random() * Math.PI * 2, rspd: (Math.random() - 0.5) * 0.25,
-        w: 6 + Math.random() * 6, h: 3 + Math.random() * 4, life: 0 };
-    });
-    const TOTAL = 150;
-    let raf = 0;
-    const draw = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      let alive = false;
-      for (const p of particles) {
-        p.life++;
-        if (p.life > TOTAL) continue;
-        alive = true;
-        p.vy += 0.13;
-        p.x += p.vx; p.y += p.vy; p.rot += p.rspd;
-        const alpha = Math.max(0, 1 - p.life / TOTAL);
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.rot);
-        ctx.fillStyle = p.color;
-        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-        ctx.restore();
-      }
-      if (alive) raf = requestAnimationFrame(draw);
-    };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-  return <canvas ref={canvasRef} className="pointer-events-none fixed inset-0 z-[70]" />;
-}
-
-// ── Animated impact counter ────────────────────────────────────────────────────
+// ── Animated impact counter (GlobalTicker) ────────────────────────────────────
 function ImpactCounter({ target }: { target: number }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
     if (target === 0) return;
     const start = performance.now();
     const dur = 1500;
-    let raf = 0;
-    const tick = (now: number) => {
-      const t = Math.min((now - start) / dur, 1);
+    const id = registerTickCallback(() => {
+      const t = Math.min((performance.now() - start) / dur, 1);
       const ease = smoothStep(t);
       setDisplay(Math.round(ease * target));
-      if (t < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+      if (t >= 1) unregisterTickCallback(id);
+    });
+    return () => unregisterTickCallback(id);
   }, [target]);
   return (
     <div className="flex flex-col items-center gap-0.5 rounded-xl border border-purple-500/20 bg-purple-500/8 px-4 py-3">
@@ -176,6 +125,8 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
   const [impactScore, setImpactScore]   = useState(0);
   /** true while awaiting flushProjectToIDB before navigating — blocks the UI */
   const [isSaving, setIsSaving]         = useState(false);
+  /** Shown when flushProjectToIDB fails — user stays on page */
+  const [saveFailed, setSaveFailed]     = useState(false);
 
   // Auto-hide confetti after 2.6s; cancels cleanly if modal unmounts
   useEffect(() => {
@@ -198,10 +149,15 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
    */
   const handleNavigate = useCallback(async () => {
     setIsSaving(true);
+    setSaveFailed(false);
     try {
       await flushProjectToIDB();
-    } finally {
       router.push(presetMode ? "/explore?tab=presets" : "/");
+    } catch (err) {
+      console.error("[PublishModal] flushProjectToIDB failed — staying on page", err);
+      setIsSaving(false);
+      setSaveFailed(true);
+      setTimeout(() => setSaveFailed(false), 5000);
     }
   }, [presetMode, router]);
   const [presetCat, setPresetCat] = useState<"blur" | "distortion" | "color" | "glitch" | "other">("other");
@@ -342,6 +298,12 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
   return (
     <>
     {showConfetti && <Confetti />}
+    {saveFailed && (
+      <div className="pointer-events-none fixed bottom-6 left-1/2 z-[9999] -translate-x-1/2 flex items-center gap-2 rounded-full border border-red-500/30 bg-[#1c1c1c]/95 px-4 py-2.5 shadow-xl backdrop-blur-sm">
+        <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+        <span className="text-xs font-semibold text-red-300">Save Failed — your project was NOT saved. Try again.</span>
+      </div>
+    )}
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-white/14 bg-[#1c1c1c] shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Durability overlay — blocks UI while project is being flushed to IDB */}

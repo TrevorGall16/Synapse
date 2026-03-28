@@ -5,6 +5,7 @@ import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { audioEngine } from "@/lib/audio/audio-engine";
 import { usePlaybackLoop } from "@/lib/hooks/use-playback-loop";
+import { registerTickCallback, unregisterTickCallback } from "@/lib/store/global-ticker";
 import { TrackHeader } from "@/components/timeline/track-header";
 import { TrackLane } from "@/components/timeline/track-lane";
 import { TimelineRuler } from "@/components/timeline/timeline-ruler";
@@ -93,7 +94,8 @@ export function Timeline() {
   const duration = useProjectStore((s) => s.duration);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const rafScrollId = useRef(0);
+  const scrollDirtyRef = useRef(false);
+  const scrollTickIdRef = useRef<number | null>(null);
 
   usePlaybackLoop();
 
@@ -133,14 +135,25 @@ export function Timeline() {
     [setZoom]
   );
 
-  const onScroll = useCallback(() => {
-    cancelAnimationFrame(rafScrollId.current);
-    rafScrollId.current = requestAnimationFrame(() => {
+  // Register a GlobalTicker callback that drains the scroll dirty flag
+  useEffect(() => {
+    scrollTickIdRef.current = registerTickCallback(() => {
+      if (!scrollDirtyRef.current) return;
+      scrollDirtyRef.current = false;
       const container = scrollContainerRef.current;
-      if (!container) return;
-      setScrollLeft(container.scrollLeft);
+      if (container) setScrollLeft(container.scrollLeft);
     });
+    return () => {
+      if (scrollTickIdRef.current !== null) {
+        unregisterTickCallback(scrollTickIdRef.current);
+        scrollTickIdRef.current = null;
+      }
+    };
   }, [setScrollLeft]);
+
+  const onScroll = useCallback(() => {
+    scrollDirtyRef.current = true;
+  }, []);
 
   useEffect(() => {
     const container = scrollContainerRef.current;

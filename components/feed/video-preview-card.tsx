@@ -29,6 +29,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMediaPoolUrl } from "@/lib/hooks/use-media-pool-url";
 import { observeViewport } from "@/lib/utils/intersection-observer-pool";
+import { registerTickCallback, unregisterTickCallback } from "@/lib/store/global-ticker";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,8 +68,8 @@ export function VideoPreviewCard({
   // it resolves, which would throw "play() interrupted by pause()".
   const playPromiseRef  = useRef<Promise<void> | null>(null);
 
-  // Rule 3: rAF handle and metadata-ready guard.
-  const rafRef          = useRef<number>(0);
+  // Rule 3: GlobalTicker callback ID and metadata-ready guard.
+  const tickIdRef       = useRef<number | null>(null);
   const metaReadyRef    = useRef(false);
 
   // Tracks whether the card is currently in view — drives the rAF loop.
@@ -76,10 +77,10 @@ export function VideoPreviewCard({
 
   const [hasError, setHasError] = useState(false);
 
-  // ── Rule 3: frame-accurate loop ──────────────────────────────────────────
+  // ── Rule 3: frame-accurate loop via GlobalTicker ─────────────────────────
   // Runs at ~16ms (60fps) — far more precise than onTimeUpdate's ~250ms.
-  // Safe to call even when the video is briefly seeking; the seek is fast
-  // enough that the next frame will have moved currentTime already.
+  // Registered/unregistered on the centralized GlobalTicker instead of
+  // spawning an independent rAF chain per card.
   const loopFrame = useCallback(() => {
     const v = videoRef.current;
     if (!v || !metaReadyRef.current || !inViewRef.current) return;
@@ -88,18 +89,18 @@ export function VideoPreviewCard({
     if (v.currentTime >= end || v.currentTime < loopStart) {
       v.currentTime = loopStart;
     }
-
-    rafRef.current = requestAnimationFrame(loopFrame);
   }, [loopEnd, loopStart]);
 
   const stopLoop = useCallback(() => {
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = 0;
+    if (tickIdRef.current !== null) {
+      unregisterTickCallback(tickIdRef.current);
+      tickIdRef.current = null;
+    }
   }, []);
 
   const startLoop = useCallback(() => {
     stopLoop();
-    rafRef.current = requestAnimationFrame(loopFrame);
+    tickIdRef.current = registerTickCallback(loopFrame);
   }, [loopFrame, stopLoop]);
 
   // ── Rule 3: onLoadedMetadata guard ───────────────────────────────────────
