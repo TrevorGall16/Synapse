@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2 } from "lucide-react";
+import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2, Grid3X3, List, Clock, Layers, GitBranch } from "lucide-react";
 import { useUserStore, DEFAULT_PROFILE } from "@/lib/store/user-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
@@ -168,7 +168,83 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+type ViewMode = "grid" | "list";
 type Tab = "published" | "drafts" | "liked";
+
+// ── Helpers for List View metadata ───────────────────────────────────────────
+
+function fmtDurationMicros(micros: number): string {
+  const secs = Math.floor(micros / 1_000_000);
+  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+}
+
+/** Derive remix count for a post by scanning the feed for posts whose remixedFromPostId matches. */
+function useRemixCount(postId: string, allPosts: FeedPost[]): number {
+  return useMemo(
+    () => allPosts.filter((p) => p.remixedFromPostId === postId).length,
+    [postId, allPosts]
+  );
+}
+
+// ── List View Row ────────────────────────────────────────────────────────────
+function PostListRow({ item, allPosts, onOpen, onDelete }: {
+  item: { type: "feed" | "registry"; id: string; title: string; accent: string; bg: string; date: number; post: FeedPost | null };
+  allPosts: FeedPost[];
+  onOpen: () => void;
+  onDelete?: () => void;
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const snap = item.post?.projectSnapshot;
+  const trackCount = snap?.tracks.length ?? 0;
+  const durationMicros = snap?.duration ?? 0;
+  const remixCount = useRemixCount(item.id, allPosts);
+
+  return (
+    <div className="group flex items-center gap-3 rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2.5 transition-colors hover:border-white/14 hover:bg-white/[0.04]">
+      {/* Color accent bar */}
+      <div className="h-8 w-1 shrink-0 rounded-full" style={{ background: item.accent }} />
+
+      {/* Title + meta */}
+      <button onClick={onOpen} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+        <span className="truncate text-[11px] font-bold text-white/85">{item.title}</span>
+        <div className="flex items-center gap-3 text-[9px] text-white/35">
+          {trackCount > 0 && (
+            <span className="flex items-center gap-1"><Layers size={8} />{trackCount} tracks</span>
+          )}
+          {durationMicros > 0 && (
+            <span className="flex items-center gap-1"><Clock size={8} />{fmtDurationMicros(durationMicros)}</span>
+          )}
+          {remixCount > 0 && (
+            <span className="flex items-center gap-1"><GitBranch size={8} />{remixCount} remix{remixCount !== 1 ? "es" : ""}</span>
+          )}
+          {item.date > 0 && (
+            <span>{new Date(item.date).toLocaleDateString()}</span>
+          )}
+        </div>
+      </button>
+
+      {/* Actions */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button onClick={onOpen}
+          className="flex items-center gap-1 rounded-md bg-white/6 px-2 py-1 text-[9px] font-semibold text-white/50 opacity-0 transition-all group-hover:opacity-100 hover:bg-white/12 hover:text-white/75">
+          <Zap size={8} />Open
+        </button>
+        {onDelete && !confirmDelete && (
+          <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-white/25 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/15 hover:text-red-400">
+            <Trash2 size={9} />
+          </button>
+        )}
+        {confirmDelete && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => setConfirmDelete(false)} className="rounded px-1.5 py-0.5 text-[9px] text-white/40 hover:bg-white/8">No</button>
+            <button onClick={() => onDelete?.()} className="rounded bg-red-500/20 px-1.5 py-0.5 text-[9px] font-bold text-red-400 hover:bg-red-500/30">Delete</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Profile page ──────────────────────────────────────────────────────────────
 export default function ProfilePage() {
@@ -185,6 +261,7 @@ export default function ProfilePage() {
   const registryProjects = useProjectsRegistry((s) => s.projects);
 
   const [tab, setTab]                  = useState<Tab>("published");
+  const [viewMode, setViewMode]        = useState<ViewMode>("grid");
   const [showEditProfile, setShowEdit] = useState(false);
   const [forceRender, setForceRender]  = useState(false);
   const [theaterPost, setTheaterPost]  = useState<FeedPost | null>(null);
@@ -405,13 +482,27 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-white/8 px-6">
-          {(["published", "drafts", "liked"] as const).map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`mr-4 border-b-2 pb-2.5 pt-1 text-[11px] font-semibold capitalize transition-colors ${tab === t ? "border-white/80 text-white" : "border-transparent text-white/35 hover:text-white/60"}`}
-            >{t}</button>
-          ))}
+        {/* Tabs + View Mode Toggle */}
+        <div className="flex items-center justify-between border-b border-white/8 px-6">
+          <div className="flex">
+            {(["published", "drafts", "liked"] as const).map((t) => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`mr-4 border-b-2 pb-2.5 pt-1 text-[11px] font-semibold capitalize transition-colors ${tab === t ? "border-white/80 text-white" : "border-transparent text-white/35 hover:text-white/60"}`}
+              >{t}</button>
+            ))}
+          </div>
+          {tab === "published" && (
+            <div className="flex items-center gap-0.5 rounded-lg border border-white/8 bg-white/[0.03] p-0.5">
+              <button onClick={() => setViewMode("grid")}
+                className={`rounded-md p-1.5 transition-colors ${viewMode === "grid" ? "bg-white/10 text-white/80" : "text-white/30 hover:text-white/55"}`}>
+                <Grid3X3 size={11} />
+              </button>
+              <button onClick={() => setViewMode("list")}
+                className={`rounded-md p-1.5 transition-colors ${viewMode === "list" ? "bg-white/10 text-white/80" : "text-white/30 hover:text-white/55"}`}>
+                <List size={11} />
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="px-6 py-5">
@@ -427,12 +518,22 @@ export default function ProfilePage() {
                   </button>
                 </div>
               )}
-              {isOwnProfile && unifiedPosts.length > 0 && (
+              {isOwnProfile && unifiedPosts.length > 0 && viewMode === "grid" && (
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
                   {unifiedPosts.map((item, i) => (
                     <PostCard key={item.id} title={item.title} accentColor={item.accent} bgColor={item.bg} index={i}
                       videoUrl={item.post?.videoUrl}
                       post={item.post}
+                      onOpen={() => handleOpenPost(item)}
+                      onDelete={item.type === "feed" ? () => removePost(item.id) : undefined}
+                    />
+                  ))}
+                </div>
+              )}
+              {isOwnProfile && unifiedPosts.length > 0 && viewMode === "list" && (
+                <div className="flex flex-col gap-1.5">
+                  {unifiedPosts.map((item) => (
+                    <PostListRow key={item.id} item={item} allPosts={allUserPosts}
                       onOpen={() => handleOpenPost(item)}
                       onDelete={item.type === "feed" ? () => removePost(item.id) : undefined}
                     />

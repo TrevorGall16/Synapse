@@ -298,8 +298,19 @@ export const FeedPostSchema = z.object({
   category:      z.enum(["high-sensation", "aesthetic", "cinematic", "glitch", "slow-mo"]).optional(),
 }).strip();
 
+// ── Collection (Workspace grouping for Profile) ─────────────────────────────
+
+export const CollectionSchema = z.object({
+  id:          z.string().min(1),
+  name:        z.string().min(1),
+  description: z.string().optional(),
+  projectIds:  z.array(z.string()).default([]),
+  isPrivate:   z.boolean().default(false),
+}).strict();
+
 // ── Exported inferred types ───────────────────────────────────────────────────
 
+export type ValidatedCollection         = z.infer<typeof CollectionSchema>;
 export type ValidatedFeedPost          = z.infer<typeof FeedPostSchema>;
 export type ValidatedSerializedProject = z.infer<typeof SerializedProjectSchema>;
 export type ValidatedHistoryData       = z.infer<typeof HistoryDataSchema>;
@@ -341,6 +352,16 @@ export function validateHistoryData(raw: unknown, context = "IDB"): ValidatedHis
   const result = HistoryDataSchema.safeParse(raw);
   if (!result.success) {
     console.error(`[Schema] HistoryData rejected (${context})`, result.error.issues);
+    return null;
+  }
+  return result.data;
+}
+
+/** Validate a Collection from IDB. Rejects and logs on failure — never throws. */
+export function validateCollection(raw: unknown, context = "IDB"): ValidatedCollection | null {
+  const result = CollectionSchema.safeParse(raw);
+  if (!result.success) {
+    console.error(`[Schema] Collection rejected (${context})`, result.error.issues);
     return null;
   }
   return result.data;

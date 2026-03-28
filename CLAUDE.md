@@ -1,32 +1,43 @@
 # Synapse Interactive Hub: Claude Code System Instructions
 
 ## Project Context
-You are building "Synapse Interactive Hub," a Next.js 15+ browser-native NLE (Non-Linear Editor) and Discovery Platform. It serves two distinct purposes:
-1. **The Studio:** A "Vegas Pro in the browser" tailored for high-intensity, audio-synced visual experiences.
-2. **The Theater (Discovery Feed):** A high-performance, vertical-scrolling consumption feed for viewing these experiences with native web technologies.
+You are building "Synapse Interactive Hub," a Next.js 15+ browser-native NLE and Discovery Platform. 
+- **The Studio:** High-intensity, audio-synced rendering.
+- **The Theater:** High-performance DOM-based discovery feed.
+
+## The Synapse Constitution (Hardening Rules)
+These 4 invariants are non-negotiable laws. Any violation is a hard-fail.
+
+1. **Schema Strictness (Zero-Trust Ingress):**
+   - **NO** `z.unknown()` or `.passthrough()` in `lib/schema.ts` for runtime state.
+   - Use `JsonValueSchema` (recursive JSON-safe) for complex objects.
+   - Use `.strict()` for core edit models and `.strip()` for feed items.
+   - **Legacy Exception:** Only one versioned `legacy_v1` adapter allowed in `lib/schema.ts`.
+
+2. **Authoritative Policy (Mutation Boundary):**
+   - `loadSnapshot` in the store is the sole gatekeeper.
+   - It **MUST** receive the `post: FeedPost` object and call `canRemix(post)`.
+   - Never trust a caller-supplied boolean (e.g., `remixAllowed`).
+   - Hard-fail (throw Error + Toast) on policy violation.
+
+3. **Persistence Durability (Async Barrier):**
+   - Navigation (`router.push`) **MUST** be `awaited` via `flushProjectToIDB()`.
+   - No navigation in `finally` blocks.
+   - UI must show a "Saving..." overlay during the await; block navigation if the write fails.
+   - Listen to `visibilitychange` and `pagehide` for background flushes.
+
+4. **Ticker Unification (The Master Clock):**
+   - **NO** logic-driven `requestAnimationFrame` (rAF).
+   - All continuous clocks (Playback, Scrubber, Timeline, Audio Meters) **MUST** use `registerTickCallback` from the `GlobalTicker`.
+   - **Whitelist Only:** rAF is only for library wrappers (`confetti.tsx`) or pure CSS-in-JS micro-animations.
 
 ## Strict Architectural Rules
-1. **The Core Split (Studio vs. Theater):**
-   - **Studio (`/app/studio`):** Follow strict mathematical rendering. Use absolute positioning, Canvas/WebGPU, and strict sub-frame engine logic.
-   - **Theater (`/app/page.tsx`, Feed Components):** Use standard DOM flow! Rely on Tailwind Flexbox/Grid, standard HTML5 `<video>` tags, and native CSS filters (like `backdrop-filter` or `blur()`). DO NOT over-engineer the UI feed with Canvas or complex controllers.
-2. **Extreme Modularity (Atomic Design):** No single file may exceed 900 lines. You must separate UI rendering logic from the WebGPU/Sequencer engine.
-3. **Hardware Guardrails:** You must implement background workers for heavy tasks (OPFS proxy generation) and strictly manage React state to prevent VRAM memory leaks.
-4. **Hydration Safety:** Do not use `window` or `Date.now()` during initial render passes.
-
-## Video Lifecycle & Autoplay Guardrails (Theater Mode)
-When working on the Theater Mode or video playback outside of the Studio, you MUST adhere to these rules:
-- **Autoplay Locks:** Autoplay requires `muted={true}` and `playsInline={true}` directly in the JSX. 
-- **Stable Sources:** `<video src={...}>` must be stable. Do NOT continuously call `URL.createObjectURL()` inside `useEffect` dependencies. Use `sessionAliveBlobUrls` from the MediaPool to prevent "interrupted load request" browser errors.
-- **Loops & Selections:** Frame-accurate looping must be handled by `requestAnimationFrame` gated behind an `onLoadedMetadata` check, NOT `onTimeUpdate`.
-- **Memory:** Always use `URL.revokeObjectURL()` on component unmount for any blobs.
+- **Modularity:** No file > 900 lines. Separate UI from the Sequencer engine.
+- **Theater Logic:** Use standard DOM flow and `<video>` tags. No over-engineering.
+- **Hardware Management:** manage React state to prevent VRAM leaks; use OPFS for heavy caching.
 
 ## Documentation Imports
-Do not guess the project requirements. You must read and strictly adhere to the following specification documents before implementing features:
-- `@file: docs/overview.md` - Core philosophy, target audience, and system limits.
-- `@file: docs/tech.md` - WebGPU pipeline, Audio Master Clock, and OPFS caching logic.
-- `@file: docs/ui.md` - The layout rules, Vegas Pro timeline mechanics, and UI components.
-- `@file: docs/data.md` - The `.SYNAPSE` JSON schema, Supabase cloud sync, and IndexedDB autosave rules.
-
-## Workflow & Git Practices
-- **Plan Mode:** Use Plan Mode for complex tasks (like building the timeline sequencer) to ensure thorough planning before implementation.
-- **Git Restores:** If a feature breaks the WebGPU context or Audio Sync, immediately restore to the last commit and rethink the approach.
+- `@file: docs/overview.md` - Philosophy & limits.
+- `@file: docs/tech.md` - WebGPU & Audio Master Clock.
+- `@file: docs/ui.md` - Vegas Pro timeline mechanics.
+- `@file: docs/data.md` - .SYNAPSE JSON schema.
