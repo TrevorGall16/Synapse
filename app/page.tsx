@@ -383,7 +383,7 @@ export default function DiscoveryFeedPage() {
         <TheaterMode
           post={theaterPost!}
           onClose={() => setTheaterPostId(null)}
-          onRemix={() => { handleRemix(theaterPost!); setTheaterPostId(null); }}
+          onRemix={(p) => { handleRemix(p); setTheaterPostId(null); }}
           onCreator={() => { router.push(`/profile/${theaterPost!.user.handle}`); setTheaterPostId(null); }}
           onHashtagClick={(tag) => {
             const normalised = tag.startsWith("#") ? tag : `#${tag}`;

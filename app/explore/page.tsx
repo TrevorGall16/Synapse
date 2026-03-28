@@ -8,7 +8,9 @@ import { StatsGrid } from "@/components/explore/stats-grid";
 import { getTrendingData } from "@/lib/stats";
 import { TheaterMode } from "@/components/feed/theater-mode";
 import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
+import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
+import { canRemix, getRemixMode } from "@/lib/policy";
 import { retainMedia } from "@/lib/store/media-pool-db";
 import { clipCssFilter, clipCssTransform } from "@/lib/utils/svg-filters";
 import { saveCustomPreset } from "@/lib/store/custom-presets-idb";
@@ -59,6 +61,7 @@ const COMMUNITY_POSTS: FeedPost[] = [
 
 // ── Template card ──────────────────────────────────────────────────────────────
 function TemplateCard({ post, onRemix, onImport, onOpen }: { post: FeedPost; onRemix: () => void; onImport: () => void; onOpen: () => void }) {
+  const remixAllowed = canRemix(post);
   return (
     <article className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all duration-300 ease-out hover:border-white/20 hover:-translate-y-0.5 hover:scale-[1.02]"
       style={{ background: post.bg }}
@@ -77,11 +80,13 @@ function TemplateCard({ post, onRemix, onImport, onOpen }: { post: FeedPost; onR
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/90" />
 
-        {/* Remix badge */}
-        <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 backdrop-blur-sm">
-          <GitBranch size={8} className="text-purple-300" />
-          <span className="text-[9px] font-semibold text-purple-300">Remixable</span>
-        </div>
+        {/* Remix badge — only shown when remixing is permitted */}
+        {remixAllowed && (
+          <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 backdrop-blur-sm">
+            <GitBranch size={8} className="text-purple-300" />
+            <span className="text-[9px] font-semibold text-purple-300">Remixable</span>
+          </div>
+        )}
 
         <div className="absolute inset-x-0 bottom-0 p-3">
           <div className="mb-1.5 flex items-center gap-1.5">
@@ -100,11 +105,13 @@ function TemplateCard({ post, onRemix, onImport, onOpen }: { post: FeedPost; onR
               className="flex items-center justify-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 text-[10px] font-semibold text-white/60 transition-all hover:bg-white/8 active:scale-95">
               <Download size={9} />Import
             </button>
-            <button onClick={(e) => { e.stopPropagation(); onRemix(); }}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
-              style={{ background: `${post.accent}cc`, boxShadow: `0 0 12px ${post.accent}50` }}>
-              <Zap size={9} />Remix This
-            </button>
+            {remixAllowed && (
+              <button onClick={(e) => { e.stopPropagation(); onRemix(); }}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
+                style={{ background: `${post.accent}cc`, boxShadow: `0 0 12px ${post.accent}50` }}>
+                <Zap size={9} />Remix This
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -328,7 +335,7 @@ export default function ExplorePage() {
       clips: t.clips.map((c) => ({ ...c, name: undefined })),
     }));
 
-    openProjectInTab({ tracks: scrubbedTracks, mediaPool: scrubbedMedia, duration: duration + 5_000_000, projectSettings: settings, name: `Remix: ${post.title}`, ...remixMeta });
+    openProjectInTab({ tracks: scrubbedTracks, mediaPool: scrubbedMedia, duration: duration + 5_000_000, projectSettings: settings, name: `Remix of @${post.user.handle}`, ...remixMeta });
     router.push("/studio");
   };
 
@@ -359,10 +366,27 @@ export default function ExplorePage() {
   // Feed posts that are presets
   const feedPresets = userPosts.filter((p) => p.type === "preset" && p.presetData);
 
+  // Canonical remix entry point — all entry points (Theater, TemplateCard, handleStudioLoad)
+  // must go through here. Routing is determined by policy.getRemixMode().
+  const launchRemix = (p: FeedPost) => {
+    if (getRemixMode(p) === "snapshot") {
+      usePlaybackStore.getState().loadSnapshot(p.projectSnapshot!, {
+        remixedFromHandle: p.user.handle,
+        parentPostId:      p.id,
+        rootParentId:      p.rootParentId,
+        rootParentHandle:  p.rootParentHandle,
+        demoStartTime:     p.demoStartTime,
+        demoDuration:      p.demoDuration,
+      });
+      router.push("/studio");
+    } else {
+      handleRemix(p);
+    }
+  };
+
   const handleStudioLoad = (p: FeedPost) => {
-    if (p.projectSnapshot) openProjectInTab({ ...p.projectSnapshot, name: p.title });
+    launchRemix(p);
     setTheaterPost(null);
-    router.push("/studio");
   };
 
   const handleImport = (post: FeedPost) => {
@@ -425,7 +449,7 @@ export default function ExplorePage() {
             </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {templates.map((post) => (
-                <TemplateCard key={post.id} post={post} onRemix={() => handleRemix(post)} onImport={() => handleImport(post)} onOpen={() => setTheaterPost(post)} />
+                <TemplateCard key={post.id} post={post} onRemix={() => launchRemix(post)} onImport={() => handleImport(post)} onOpen={() => setTheaterPost(post)} />
               ))}
             </div>
           </>
@@ -528,7 +552,7 @@ export default function ExplorePage() {
           <TheaterMode
             post={theaterPost}
             onClose={() => setTheaterPost(null)}
-            onRemix={() => handleStudioLoad(theaterPost)}
+            onRemix={(p) => handleStudioLoad(p)}
             onCreator={() => { setTheaterPost(null); router.push(`/profile/${theaterPost.user.handle}`); }}
             allPosts={templates}
             onNavigate={(p) => setTheaterPost(p)}

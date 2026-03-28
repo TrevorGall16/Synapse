@@ -4,7 +4,7 @@ import { useRef, useState, useMemo, useEffect } from "react";
 import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch, Download } from "lucide-react";
 import { type FeedPost, isBlobUrl, useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
-import { cleanupSnapshotMedia } from "@/lib/store/media-pool-db";
+import { canRemix } from "@/lib/policy";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { buildTextStyle } from "@/lib/utils/preview-helpers";
 
@@ -111,7 +111,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
             <p className="text-xs font-bold text-white">Delete this post?</p>
             <div className="flex gap-2">
               <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }} className="rounded-lg border border-white/15 px-3 py-1.5 text-[10px] font-semibold text-white/60 hover:bg-white/8">Cancel</button>
-              <button onClick={(e) => { e.stopPropagation(); if (post.projectSnapshot?.mediaPool) cleanupSnapshotMedia(post.projectSnapshot.mediaPool).catch(console.warn); onDelete?.(); }} className="rounded-lg bg-red-500/25 px-3 py-1.5 text-[10px] font-bold text-red-400 hover:bg-red-500/35">Delete</button>
+              <button onClick={(e) => { e.stopPropagation(); onDelete?.(); }} className="rounded-lg bg-red-500/25 px-3 py-1.5 text-[10px] font-bold text-red-400 hover:bg-red-500/35">Delete</button>
             </div>
           </div>
         )}
@@ -219,10 +219,12 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
                   title="Import to Media Pool"
                 ><Download size={9} />Import</button>
               )}
-              <button onClick={(e) => { e.stopPropagation(); onRemix(); }}
-                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
-                style={{ background: `${post.accent}dd`, boxShadow: `0 0 10px ${post.accent}50` }}
-              ><Zap size={9} />Remix</button>
+              {canRemix(post) && (
+                <button onClick={(e) => { e.stopPropagation(); onRemix(); }}
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
+                  style={{ background: `${post.accent}dd`, boxShadow: `0 0 10px ${post.accent}50` }}
+                ><Zap size={9} />Remix</button>
+              )}
             </div>
           </div>
         </div>

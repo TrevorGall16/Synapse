@@ -12,6 +12,7 @@ import { followCreator, unfollowCreator, isFollowing } from "@/lib/store/social-
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { buildTextStyle } from "@/lib/utils/preview-helpers";
 import { parseHashtags } from "@/lib/utils/hashtags";
+import { canRemix } from "@/lib/policy";
 
 // ── Gesture lock ───────────────────────────────────────────────────────────────
 // Set synchronously in the click handler (before React batches the state update)
@@ -40,7 +41,7 @@ function buildQueue(seed: FeedPost, all: FeedPost[]): FeedPost[] {
 interface CellProps {
   post: FeedPost;
   cellRef: (el: HTMLDivElement | null) => void;
-  onRemix: () => void;
+  onRemix: (post: FeedPost) => void;
   onCreator: () => void;
   onHashtagClick: (tag: string) => void;
   globalMuted: boolean;
@@ -470,7 +471,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
   }, [post.presetData]);
 
   const isBlobPost = post.videoUrl?.startsWith("blob:");
-  const remixAllowed = post.allowRemix !== false;
+  const remixAllowed = canRemix(post);
   // Resolved src for the main video element — undefined for snapshot posts (src set imperatively)
   const stableSrc = !post.projectSnapshot && post.videoUrl ? post.videoUrl : undefined;
   // Blur backdrop source: use videoUrl for ALL post types (snapshot posts set videoUrl = firstVideo.previewUrl)
@@ -644,14 +645,14 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
             <span className="text-[9px] font-semibold text-white" style={TX}>Share</span>
           </button>
           {isOwn && (
-            <button onClick={onRemix} className="flex flex-col items-center gap-1">
+            <button onClick={() => onRemix(post)} className="flex flex-col items-center gap-1">
               <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/15">
                 <Pencil size={15} className="text-white/80" />
               </div>
               <span className="text-[9px] font-semibold text-white/70" style={TX}>Edit</span>
             </button>
           )}
-          <button onClick={remixAllowed ? onRemix : undefined} className={`flex flex-col items-center gap-1 ${remixAllowed ? "" : "opacity-35 cursor-not-allowed"}`}>
+          <button onClick={remixAllowed ? () => onRemix(post) : undefined} className={`flex flex-col items-center gap-1 ${remixAllowed ? "" : "opacity-35 cursor-not-allowed"}`}>
             <div className="flex h-14 w-14 items-center justify-center rounded-full transition-all active:scale-95"
               style={remixAllowed ? { background: post.accent, boxShadow: `0 0 28px ${post.accent}99` } : { background: "#333" }}>
               <Zap size={26} className="text-white" fill="white" />
@@ -681,7 +682,7 @@ function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, global
 interface TheaterModeProps {
   post: FeedPost;
   onClose: () => void;
-  onRemix: () => void;
+  onRemix: (post: FeedPost) => void;
   onCreator: () => void;
   onHashtagClick?: (tag: string) => void;
   allPosts?: FeedPost[];

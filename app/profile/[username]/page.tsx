@@ -8,8 +8,10 @@ import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useProjectsRegistry } from "@/lib/store/projects-registry";
 import { TheaterMode } from "@/components/feed/theater-mode";
-import { cleanupSnapshotMedia } from "@/lib/store/media-pool-db";
 import { getTrendingData } from "@/lib/stats";
+import { usePlaybackStore } from "@/lib/store/playback-store";
+import { canRemix, getRemixMode } from "@/lib/policy";
+import { validateSerializedProject } from "@/lib/schema";
 
 // ── Mock creator profiles ─────────────────────────────────────────────────────
 const CREATOR_MAP: Record<string, { displayName: string; bio: string; hue: number; followers: number; following: number; postCount: number; totalLikes: number; remixes: number }> = {
@@ -82,7 +84,7 @@ function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, 
             <div className="flex gap-2">
               <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
                 className="rounded-lg border border-white/15 px-3 py-1.5 text-[10px] font-semibold text-white/60 hover:bg-white/8">Cancel</button>
-              <button onClick={(e) => { e.stopPropagation(); if (post?.projectSnapshot?.mediaPool) cleanupSnapshotMedia(post.projectSnapshot.mediaPool).catch(console.warn); onDelete?.(); }}
+              <button onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
                 className="rounded-lg bg-red-500/25 px-3 py-1.5 text-[10px] font-bold text-red-400 hover:bg-red-500/35">Delete</button>
             </div>
           </div>
@@ -255,13 +257,29 @@ export default function ProfilePage() {
     if (item.type === "feed" && item.post) {
       setTheaterPost(item.post); // open Theater Mode — "Edit in Studio" button inside handles Studio redirect
     } else if (item.type === "registry") {
-      try { const r = localStorage.getItem(`synapse-remix-${item.id}`); if (r) loadProject(JSON.parse(r)); } catch { /* ignore */ }
+      try {
+        const r = localStorage.getItem(`synapse-remix-${item.id}`);
+        if (r) {
+          const validated = validateSerializedProject(JSON.parse(r), `localStorage remix ${item.id}`);
+          if (validated) loadProject(validated as Parameters<typeof loadProject>[0]);
+        }
+      } catch { /* ignore malformed localStorage */ }
       router.push("/studio");
     }
   };
 
   const handleStudioLoad = (p: FeedPost) => {
-    if (p.projectSnapshot) openProjectInTab({ ...p.projectSnapshot, name: p.title });
+    // Routing determined by policy — no component-level remix logic.
+    if (getRemixMode(p) === "snapshot") {
+      usePlaybackStore.getState().loadSnapshot(p.projectSnapshot!, {
+        remixedFromHandle: p.user.handle,
+        parentPostId:      p.id,
+        rootParentId:      p.rootParentId,
+        rootParentHandle:  p.rootParentHandle,
+        demoStartTime:     p.demoStartTime,
+        demoDuration:      p.demoDuration,
+      });
+    }
     setTheaterPost(null);
     router.push("/studio");
   };
@@ -273,7 +291,7 @@ export default function ProfilePage() {
         <TheaterMode
           post={theaterPost}
           onClose={() => setTheaterPost(null)}
-          onRemix={() => handleStudioLoad(theaterPost)}
+          onRemix={(p) => handleStudioLoad(p)}
           onCreator={() => { setTheaterPost(null); router.push(`/profile/${theaterPost.user.handle}`); }}
           allPosts={allUserPosts}
           onNavigate={(p) => setTheaterPost(p)}

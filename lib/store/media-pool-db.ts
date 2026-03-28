@@ -141,7 +141,3 @@ export async function hydrateMediaPool(items: MediaPoolItem[]): Promise<MediaPoo
   );
 }
 
-/** @deprecated Use releaseSnapshotMedia instead — this hard-deletes without reference counting. */
-export async function cleanupSnapshotMedia(mediaPool: MediaPoolItem[]): Promise<void> {
-  await Promise.all(mediaPool.map((m) => removeMediaFromDB(m.id)));
-}

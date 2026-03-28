@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { useProjectStore } from "./project-store";
+import { retainMedia } from "./media-pool-db";
+import type { Track, ProjectSettings, MediaPoolItem } from "./types";
 
 // ── Volatile 60fps State ────────────────────────────────
 // Only <Playhead>, <TimelineRuler>, and <PreviewMonitor>
@@ -33,6 +35,28 @@ export interface PlaybackState {
   setGlobalBpm: (bpm: number) => void;
   rippleMode: boolean;
   toggleRippleMode: () => void;
+  /**
+   * Load a FeedPost snapshot into the project store and reset playback.
+   * This is the single canonical entry point for every Feed → Studio remix.
+   * Calls openProjectInTab so attribution locks, media hydration, and the
+   * effect-track guarantee all run automatically.
+   *
+   * Always generates a fresh projectId — never reuses the original post ID.
+   * Sets playheadPosition + selectionStart/End from demoStartTime/demoDuration.
+   */
+  loadSnapshot: (
+    snap: { tracks: Track[]; duration: number; projectSettings: ProjectSettings; mediaPool?: MediaPoolItem[] },
+    meta: {
+      remixedFromHandle?: string;
+      parentPostId?: string;
+      rootParentId?: string;
+      rootParentHandle?: string;
+      /** Micros into the project where the demo preview starts. */
+      demoStartTime?: number;
+      /** Duration of the demo window in micros. */
+      demoDuration?: number;
+    }
+  ) => void;
 }
 
 export const usePlaybackStore = create<PlaybackState>((set) => ({
@@ -80,4 +104,41 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
 
   rippleMode: false,
   toggleRippleMode: () => set((s) => ({ rippleMode: !s.rippleMode })),
+
+  loadSnapshot: (snap, meta) => {
+    const { demoStartTime, demoDuration } = meta;
+    const freshId = crypto.randomUUID();
+
+    // Ownership edge: retain each media blob so the source post can be deleted
+    // without evicting assets now referenced by the remixed project.
+    if (snap.mediaPool?.length) {
+      snap.mediaPool.forEach((m) => retainMedia(m.id).catch(console.warn));
+    }
+
+    useProjectStore.getState().openProjectInTab({
+      tracks:            snap.tracks,
+      duration:          snap.duration,
+      projectSettings:   snap.projectSettings,
+      mediaPool:         snap.mediaPool,
+      projectId:         freshId,
+      name:              `Remix of @${meta.remixedFromHandle ?? "unknown"}`,
+      remixedFromHandle: meta.remixedFromHandle,
+      parentProjectId:   meta.parentPostId,
+      rootParentId:      meta.rootParentId,
+      rootParentHandle:  meta.rootParentHandle,
+    });
+
+    const startMicros = demoStartTime ?? 0;
+    const endMicros =
+      demoStartTime != null && demoDuration != null
+        ? demoStartTime + demoDuration
+        : null;
+
+    set({
+      isPlaying:      false,
+      playheadPosition: startMicros,
+      selectionStart:   startMicros > 0 ? startMicros : null,
+      selectionEnd:     endMicros,
+    });
+  },
 }));

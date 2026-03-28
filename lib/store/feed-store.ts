@@ -3,8 +3,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Track, ProjectSettings, MediaPoolItem } from "./types";
-import { cleanupSnapshotMedia, hydrateMediaPool } from "./media-pool-db";
+import { releaseSnapshotMedia, hydrateMediaPool } from "./media-pool-db";
 import { savePostToIDB, removePostFromIDB, loadAllPostsFromIDB } from "./feed-idb";
+import { validateFeedPost } from "@/lib/schema";
 
 export type FeedPostType = "video" | "preset";
 
@@ -93,7 +94,7 @@ export const useFeedStore = create<FeedState>()(
       removePost: (id) => {
         const post = get().userPosts.find((p) => p.id === id);
         if (post?.projectSnapshot?.mediaPool?.length) {
-          cleanupSnapshotMedia(post.projectSnapshot.mediaPool).catch(console.warn);
+          releaseSnapshotMedia(post.projectSnapshot.mediaPool).catch(console.warn);
         }
         set((s) => ({ userPosts: s.userPosts.filter((p) => p.id !== id) }));
         removePostFromIDB(id).catch(console.warn);
@@ -108,11 +109,14 @@ export const useFeedStore = create<FeedState>()(
         const idbPosts = await loadAllPostsFromIDB();
         if (!idbPosts.length) return;
 
-        // Hydrate each post independently — one failure must not drop the others.
+        // Validate + hydrate each post independently — one failure must not drop the others.
         const hydrated = await Promise.all(
-          idbPosts.map(async (post): Promise<FeedPost> => {
+          idbPosts.map(async (raw): Promise<FeedPost | null> => {
+            // Bouncer: reject structurally invalid posts before they reach the store.
+            const post = validateFeedPost(raw, `post ${(raw as { id?: string })?.id ?? "?"}`);
+            if (!post) return null;
             try {
-              if (!post.projectSnapshot?.mediaPool?.length) return post;
+              if (!post.projectSnapshot?.mediaPool?.length) return post as FeedPost;
               const pool = await hydrateMediaPool(post.projectSnapshot.mediaPool);
               // Restore videoUrl from first hydrated video (was stripped on IDB save).
               const firstVideo = pool.find((m) => m.type === "video");
@@ -120,13 +124,13 @@ export const useFeedStore = create<FeedState>()(
                 ...post,
                 videoUrl: post.videoUrl ?? firstVideo?.previewUrl,
                 projectSnapshot: { ...post.projectSnapshot, mediaPool: pool },
-              };
+              } as FeedPost;
             } catch (err) {
               console.error("[FeedStore] hydrateAllPosts: failed to hydrate post", post.id, err);
-              return post; // return the post without blob URLs rather than dropping it
+              return post as FeedPost; // return the post without blob URLs rather than dropping it
             }
           }),
-        );
+        ).then((results) => results.filter((p): p is FeedPost => p !== null));
 
         // Merge: keep any in-memory posts not yet persisted to IDB (e.g. addPost
         // called during the same tick as hydration) so they are never silently dropped.
