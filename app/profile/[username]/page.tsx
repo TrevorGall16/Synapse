@@ -11,7 +11,7 @@ import { TheaterMode } from "@/components/feed/theater-mode";
 import { getTrendingData } from "@/lib/stats";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { canRemix, getRemixMode } from "@/lib/policy";
-import { validateSerializedProject } from "@/lib/schema";
+import { validateSerializedProject, DISPLAY_NAME_MAX, BIO_MAX } from "@/lib/schema";
 
 // ── Mock creator profiles ─────────────────────────────────────────────────────
 const CREATOR_MAP: Record<string, { displayName: string; bio: string; hue: number; followers: number; following: number; postCount: number; totalLikes: number; remixes: number }> = {
@@ -157,12 +157,12 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Display Name</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40}
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={DISPLAY_NAME_MAX}
               className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white outline-none focus:border-purple-500/40" />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Bio</span>
-            <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} rows={2} maxLength={160}
+            <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} rows={2} maxLength={BIO_MAX}
               className="resize-none rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white outline-none focus:border-purple-500/40" />
           </label>
           <label className="flex flex-col gap-1">
@@ -508,7 +508,7 @@ export default function ProfilePage() {
 
           <h1 className="text-base font-bold text-white">{profile.displayName}</h1>
           <p className="text-[11px] text-white/45">@{username}</p>
-          <p className="mt-1.5 text-xs text-white/65">{profile.bio}</p>
+          <p className="mt-1.5 text-[13px] leading-snug text-white/70">{profile.bio}</p>
 
           {/* ── Stats row ────────────────────────────────────────────────── */}
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
