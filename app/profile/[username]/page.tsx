@@ -278,7 +278,7 @@ export default function ProfilePage() {
         rootParentHandle:  p.rootParentHandle,
         demoStartTime:     p.demoStartTime,
         demoDuration:      p.demoDuration,
-        remixAllowed:      canRemix(p),
+        post:              p,
       });
     }
     setTheaterPost(null);

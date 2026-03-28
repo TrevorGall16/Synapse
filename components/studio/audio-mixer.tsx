@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useState } from "react";
+import { useGlobalTick } from "@/lib/hooks/use-global-tick";
 import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 
@@ -157,27 +158,23 @@ function ChannelStrip({
 
 function PeakMeter({ volume }: { volume: number }) {
   const barRef = useRef<HTMLDivElement>(null);
-  const rafRef = useRef(0);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
 
-  useEffect(() => {
+  useGlobalTick(() => {
     const bar = barRef.current;
     if (!bar) return;
-
-    if (!isPlaying || volume <= 0) {
+    if (!isPlayingRef.current || volumeRef.current <= 0) {
       bar.style.height = "0%";
       return;
     }
-
-    const tick = () => {
-      const jitter = 0.9 + Math.random() * 0.2;
-      const h = Math.min(100, volume * jitter);
-      bar.style.height = `${h}%`;
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [isPlaying, volume]);
+    const jitter = 0.9 + Math.random() * 0.2;
+    const h = Math.min(100, volumeRef.current * jitter);
+    bar.style.height = `${h}%`;
+  });
 
   return (
     <div className="relative h-16 w-[2px] overflow-hidden rounded-sm bg-white/5">

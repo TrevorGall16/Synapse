@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
+import { useGlobalTick } from "@/lib/hooks/use-global-tick";
 import type { ClipEvent, MaskLayer } from "@/lib/store/types";
 import { buildMaskedFxClipPath, buildFxFilter, type FxMaskShape } from "@/lib/utils/preview-helpers";
 import { useProjectStore } from "@/lib/store/project-store";
@@ -50,7 +51,6 @@ function buildMaskStencil(maskData: FxMaskFull, w: number, h: number): Offscreen
 
 export function PreviewFxMaskOverlay({ clip, aspectRatio, zIndex }: PreviewFxMaskOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rafRef = useRef(0);
   const projectSettings = useProjectStore((s) => s.projectSettings);
 
   // Derive mask mode BEFORE any early returns so hook call order is stable
@@ -59,71 +59,80 @@ export function PreviewFxMaskOverlay({ clip, aspectRatio, zIndex }: PreviewFxMas
   const selfManaged = isActive && (fxMask!.maskType === "polygon" || (fxMask!.masks?.length ?? 0) > 0);
   const simpleCssClipPath = isActive && !selfManaged ? buildMaskedFxClipPath(fxMask!) : undefined;
 
-  // ── Self-managed Canvas 2D rAF (polygon + multi-mask path) ────────────────
-  // Always called — inner guard (`if (!selfManaged) return`) keeps it a no-op for simple masks.
+  // Refs so the GlobalTick callback always reads the latest values without re-registering
+  const selfManagedRef = useRef(selfManaged);
+  selfManagedRef.current = selfManaged;
+  const projectSettingsRef = useRef(projectSettings);
+  projectSettingsRef.current = projectSettings;
+  const clipIdRef = useRef(clip.id);
+  clipIdRef.current = clip.id;
+
+  // Clear canvas when switching away from self-managed mode
   useEffect(() => {
-    if (!selfManaged) return;
+    if (!selfManaged) {
+      const canvas = canvasRef.current;
+      if (canvas) canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }, [selfManaged]);
+
+  // ── Self-managed Canvas 2D via GlobalTicker (polygon + multi-mask path) ──────
+  // Always registered — inner guard keeps it a no-op for simple masks.
+  useGlobalTick(() => {
+    if (!selfManagedRef.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const { width: projW, height: projH } = projectSettings;
+    const { width: projW, height: projH } = projectSettingsRef.current;
 
-    const tick = () => {
-      rafRef.current = requestAnimationFrame(tick);
+    // Resize canvas to project resolution once (% coords map cleanly to whole pixels)
+    if (canvas.width !== projW || canvas.height !== projH) {
+      canvas.width = projW;
+      canvas.height = projH;
+    }
 
-      // Resize canvas to project resolution once (% coords map cleanly to whole pixels)
-      if (canvas.width !== projW || canvas.height !== projH) {
-        canvas.width = projW;
-        canvas.height = projH;
-      }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      const topVideo = document.querySelector<HTMLVideoElement>(
-        "[data-preview-container] video:last-of-type"
-      );
-      if (!topVideo || topVideo.readyState < 2) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        return;
-      }
-
-      // 1. Draw current video frame
+    const topVideo = document.querySelector<HTMLVideoElement>(
+      "[data-preview-container] video:last-of-type"
+    );
+    if (!topVideo || topVideo.readyState < 2) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(topVideo, 0, 0, canvas.width, canvas.height);
+      return;
+    }
 
-      // 2. Read fresh fxMask from store so new points appear without remounting
-      const freshClip = (() => {
-        for (const t of useProjectStore.getState().tracks) {
-          const c = t.clips.find((c) => c.id === clip.id);
-          if (c) return c;
-        }
-        return clip;
-      })();
-      const freshMask = freshClip.fxParams?.fxMask as FxMaskFull | undefined;
+    // 1. Draw current video frame
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(topVideo, 0, 0, canvas.width, canvas.height);
 
-      // 3. Build alpha stencil from all mask layers and composite onto canvas
-      const stencil = freshMask ? buildMaskStencil(freshMask, canvas.width, canvas.height) : null;
-      if (stencil) {
-        ctx.globalCompositeOperation = "destination-in";
-        ctx.drawImage(stencil, 0, 0);
-        ctx.globalCompositeOperation = "source-over";
-        canvas.style.clipPath = "none"; // pixel compositing handles boundary — no CSS clip-path needed
-      } else {
-        ctx.clearRect(0, 0, canvas.width, canvas.height); // no valid mask yet → invisible
+    // 2. Read fresh fxMask from store so new points appear without remounting
+    const currentClipId = clipIdRef.current;
+    const freshClip = (() => {
+      for (const t of useProjectStore.getState().tracks) {
+        const c = t.clips.find((c) => c.id === currentClipId);
+        if (c) return c;
       }
+      return null;
+    })();
+    if (!freshClip) return;
+    const freshMask = freshClip.fxParams?.fxMask as FxMaskFull | undefined;
 
-      // 4. Apply FX effect as CSS filter to the composited canvas
-      const { playheadPosition } = usePlaybackStore.getState();
-      const r = buildFxFilter([freshClip], playheadPosition);
-      canvas.style.filter = r.filter !== "none" ? r.filter : "none";
-    };
+    // 3. Build alpha stencil from all mask layers and composite onto canvas
+    const stencil = freshMask ? buildMaskStencil(freshMask, canvas.width, canvas.height) : null;
+    if (stencil) {
+      ctx.globalCompositeOperation = "destination-in";
+      ctx.drawImage(stencil, 0, 0);
+      ctx.globalCompositeOperation = "source-over";
+      canvas.style.clipPath = "none"; // pixel compositing handles boundary — no CSS clip-path needed
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height); // no valid mask yet → invisible
+    }
 
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  // clip.id change triggers remount naturally; selfManaged is derived from clip — no extra deps needed
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selfManaged, clip.id, projectSettings.width, projectSettings.height]);
+    // 4. Apply FX effect as CSS filter to the composited canvas
+    const { playheadPosition } = usePlaybackStore.getState();
+    const r = buildFxFilter([freshClip], playheadPosition);
+    canvas.style.filter = r.filter !== "none" ? r.filter : "none";
+  });
 
   // Early return AFTER all hooks
   if (!isActive) return null;

@@ -55,8 +55,9 @@ const RenderedCssSchema = z.object({
 //
 // First-match semantics: known types are validated strictly; any unrecognised
 // effectType (or a record with no effectType at all) falls through to the legacy
-// adapter z.record(z.string(), z.unknown()), which accepts any key-value object.
-// This prevents new/future effect types from breaking existing saved data.
+// adapter (structured object with .passthrough()), which accepts extra keys while
+// still enforcing known base fields. This prevents new/future effect types from
+// breaking existing saved data.
 
 const _fxBase = { intensity: z.number().min(0).max(100).optional() };
 
@@ -130,7 +131,7 @@ const KeyframeSchema = z.object({
 const EffectInstanceSchema = z.object({
   id:         z.string().min(1),
   type:       z.string(),
-  parameters: z.record(z.string(), z.unknown()),
+  parameters: z.record(z.string(), JsonValueSchema),
   keyframes:  z.array(KeyframeSchema).optional(),
 }).passthrough();
 
@@ -149,7 +150,7 @@ const PanCropDataSchema = z.object({
   maskPoints: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
   maskFeather: z.number().optional(),
   maskInvert:  z.boolean().optional(),
-  masks:       z.array(z.unknown()).optional(),
+  masks:       z.array(z.object({ id: z.string(), points: z.array(z.object({ x: z.number(), y: z.number() })), type: z.enum(["add", "subtract"]) })).optional(),
 }).passthrough();
 
 // ── ClipEvent (recursive — embeddedEffectClips / embeddedTextClips) ───────────
@@ -253,7 +254,7 @@ export const SerializedProjectSchema = z.object({
 
 const PresetDataSchema = z.object({
   effectType:  z.string(),
-  fxParams:    z.record(z.string(), z.unknown()),
+  fxParams:    z.record(z.string(), JsonValueSchema),
   label:       z.string().optional(),
   category:    z.enum(["blur", "distortion", "color", "glitch", "other"]).optional(),
   previewCss:  RenderedCssSchema.optional(),

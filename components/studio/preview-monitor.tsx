@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState, useMemo } from "react";
+import { useGlobalTick } from "@/lib/hooks/use-global-tick";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { audioEngine } from "@/lib/audio/audio-engine";
@@ -32,9 +33,11 @@ function isMasked(c: ClipEvent): boolean {
 export function PreviewMonitor() {
   const [quality, setQuality] = useState<PreviewQuality>("Auto");
   const [zoom, setZoom] = useState<ZoomMode>("Fit");
-  const fxRafRef = useRef(0);
   const hadEffectsRef = useRef(false); // tracks whether FX were active last frame
   const videoContainerRef = useRef<HTMLDivElement>(null);
+  const applyFilterRef = useRef<((pos: number) => void) | null>(null);
+  const hasTimedFxRef = useRef(false);
+  const isPlayingGateRef = useRef(false);
 
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const playheadPosition = usePlaybackStore((s) => s.playheadPosition);
@@ -227,10 +230,16 @@ export function PreviewMonitor() {
   // ── 60fps FX animation loop ──────────────────────────────
   const hasTimedFx = activeEffectClips.some((c) => ["strobe","flash","hue-rotate","glitch","hypno-tunnel"].includes(String(c.fxParams?.effectType ?? "")));
 
-  // Stable string key for layer FX/panCrop params — avoids rAF restart on unrelated renders
+  // Stable string key for layer FX/panCrop params — avoids useEffect restart on unrelated renders
   const layersKey = useMemo(() =>
     layersWithOpacity.map((l) => `${l.clip.id}:${JSON.stringify(l.clip.fxParams)}:${JSON.stringify(l.clip.panCrop)}`).join(","),
   [layersWithOpacity]);
+
+  // GlobalTicker callback — runs every rAF tick; only does work when timed FX are active and playing
+  useGlobalTick(() => {
+    if (!hasTimedFxRef.current || !isPlayingGateRef.current) return;
+    applyFilterRef.current?.(usePlaybackStore.getState().playheadPosition);
+  });
 
   useEffect(() => {
     const container = videoContainerRef.current;
@@ -365,12 +374,14 @@ export function PreviewMonitor() {
       });
     };
 
+    // Publish latest applyFilter closure and gate flags so the GlobalTicker callback
+    // always calls the most-current version without re-registering.
+    applyFilterRef.current = applyFilter;
+    hasTimedFxRef.current = hasTimedFx;
+    isPlayingGateRef.current = isPlaying;
+
+    // Immediate update for static (non-timed) or paused state
     applyFilter(playheadPosition);
-    if (hasTimedFx && isPlaying) {
-      const tick = () => { applyFilter(usePlaybackStore.getState().playheadPosition); fxRafRef.current = requestAnimationFrame(tick); };
-      fxRafRef.current = requestAnimationFrame(tick);
-      return () => cancelAnimationFrame(fxRafRef.current);
-    }
   }, [fxKey, hasTimedFx, isPlaying, playheadPosition, quality, layersKey]);
 
   // ── SVG defs ──────────────────────────────────────────────

@@ -49,10 +49,8 @@ export function GlobalHydrator() {
           loadProjectFromIDB(projectId),
           loadHistoryFromIDB(projectId),
         ]);
-        // Cast is safe: validateSerializedProject already confirmed structural integrity.
-        // z.unknown() sub-fields cause Zod's inferred type to diverge from the native type.
         const projectData = rawProjectData
-          ? validateSerializedProject(rawProjectData, `active project ${projectId}`) as unknown as SerializedProject | null
+          ? validateSerializedProject(rawProjectData, `active project ${projectId}`)
           : null;
         if (projectData && projectData.tracks.length > 0) {
           useProjectStore.setState({
@@ -77,7 +75,7 @@ export function GlobalHydrator() {
           loadHistoryFromIDB(id),
         ]);
         const projectData = rawProjectData
-          ? validateSerializedProject(rawProjectData, `tab project ${id}`) as unknown as SerializedProject | null
+          ? validateSerializedProject(rawProjectData, `tab project ${id}`)
           : null;
         const validatedTabHistory = historyData
           ? validateHistoryData(historyData, `tab project history ${id}`)
