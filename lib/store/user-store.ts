@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { coerceUserProfile } from "@/lib/schema";
 
 export interface UserProfile {
   username: string;
@@ -75,18 +76,22 @@ export const useUserStore = create<UserState>()(
         if (error) console.warn("[user-store] rehydrate error:", error);
         // Migrate old flat-field format that had no nested `profile` key
         const stored = state as Record<string, unknown> | undefined;
-        const migratedProfile: UserProfile =
-          (stored?.profile as UserProfile | undefined) ??
+        // Build raw candidate: prefer nested `profile` object, fall back to old flat format.
+        const rawProfile: unknown =
+          stored?.profile ??
           (stored?.username
             ? {
-                username: stored.username as string,
-                displayName: stored.displayName as string,
-                bio: stored.bio as string,
-                hue: stored.hue as number,
-                followers: (stored.followers as number) ?? 0,
-                following: (stored.following as number) ?? 0,
+                username: stored.username,
+                displayName: stored.displayName,
+                bio: stored.bio,
+                hue: stored.hue,
+                followers: stored.followers ?? 0,
+                following: stored.following ?? 0,
               }
-            : DEFAULT_PROFILE);
+            : null);
+        // coerceUserProfile never throws and never resets to default silently —
+        // it truncates over-limit fields so the user's actual data is preserved.
+        const migratedProfile = coerceUserProfile(rawProfile);
         const s = state as (UserState & Record<string, unknown>) | undefined;
         // queueMicrotask defers until after create() returns and useUserStore is
         // fully assigned — prevents TDZ ReferenceError when localStorage
