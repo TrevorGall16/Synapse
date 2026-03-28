@@ -4,28 +4,35 @@ import { useEffect, useRef } from "react";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { audioEngine } from "@/lib/audio/audio-engine";
+import { registerTickCallback, unregisterTickCallback } from "@/lib/store/global-ticker";
 
 /**
  * Playback loop — slaved to AudioContext.currentTime when available.
  *
+ * F — GlobalTicker: Uses the centralized rAF loop instead of an independent
+ * requestAnimationFrame chain. Audio-clock derivation is unchanged; only the
+ * scheduling moves to GlobalTicker, eliminating a redundant GPU wake-up.
+ *
+ * @local-raf: none — fully migrated to GlobalTicker.
+ *
  * On play start: anchors `audioEngine.setPlaybackOrigin(currentPlayhead)`.
- * Each rAF tick: derives position from `ctx.currentTime - origin.audioCtxTime`,
+ * Each tick: derives position from `ctx.currentTime - origin.audioCtxTime`,
  * eliminating rAF delta drift across long sessions and tab-backgrounding.
  *
- * Seek detection: if the store's playheadPosition diverges from the computed
- * position by >100ms, a seek happened — re-anchor the origin and continue.
+ * Seek detection: if store's playheadPosition diverges from computed by >100ms,
+ * re-anchor the origin and continue.
  *
- * Fallback: if no AudioContext is available yet, accumulates rAF deltas (UI-only mode).
+ * Fallback: if no AudioContext yet, accumulates tick deltas (UI-only mode).
  */
 export function usePlaybackLoop() {
   const prevTimestamp = useRef(0);
-  const rafRef = useRef(0);
-  const isPlaying = usePlaybackStore((s) => s.isPlaying);
+  const tickIdRef     = useRef<number | null>(null);
+  const isPlaying     = usePlaybackStore((s) => s.isPlaying);
 
   useEffect(() => {
     if (!isPlaying) {
       prevTimestamp.current = 0;
-      cancelAnimationFrame(rafRef.current);
+      if (tickIdRef.current !== null) { unregisterTickCallback(tickIdRef.current); tickIdRef.current = null; }
       audioEngine.clearPlaybackOrigin();
       return;
     }
@@ -52,12 +59,12 @@ export function usePlaybackLoop() {
         if (Math.abs(currentPos - computed) > 100_000) {
           audioEngine.setPlaybackOrigin(currentPos);
           prevTimestamp.current = timestamp;
-          rafRef.current = requestAnimationFrame(tick);
+          // GlobalTicker calls again next frame — no requestAnimationFrame needed here
           return;
         }
         nextPosition = computed;
       } else {
-        // Fallback: rAF delta accumulation
+        // Fallback: tick-delta accumulation (no AudioContext)
         if (prevTimestamp.current > 0) {
           const deltaMs = timestamp - prevTimestamp.current;
           nextPosition  = currentPos + Math.round(deltaMs * 1000);
@@ -70,19 +77,21 @@ export function usePlaybackLoop() {
         setPlayhead(duration);
         togglePlayback();
         audioEngine.clearPlaybackOrigin();
+        // Unregister self — playback is done
+        if (tickIdRef.current !== null) { unregisterTickCallback(tickIdRef.current); tickIdRef.current = null; }
         return;
       }
 
       setPlayhead(nextPosition);
       prevTimestamp.current = timestamp;
-      rafRef.current = requestAnimationFrame(tick);
+      // GlobalTicker handles loop continuation — no requestAnimationFrame call here
     };
 
     prevTimestamp.current = 0;
-    rafRef.current = requestAnimationFrame(tick);
+    tickIdRef.current = registerTickCallback(tick);
 
     return () => {
-      cancelAnimationFrame(rafRef.current);
+      if (tickIdRef.current !== null) { unregisterTickCallback(tickIdRef.current); tickIdRef.current = null; }
     };
   }, [isPlaying]);
 }

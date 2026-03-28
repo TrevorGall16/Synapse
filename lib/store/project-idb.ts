@@ -20,7 +20,8 @@ export interface IDBProjectRecord {
   duration: number;
   markers: Marker[];
   projectSettings: ProjectSettings;
-  mediaPool?: MediaPoolItem[];
+  /** Required — always serialised so GC ref-counts survive a browser restart. */
+  mediaPool: MediaPoolItem[];
   parentProjectId?: string;
   remixedFromHandle?: string;
   rootParentId?: string;

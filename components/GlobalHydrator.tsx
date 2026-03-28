@@ -22,12 +22,16 @@ import type { SerializedProject } from "@/lib/store/types";
  */
 
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
-let _flushFn: (() => void) | null = null;
+let _flushFn: (() => Promise<void>) | null = null;
 
-/** Immediately persist active project + all open tabs to IDB, bypassing the debounce. */
-export function flushProjectToIDB(): void {
+/**
+ * Immediately persist active project + all open tabs to IDB, bypassing the debounce.
+ * Returns a Promise that resolves only after all IDB writes are physically complete —
+ * safe to await before navigating away (Publish flow) or in beforeunload handlers.
+ */
+export async function flushProjectToIDB(): Promise<void> {
   if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
-  _flushFn?.();
+  if (_flushFn) await _flushFn();
 }
 
 export function GlobalHydrator() {
@@ -115,32 +119,34 @@ export function GlobalHydrator() {
     run().catch(console.warn).finally(markHydrated);
 
     // ── Step 4: debounced IDB write on every tracks/history change ──
-    const doSave = () => {
+    // doSave is async so flushProjectToIDB() can await physical write completion.
+    const doSave = async (): Promise<void> => {
       const s = useProjectStore.getState();
       if (!s.projectId) return;
 
-      // Save active project (mediaPool included for GC symmetry — ref-counts must survive restart)
-      saveProjectToIDB({
-        projectId: s.projectId, name: s.name, tracks: s.tracks, duration: s.duration,
-        markers: s.markers, projectSettings: s.projectSettings,
-        mediaPool: s.mediaPool,
-        parentProjectId: s.parentProjectId, remixedFromHandle: s.remixedFromHandle,
-        rootParentId: s.rootParentId, rootParentHandle: s.rootParentHandle,
-        updatedAt: Date.now(),
-      }).catch(console.warn);
-      saveHistoryToIDB(s.projectId, s.historyPast, s.historyFuture).catch(console.warn);
-
-      // Save each open tab's full state to IDB
-      for (const [id, proj] of Object.entries(s.savedProjects)) {
+      await Promise.all([
+        // Active project — mediaPool always included for GC symmetry (ref-counts must survive restart)
         saveProjectToIDB({
-          projectId: id, name: proj.name, tracks: proj.tracks, duration: proj.duration,
-          markers: proj.markers, projectSettings: proj.projectSettings,
-          mediaPool: proj.mediaPool,
-          parentProjectId: proj.parentProjectId, remixedFromHandle: proj.remixedFromHandle,
-          rootParentId: proj.rootParentId, rootParentHandle: proj.rootParentHandle,
+          projectId: s.projectId, name: s.name, tracks: s.tracks, duration: s.duration,
+          markers: s.markers, projectSettings: s.projectSettings,
+          mediaPool: s.mediaPool,
+          parentProjectId: s.parentProjectId, remixedFromHandle: s.remixedFromHandle,
+          rootParentId: s.rootParentId, rootParentHandle: s.rootParentHandle,
           updatedAt: Date.now(),
-        }).catch(console.warn);
-      }
+        }),
+        saveHistoryToIDB(s.projectId, s.historyPast, s.historyFuture),
+        // All open tabs
+        ...Object.entries(s.savedProjects).map(([id, proj]) =>
+          saveProjectToIDB({
+            projectId: id, name: proj.name, tracks: proj.tracks, duration: proj.duration,
+            markers: proj.markers, projectSettings: proj.projectSettings,
+            mediaPool: proj.mediaPool,
+            parentProjectId: proj.parentProjectId, remixedFromHandle: proj.remixedFromHandle,
+            rootParentId: proj.rootParentId, rootParentHandle: proj.rootParentHandle,
+            updatedAt: Date.now(),
+          })
+        ),
+      ]);
     };
 
     // Expose flush for external callers (publish, tab switch, pagehide)
@@ -168,12 +174,13 @@ export function GlobalHydrator() {
       if (!tracksChanged && !historyChanged && !savedChanged) return;
 
       if (_saveTimer) clearTimeout(_saveTimer);
-      _saveTimer = setTimeout(doSave, 500);
+      _saveTimer = setTimeout(() => { void doSave(); }, 500);
     });
 
-    // Flush on visibility loss (tab switch, browser close)
-    const handleVisibilityChange = () => { if (document.visibilityState === "hidden") flushProjectToIDB(); };
-    const handlePageHide = () => flushProjectToIDB();
+    // Flush on visibility loss (tab switch, browser close).
+    // void is intentional — browser unload events can't await Promises.
+    const handleVisibilityChange = () => { if (document.visibilityState === "hidden") void flushProjectToIDB(); };
+    const handlePageHide = () => void flushProjectToIDB();
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pagehide", handlePageHide);
 

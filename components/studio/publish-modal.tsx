@@ -9,6 +9,7 @@ import { useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore, XP_AWARDS } from "@/lib/store/user-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { getAttributionLock } from "@/lib/store/attribution-idb";
+import { flushProjectToIDB } from "@/components/GlobalHydrator";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import type { Track, ClipEvent, MediaPoolItem } from "@/lib/store/types";
 
@@ -173,6 +174,8 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
   const [publishedId, setPublishedId] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [impactScore, setImpactScore]   = useState(0);
+  /** true while awaiting flushProjectToIDB before navigating — blocks the UI */
+  const [isSaving, setIsSaving]         = useState(false);
 
   // Auto-hide confetti after 2.6s; cancels cleanly if modal unmounts
   useEffect(() => {
@@ -188,6 +191,19 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
     setShowConfetti(true);
     setPublished(true);
   }, [addXp]);
+
+  /**
+   * Durability barrier: flush all project state to IDB before leaving Studio.
+   * Shows a Saving… overlay so the user can't close the tab mid-write.
+   */
+  const handleNavigate = useCallback(async () => {
+    setIsSaving(true);
+    try {
+      await flushProjectToIDB();
+    } finally {
+      router.push(presetMode ? "/explore?tab=presets" : "/");
+    }
+  }, [presetMode, router]);
   const [presetCat, setPresetCat] = useState<"blur" | "distortion" | "color" | "glitch" | "other">("other");
   const [demoVideoId, setDemoVideoId] = useState<string | null>(null);
   const [demoStartTime, setDemoStartTime] = useState(0);
@@ -327,7 +343,14 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
     <>
     {showConfetti && <Confetti />}
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-white/14 bg-[#1c1c1c] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-white/14 bg-[#1c1c1c] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        {/* Durability overlay — blocks UI while project is being flushed to IDB */}
+        {isSaving && (
+          <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center gap-2 rounded-2xl bg-black/80 backdrop-blur-sm">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/15 border-t-purple-400" />
+            <p className="text-xs font-semibold text-white/70">Saving…</p>
+          </div>
+        )}
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
@@ -560,10 +583,12 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
               </div>
               <ImpactCounter target={impactScore} />
               <button
-                onClick={() => router.push(presetMode ? "/explore?tab=presets" : "/")}
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-white/8 py-2.5 text-sm font-semibold text-white/80 transition-colors hover:bg-white/15"
+                onClick={handleNavigate}
+                disabled={isSaving}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-white/8 py-2.5 text-sm font-semibold text-white/80 transition-colors hover:bg-white/15 disabled:opacity-60"
               >
-                {presetMode ? "View in Explore" : "View on Feed"} <ArrowRight size={13} />
+                {isSaving ? "Saving…" : (presetMode ? "View in Explore" : "View on Feed")}
+                {!isSaving && <ArrowRight size={13} />}
               </button>
               <button onClick={onClose} className="text-[10px] text-white/30 hover:text-white/55">
                 Stay in Studio

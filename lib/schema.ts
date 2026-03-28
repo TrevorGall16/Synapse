@@ -83,17 +83,47 @@ const FxParamsKnownSchema = z.discriminatedUnion("effectType", [
     ..._fxBase }).passthrough(),
 ]);
 
-/** Accepts known effect shapes strictly; unknown effectTypes via legacy record adapter. */
+/**
+ * Versioned legacy adapter — validates the base fields present on ALL effects
+ * (effectType as a non-empty string when supplied, intensity clamped to 0-100)
+ * while passing unknown extras through. Replaces the prior raw z.record which
+ * accepted any value type on any key including non-serialisable shapes.
+ */
+const FxParamsLegacySchema = z.object({
+  effectType: z.string().optional(),
+  intensity:  z.number().min(0).max(100).optional(),
+}).passthrough();
+
+/** Accepts known effect shapes strictly; unknown/legacy effectTypes via structured adapter. */
 export const FxParamsSchema = z.union([
   FxParamsKnownSchema,
-  z.record(z.string(), z.unknown()), // legacy adapter: effectType absent or unrecognised
+  FxParamsLegacySchema, // legacy adapter: effectType absent or unrecognised
 ]);
+
+// ── JSON-safe recursive value schema ─────────────────────────────────────────
+//
+// Covers every valid keyframe value shape (scalar, colour object, vec2, nested
+// animation params) while explicitly blocking `unknown/any`. This replaces the
+// prior `z.union([z.number(), z.record(z.string(), z.unknown())])` which allowed
+// arbitrary non-serialisable types (functions, class instances, etc.) as values.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const JsonValueSchema: z.ZodType<any> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(JsonValueSchema),
+    z.record(z.string(), JsonValueSchema),
+  ])
+);
 
 // ── Keyframe & EffectInstance ─────────────────────────────────────────────────
 
 const KeyframeSchema = z.object({
   time:          z.number(),
-  value:         z.union([z.number(), z.record(z.string(), z.unknown())]),
+  value:         JsonValueSchema,
   interpolation: z.enum(["linear", "ease-in", "ease-out", "step"]).optional(),
 });
 
@@ -197,7 +227,9 @@ export const ProjectSnapshotSchema = z.object({
   tracks:          z.array(TrackSchema),
   duration:        z.number().positive(),
   projectSettings: ProjectSettingsSchema,
-  mediaPool:       z.array(MediaPoolItemSchema).optional(),
+  // .default([]) ensures older records missing this field never fail validation —
+  // they simply resolve to an empty pool, maintaining backward compatibility.
+  mediaPool:       z.array(MediaPoolItemSchema).default([]),
 });
 
 export const SerializedProjectSchema = z.object({
@@ -206,7 +238,9 @@ export const SerializedProjectSchema = z.object({
   tracks:            z.array(TrackSchema),
   duration:          z.number().nonnegative(),
   projectSettings:   ProjectSettingsSchema,
-  mediaPool:         z.array(MediaPoolItemSchema).optional(),
+  // .default([]) — IDB records written before mediaPool was tracked resolve to []
+  // instead of failing validation. Symmetric with ProjectSnapshotSchema.
+  mediaPool:         z.array(MediaPoolItemSchema).default([]),
   markers:           z.array(MarkerSchema).optional(),
   parentProjectId:   z.string().optional(),
   remixedFromHandle: z.string().optional(),

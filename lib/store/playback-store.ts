@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { useProjectStore } from "./project-store";
 import { retainMedia } from "./media-pool-db";
+import { canRemix } from "../policy";
 import type { Track, ProjectSettings, MediaPoolItem } from "./types";
+import type { FeedPost } from "./feed-store";
 
 // ── Volatile 60fps State ────────────────────────────────
 // Only <Playhead>, <TimelineRuler>, and <PreviewMonitor>
@@ -56,10 +58,12 @@ export interface PlaybackState {
       /** Duration of the demo window in micros. */
       demoDuration?: number;
       /**
-       * Policy token — must be explicitly true to allow mutation.
-       * Callers derive this from canRemix(post). When false or absent,
-       * loadSnapshot is a no-op and logs a policy violation.
+       * Provide the source FeedPost to let the store evaluate remix policy
+       * directly via canRemix(post) — the authoritative, first-principles check.
+       * When post is absent, remixAllowed must be explicitly true as a
+       * pre-validated fallback token. Either path is blocked if policy fails.
        */
+      post?: FeedPost;
       remixAllowed?: boolean;
     }
   ) => void;
@@ -112,9 +116,12 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   toggleRippleMode: () => set((s) => ({ rippleMode: !s.rippleMode })),
 
   loadSnapshot: (snap, meta) => {
-    // Policy gate: remixAllowed must be explicitly true — absent = denied.
-    if (!meta.remixAllowed) {
-      console.warn("[loadSnapshot] blocked — remixAllowed policy token not set. Caller must pass canRemix(post) result.");
+    // Authoritative policy gate: evaluate via canRemix(post) when the source post
+    // is available (first-principles check); fall back to the caller-supplied token.
+    // Either path: absent = denied, protecting against policy bypass.
+    const allowed = meta.post ? canRemix(meta.post) : meta.remixAllowed === true;
+    if (!allowed) {
+      console.warn("[loadSnapshot] blocked — remix policy not satisfied. Pass meta.post or set meta.remixAllowed=true after calling canRemix().");
       return;
     }
 
