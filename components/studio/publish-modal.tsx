@@ -13,6 +13,7 @@ import { usePlaybackStore } from "@/lib/store/playback-store";
 import { getAttributionLock } from "@/lib/store/attribution-idb";
 import { flushProjectToIDB } from "@/components/GlobalHydrator";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
+import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
 import type { Track, ClipEvent, MediaPoolItem } from "@/lib/store/types";
 
 // Stable empty array reference — prevents Zustand getSnapshot infinite loop
@@ -119,6 +120,7 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
   const [tagInput, setTagInput]       = useState("");
   const [allowRemix, setAllowRemix]   = useState(false);
   const [scope, setScope]             = useState<"timeline" | "selection">("timeline");
+  const [videoCategory, setVideoCategory] = useState<"high-sensation" | "aesthetic" | "cinematic" | "glitch" | "slow-mo" | undefined>(undefined);
   const [published, setPublished]     = useState(false);
   const [publishedId, setPublishedId] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -284,6 +286,7 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
       rootParentId: safeRootParentId,
       rootParentHandle: safeRootParentHandle,
       createdAt: Date.now(),
+      category: videoCategory,
     });
 
     // Compute impact score: clipCount×150 + effectCount×350 + durationSecs×10
@@ -341,9 +344,9 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
 
           {!published ? (
             <>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title *" maxLength={80}
+              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title *" maxLength={TITLE_MAX}
                 className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white placeholder-white/22 outline-none focus:border-purple-500/40 focus:bg-white/7" />
-              <textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description…" rows={2} maxLength={300}
+              <textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description…" rows={2} maxLength={DESCRIPTION_MAX}
                 className="resize-none rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white placeholder-white/22 outline-none focus:border-purple-500/40 focus:bg-white/7" />
               {/* ── Tag Cloud ─────────────────────────────────────────────── */}
               <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/3 p-3">
@@ -524,6 +527,21 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
                       {allowRemix ? "Remix" : "not Remix"}
                     </span>{" "}your edit.
                   </p>
+
+                  {/* Niche category (optional) */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">Niche <span className="normal-case text-white/20">(optional)</span></span>
+                    <div className="flex flex-wrap gap-1">
+                      {([undefined, "high-sensation", "aesthetic", "cinematic", "glitch", "slow-mo"] as const).map((c) => (
+                        <button key={c ?? "none"} type="button" onClick={() => setVideoCategory(c)}
+                          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize transition-colors ${
+                            videoCategory === c ? "bg-purple-500/28 text-purple-200 ring-1 ring-purple-500/40" : "text-white/40 hover:text-white/70"
+                          }`}>
+                          {c ? c.replace("-", " ") : "None"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </>
               )}
 

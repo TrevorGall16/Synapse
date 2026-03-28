@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { X, Upload, Zap, Globe, Check } from "lucide-react";
 import { useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
+import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
 
 interface UploadModalProps {
   onClose: () => void;
@@ -97,11 +98,11 @@ export function UploadModal({ onClose, onStudioFile }: UploadModalProps) {
             </button>
 
             <input
-              value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title *" maxLength={80}
+              value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title *" maxLength={TITLE_MAX}
               className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white placeholder-white/22 outline-none focus:border-purple-500/40 focus:bg-white/7"
             />
             <textarea
-              value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description…" rows={2} maxLength={300}
+              value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Description…" rows={2} maxLength={DESCRIPTION_MAX}
               className="resize-none rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white placeholder-white/22 outline-none focus:border-purple-500/40 focus:bg-white/7"
             />
             <input

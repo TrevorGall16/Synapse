@@ -17,6 +17,13 @@
 
 import { z } from "zod";
 
+// ── Authoritative limits — UI inputs MUST import these, never hard-code. ─────
+
+export const TITLE_MAX       = 80;
+export const DESCRIPTION_MAX = 300;
+export const COLLECTION_NAME_MAX = 80;
+export const COLLECTION_DESC_MAX = 500;
+
 // ── Primitives ────────────────────────────────────────────────────────────────
 
 const TrackTypeSchema = z.enum(["video", "audio", "text", "effect"]);
@@ -274,8 +281,8 @@ export const FeedPostSchema = z.object({
     initial: z.string().max(2),
     hue:     z.number().min(0).max(360),
   }),
-  title:       z.string(),
-  description: z.string().optional(),
+  title:       z.string().max(TITLE_MAX),
+  description: z.string().max(DESCRIPTION_MAX).optional(),
   tags:        z.array(z.string()),
   bg:          z.string(),
   accent:      z.string(),
@@ -302,8 +309,8 @@ export const FeedPostSchema = z.object({
 
 export const CollectionSchema = z.object({
   id:          z.string().min(1),
-  name:        z.string().min(1),
-  description: z.string().optional(),
+  name:        z.string().min(1).max(COLLECTION_NAME_MAX),
+  description: z.string().max(COLLECTION_DESC_MAX).optional(),
   projectIds:  z.array(z.string()).default([]),
   isPrivate:   z.boolean().default(false),
 }).strict();

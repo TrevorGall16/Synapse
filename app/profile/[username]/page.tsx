@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2, Grid3X3, List, Clock, Layers, GitBranch } from "lucide-react";
+import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2, Grid3X3, List, LayoutGrid, Clock, Layers, GitBranch } from "lucide-react";
 import { useUserStore, DEFAULT_PROFILE } from "@/lib/store/user-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
@@ -40,8 +40,22 @@ function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, 
   post?: FeedPost | null; onOpen: () => void; onDelete?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const cardRef = useRef<HTMLElement>(null);
   const [hovered, setHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+
+  // Lazy-mount video only when card enters viewport
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setIsVisible(true); observer.disconnect(); } },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Find first clip's source URL and frame offset from snapshot
   const firstClipSrc = useMemo(() => {
@@ -74,7 +88,7 @@ function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, 
   }, [firstClipOffset]);
 
   return (
-    <article className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all duration-300 ease-out hover:scale-[1.02] hover:border-white/20"
+    <article ref={cardRef} className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all duration-300 ease-out hover:scale-[1.02] hover:border-white/20"
       onClick={onOpen} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
       <div className="relative" style={{ aspectRatio: "9/16", background: bgColor }}>
         {/* Delete confirmation overlay */}
@@ -97,7 +111,7 @@ function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, 
             ))}
           </div>
         )}
-        {firstClipSrc && (
+        {firstClipSrc && isVisible && (
           <video ref={videoRef} src={firstClipSrc} muted loop playsInline preload="metadata"
             className="absolute inset-0 h-full w-full object-cover"
             onLoadedMetadata={() => { if (videoRef.current) videoRef.current.currentTime = firstClipOffset; }} />
@@ -168,7 +182,7 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-type ViewMode = "grid" | "list";
+type ViewMode = "grid" | "list" | "compact";
 type Tab = "published" | "drafts" | "liked";
 
 // ── Helpers for List View metadata ───────────────────────────────────────────
@@ -203,6 +217,108 @@ function PostListRow({ item, allPosts, onOpen, onDelete }: {
     <div className="group flex items-center gap-3 rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2.5 transition-colors hover:border-white/14 hover:bg-white/[0.04]">
       {/* Color accent bar */}
       <div className="h-8 w-1 shrink-0 rounded-full" style={{ background: item.accent }} />
+
+      {/* Title + meta */}
+      <button onClick={onOpen} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+        <span className="truncate text-[11px] font-bold text-white/85">{item.title}</span>
+        <div className="flex items-center gap-3 text-[9px] text-white/35">
+          {trackCount > 0 && (
+            <span className="flex items-center gap-1"><Layers size={8} />{trackCount} tracks</span>
+          )}
+          {durationMicros > 0 && (
+            <span className="flex items-center gap-1"><Clock size={8} />{fmtDurationMicros(durationMicros)}</span>
+          )}
+          {remixCount > 0 && (
+            <span className="flex items-center gap-1"><GitBranch size={8} />{remixCount} remix{remixCount !== 1 ? "es" : ""}</span>
+          )}
+          {item.date > 0 && (
+            <span>{new Date(item.date).toLocaleDateString()}</span>
+          )}
+        </div>
+      </button>
+
+      {/* Actions */}
+      <div className="flex shrink-0 items-center gap-1.5">
+        <button onClick={onOpen}
+          className="flex items-center gap-1 rounded-md bg-white/6 px-2 py-1 text-[9px] font-semibold text-white/50 opacity-0 transition-all group-hover:opacity-100 hover:bg-white/12 hover:text-white/75">
+          <Zap size={8} />Open
+        </button>
+        {onDelete && !confirmDelete && (
+          <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-white/25 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/15 hover:text-red-400">
+            <Trash2 size={9} />
+          </button>
+        )}
+        {confirmDelete && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => setConfirmDelete(false)} className="rounded px-1.5 py-0.5 text-[9px] text-white/40 hover:bg-white/8">No</button>
+            <button onClick={() => onDelete?.()} className="rounded bg-red-500/20 px-1.5 py-0.5 text-[9px] font-bold text-red-400 hover:bg-red-500/30">Delete</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Compact Preview Row (56px, 16:9 static thumbnail + metadata) ─────────────
+function PostCompactRow({ item, allPosts, onOpen, onDelete }: {
+  item: { type: "feed" | "registry"; id: string; title: string; accent: string; bg: string; date: number; post: FeedPost | null };
+  allPosts: FeedPost[];
+  onOpen: () => void;
+  onDelete?: () => void;
+}) {
+  const thumbRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const snap = item.post?.projectSnapshot;
+  const trackCount = snap?.tracks.length ?? 0;
+  const durationMicros = snap?.duration ?? 0;
+  const remixCount = useRemixCount(item.id, allPosts);
+
+  // Thumbnail source from snapshot — same logic as PostCard
+  const thumbSrc = useMemo(() => {
+    if (!snap) return item.post?.videoUrl;
+    const pool = snap.mediaPool ?? [];
+    const first = snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips)
+      .sort((a, b) => a.startTime - b.startTime)[0];
+    return first ? (pool.find((m) => m.id === first.sourceId)?.previewUrl ?? item.post?.videoUrl) : item.post?.videoUrl;
+  }, [snap, item.post?.videoUrl]);
+
+  const thumbOffset = useMemo(() => {
+    if (!snap) return 0.001;
+    const first = snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips)
+      .sort((a, b) => a.startTime - b.startTime)[0];
+    return first ? Math.max(0.001, (first.mediaOffset ?? 0) / 1_000_000) : 0.001;
+  }, [snap]);
+
+  // IntersectionObserver — lazy-mount video
+  useEffect(() => {
+    const el = thumbRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setIsVisible(true); observer.disconnect(); } },
+      { rootMargin: "100px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div className="group flex items-center gap-3 rounded-lg border border-white/6 bg-white/[0.02] px-2 py-1.5 transition-colors hover:border-white/14 hover:bg-white/[0.04]">
+      {/* 16:9 thumbnail — 99×56px, static frame, no autoplay */}
+      <div ref={thumbRef} className="relative h-[56px] w-[99px] shrink-0 overflow-hidden rounded-md" style={{ background: item.bg }}>
+        {thumbSrc && isVisible && (
+          <video ref={videoRef} src={thumbSrc} muted playsInline preload="metadata"
+            className="absolute inset-0 h-full w-full object-cover"
+            onLoadedMetadata={() => { if (videoRef.current) videoRef.current.currentTime = thumbOffset; }} />
+        )}
+        {!thumbSrc && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="h-3 w-3 rounded-sm" style={{ background: item.accent, opacity: 0.3 }} />
+          </div>
+        )}
+      </div>
 
       {/* Title + meta */}
       <button onClick={onOpen} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
@@ -493,11 +609,15 @@ export default function ProfilePage() {
           </div>
           {tab === "published" && (
             <div className="flex items-center gap-0.5 rounded-lg border border-white/8 bg-white/[0.03] p-0.5">
-              <button onClick={() => setViewMode("grid")}
+              <button onClick={() => setViewMode("grid")} title="Grid"
                 className={`rounded-md p-1.5 transition-colors ${viewMode === "grid" ? "bg-white/10 text-white/80" : "text-white/30 hover:text-white/55"}`}>
                 <Grid3X3 size={11} />
               </button>
-              <button onClick={() => setViewMode("list")}
+              <button onClick={() => setViewMode("compact")} title="Compact"
+                className={`rounded-md p-1.5 transition-colors ${viewMode === "compact" ? "bg-white/10 text-white/80" : "text-white/30 hover:text-white/55"}`}>
+                <LayoutGrid size={11} />
+              </button>
+              <button onClick={() => setViewMode("list")} title="List"
                 className={`rounded-md p-1.5 transition-colors ${viewMode === "list" ? "bg-white/10 text-white/80" : "text-white/30 hover:text-white/55"}`}>
                 <List size={11} />
               </button>
@@ -519,11 +639,21 @@ export default function ProfilePage() {
                 </div>
               )}
               {isOwnProfile && unifiedPosts.length > 0 && viewMode === "grid" && (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
                   {unifiedPosts.map((item, i) => (
                     <PostCard key={item.id} title={item.title} accentColor={item.accent} bgColor={item.bg} index={i}
                       videoUrl={item.post?.videoUrl}
                       post={item.post}
+                      onOpen={() => handleOpenPost(item)}
+                      onDelete={item.type === "feed" ? () => removePost(item.id) : undefined}
+                    />
+                  ))}
+                </div>
+              )}
+              {isOwnProfile && unifiedPosts.length > 0 && viewMode === "compact" && (
+                <div className="flex flex-col gap-1.5">
+                  {unifiedPosts.map((item) => (
+                    <PostCompactRow key={item.id} item={item} allPosts={allUserPosts}
                       onOpen={() => handleOpenPost(item)}
                       onDelete={item.type === "feed" ? () => removePost(item.id) : undefined}
                     />
@@ -541,7 +671,7 @@ export default function ProfilePage() {
                 </div>
               )}
               {!isOwnProfile && (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
                   {Array.from({ length: Math.min(mockCount, 10) }).map((_, i) => (
                     <PostCard key={i} title={`Edit #${i + 1}`} accentColor={accent} bgColor={bannerBg} index={i} onOpen={() => router.push("/")} />
                   ))}

@@ -16,12 +16,12 @@ function isValidCategory(v: string): v is NicheCategory {
   return (VALID_CATEGORIES as readonly string[]).includes(v);
 }
 
-const CATEGORY_META: Record<NicheCategory, { label: string; description: string; accent: string }> = {
-  "high-sensation": { label: "High Sensation", description: "Strobing, rapid-cut, beat-synced intensity.", accent: "#ec4899" },
-  aesthetic:        { label: "Aesthetic",       description: "Dreamy palettes, soft grading, lo-fi vibes.", accent: "#a855f7" },
-  cinematic:        { label: "Cinematic",       description: "Wide aspect, film grain, color science.",      accent: "#06b6d4" },
-  glitch:           { label: "Glitch",          description: "Data-bent, pixel-sorted, RGB split chaos.",    accent: "#22c55e" },
-  "slow-mo":        { label: "Slow Mo",         description: "Time-stretch, optical flow, high-fps glass.", accent: "#f59e0b" },
+const CATEGORY_META: Record<NicheCategory, { label: string; description: string; accent: string; tagAliases: string[] }> = {
+  "high-sensation": { label: "High Sensation", description: "Strobing, rapid-cut, beat-synced intensity.", accent: "#ec4899", tagAliases: ["#HighSensation", "#highsensation"] },
+  aesthetic:        { label: "Aesthetic",       description: "Dreamy palettes, soft grading, lo-fi vibes.", accent: "#a855f7", tagAliases: ["#Aesthetic", "#aesthetic"] },
+  cinematic:        { label: "Cinematic",       description: "Wide aspect, film grain, color science.",      accent: "#06b6d4", tagAliases: ["#Cinematic", "#cinematic"] },
+  glitch:           { label: "Glitch",          description: "Data-bent, pixel-sorted, RGB split chaos.",    accent: "#22c55e", tagAliases: ["#Glitch", "#glitch"] },
+  "slow-mo":        { label: "Slow Mo",         description: "Time-stretch, optical flow, high-fps glass.", accent: "#f59e0b", tagAliases: ["#SlowMo", "#slowmo", "#slow-mo"] },
 };
 
 export default function NichePage() {
@@ -34,11 +34,14 @@ export default function NichePage() {
   const valid = isValidCategory(rawCategory);
   const meta = valid ? CATEGORY_META[rawCategory] : null;
 
-  // Filter posts by category — uses existing FeedPostSchema.category field, no new schema
-  const filtered = useMemo(
-    () => valid ? allPosts.filter((p) => p.category === rawCategory) : [],
-    [allPosts, rawCategory, valid]
-  );
+  // Filter posts by category enum OR matching hashtag in tags[] — bridges both systems
+  const filtered = useMemo(() => {
+    if (!valid) return [];
+    const aliases = CATEGORY_META[rawCategory].tagAliases;
+    return allPosts.filter(
+      (p) => p.category === rawCategory || p.tags.some((t) => aliases.includes(t))
+    );
+  }, [allPosts, rawCategory, valid]);
 
   const handleStudioLoad = (p: FeedPost) => {
     if (getRemixMode(p) === "snapshot") {
