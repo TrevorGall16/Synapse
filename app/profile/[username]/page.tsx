@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2, Grid3X3, List, LayoutGrid, Clock, Layers, GitBranch } from "lucide-react";
+import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2, Grid3X3, LayoutGrid, Clock, Layers, GitBranch } from "lucide-react";
 import { useUserStore, DEFAULT_PROFILE } from "@/lib/store/user-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
@@ -11,7 +11,7 @@ import { TheaterMode } from "@/components/feed/theater-mode";
 import { getTrendingData } from "@/lib/stats";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { canRemix, getRemixMode } from "@/lib/policy";
-import { validateSerializedProject } from "@/lib/schema";
+import { validateSerializedProject, DISPLAY_NAME_MAX, BIO_MAX } from "@/lib/schema";
 
 // ── Mock creator profiles ─────────────────────────────────────────────────────
 const CREATOR_MAP: Record<string, { displayName: string; bio: string; hue: number; followers: number; following: number; postCount: number; totalLikes: number; remixes: number }> = {
@@ -157,12 +157,12 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Display Name</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40}
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={DISPLAY_NAME_MAX}
               className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white outline-none focus:border-purple-500/40" />
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Bio</span>
-            <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} rows={2} maxLength={160}
+            <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} rows={2} maxLength={BIO_MAX}
               className="resize-none rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white outline-none focus:border-purple-500/40" />
           </label>
           <label className="flex flex-col gap-1">
@@ -182,10 +182,10 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-type ViewMode = "grid" | "list" | "compact";
+type ViewMode = "grid" | "compact";
 type Tab = "published" | "drafts" | "liked";
 
-// ── Helpers for List View metadata ───────────────────────────────────────────
+// ── Helpers for Compact Row metadata ─────────────────────────────────────────
 
 function fmtDurationMicros(micros: number): string {
   const secs = Math.floor(micros / 1_000_000);
@@ -197,66 +197,6 @@ function useRemixCount(postId: string, allPosts: FeedPost[]): number {
   return useMemo(
     () => allPosts.filter((p) => p.remixedFromPostId === postId).length,
     [postId, allPosts]
-  );
-}
-
-// ── List View Row ────────────────────────────────────────────────────────────
-function PostListRow({ item, allPosts, onOpen, onDelete }: {
-  item: { type: "feed" | "registry"; id: string; title: string; accent: string; bg: string; date: number; post: FeedPost | null };
-  allPosts: FeedPost[];
-  onOpen: () => void;
-  onDelete?: () => void;
-}) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const snap = item.post?.projectSnapshot;
-  const trackCount = snap?.tracks.length ?? 0;
-  const durationMicros = snap?.duration ?? 0;
-  const remixCount = useRemixCount(item.id, allPosts);
-
-  return (
-    <div className="group flex items-center gap-3 rounded-lg border border-white/6 bg-white/[0.02] px-3 py-2.5 transition-colors hover:border-white/14 hover:bg-white/[0.04]">
-      {/* Color accent bar */}
-      <div className="h-8 w-1 shrink-0 rounded-full" style={{ background: item.accent }} />
-
-      {/* Title + meta */}
-      <button onClick={onOpen} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-        <span className="truncate text-[11px] font-bold text-white/85">{item.title}</span>
-        <div className="flex items-center gap-3 text-[9px] text-white/35">
-          {trackCount > 0 && (
-            <span className="flex items-center gap-1"><Layers size={8} />{trackCount} tracks</span>
-          )}
-          {durationMicros > 0 && (
-            <span className="flex items-center gap-1"><Clock size={8} />{fmtDurationMicros(durationMicros)}</span>
-          )}
-          {remixCount > 0 && (
-            <span className="flex items-center gap-1"><GitBranch size={8} />{remixCount} remix{remixCount !== 1 ? "es" : ""}</span>
-          )}
-          {item.date > 0 && (
-            <span>{new Date(item.date).toLocaleDateString()}</span>
-          )}
-        </div>
-      </button>
-
-      {/* Actions */}
-      <div className="flex shrink-0 items-center gap-1.5">
-        <button onClick={onOpen}
-          className="flex items-center gap-1 rounded-md bg-white/6 px-2 py-1 text-[9px] font-semibold text-white/50 opacity-0 transition-all group-hover:opacity-100 hover:bg-white/12 hover:text-white/75">
-          <Zap size={8} />Open
-        </button>
-        {onDelete && !confirmDelete && (
-          <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-white/25 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/15 hover:text-red-400">
-            <Trash2 size={9} />
-          </button>
-        )}
-        {confirmDelete && (
-          <div className="flex items-center gap-1">
-            <button onClick={() => setConfirmDelete(false)} className="rounded px-1.5 py-0.5 text-[9px] text-white/40 hover:bg-white/8">No</button>
-            <button onClick={() => onDelete?.()} className="rounded bg-red-500/20 px-1.5 py-0.5 text-[9px] font-bold text-red-400 hover:bg-red-500/30">Delete</button>
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -568,7 +508,7 @@ export default function ProfilePage() {
 
           <h1 className="text-base font-bold text-white">{profile.displayName}</h1>
           <p className="text-[11px] text-white/45">@{username}</p>
-          <p className="mt-1.5 text-xs text-white/65">{profile.bio}</p>
+          <p className="mt-1.5 text-[13px] leading-snug text-white/70">{profile.bio}</p>
 
           {/* ── Stats row ────────────────────────────────────────────────── */}
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -617,10 +557,6 @@ export default function ProfilePage() {
                 className={`rounded-md p-1.5 transition-colors ${viewMode === "compact" ? "bg-white/10 text-white/80" : "text-white/30 hover:text-white/55"}`}>
                 <LayoutGrid size={11} />
               </button>
-              <button onClick={() => setViewMode("list")} title="List"
-                className={`rounded-md p-1.5 transition-colors ${viewMode === "list" ? "bg-white/10 text-white/80" : "text-white/30 hover:text-white/55"}`}>
-                <List size={11} />
-              </button>
             </div>
           )}
         </div>
@@ -654,16 +590,6 @@ export default function ProfilePage() {
                 <div className="flex flex-col gap-1.5">
                   {unifiedPosts.map((item) => (
                     <PostCompactRow key={item.id} item={item} allPosts={allUserPosts}
-                      onOpen={() => handleOpenPost(item)}
-                      onDelete={item.type === "feed" ? () => removePost(item.id) : undefined}
-                    />
-                  ))}
-                </div>
-              )}
-              {isOwnProfile && unifiedPosts.length > 0 && viewMode === "list" && (
-                <div className="flex flex-col gap-1.5">
-                  {unifiedPosts.map((item) => (
-                    <PostListRow key={item.id} item={item} allPosts={allUserPosts}
                       onOpen={() => handleOpenPost(item)}
                       onDelete={item.type === "feed" ? () => removePost(item.id) : undefined}
                     />

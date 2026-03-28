@@ -24,6 +24,10 @@ export const DESCRIPTION_MAX = 300;
 export const COLLECTION_NAME_MAX = 80;
 export const COLLECTION_DESC_MAX = 500;
 
+export const USERNAME_MAX     = 40;
+export const DISPLAY_NAME_MAX = 40;
+export const BIO_MAX          = 160;
+
 // ── Primitives ────────────────────────────────────────────────────────────────
 
 const TrackTypeSchema = z.enum(["video", "audio", "text", "effect"]);
@@ -314,6 +318,56 @@ export const CollectionSchema = z.object({
   projectIds:  z.array(z.string()).default([]),
   isPrivate:   z.boolean().default(false),
 }).strict();
+
+// ── UserProfile ───────────────────────────────────────────────────────────────
+// .strip() — persisted to localStorage; unknown fields from future versions
+// must not cause validation failures on older clients.
+
+export const UserProfileSchema = z.object({
+  username:    z.string().min(1).max(USERNAME_MAX),
+  displayName: z.string().min(1).max(DISPLAY_NAME_MAX),
+  bio:         z.string().max(BIO_MAX),
+  hue:         z.number().int().min(0).max(359),
+  followers:   z.number().nonnegative().int(),
+  following:   z.number().nonnegative().int(),
+}).strip();
+
+export type ValidatedUserProfile = z.infer<typeof UserProfileSchema>;
+
+/**
+ * Coerce a raw value into a valid UserProfile.
+ * Never throws — truncates over-limit strings, clamps numeric ranges.
+ * Preserves the user's data rather than resetting to DEFAULT_PROFILE.
+ */
+export function coerceUserProfile(raw: unknown): ValidatedUserProfile {
+  const DEFAULT: ValidatedUserProfile = {
+    username: "you", displayName: "Your Name",
+    bio: "Making edits in Synapse", hue: 270,
+    followers: 0, following: 0,
+  };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT;
+  const r = raw as Record<string, unknown>;
+  return {
+    username:    typeof r.username    === "string" && r.username.length > 0 ? r.username    : DEFAULT.username,
+    displayName: typeof r.displayName === "string" && r.displayName.length > 0
+      ? r.displayName.slice(0, DISPLAY_NAME_MAX)
+      : DEFAULT.displayName,
+    bio:      typeof r.bio      === "string" ? r.bio.slice(0, BIO_MAX)                             : DEFAULT.bio,
+    hue:      typeof r.hue      === "number" ? Math.max(0, Math.min(359, Math.round(r.hue)))        : DEFAULT.hue,
+    followers: typeof r.followers === "number" ? Math.max(0, Math.floor(r.followers))               : DEFAULT.followers,
+    following: typeof r.following === "number" ? Math.max(0, Math.floor(r.following))               : DEFAULT.following,
+  };
+}
+
+/** Validate a UserProfile from localStorage. Returns null on hard failure (wrong shape entirely). */
+export function validateUserProfile(raw: unknown, context = "localStorage"): ValidatedUserProfile | null {
+  const result = UserProfileSchema.safeParse(raw);
+  if (!result.success) {
+    console.warn(`[Schema] UserProfile validation failed (${context}):`, result.error.issues);
+    return null;
+  }
+  return result.data;
+}
 
 // ── Exported inferred types ───────────────────────────────────────────────────
 
