@@ -1,13 +1,16 @@
 /**
  * lib/schema.ts — Ingress validation schemas (Zod)
  *
- * These are the "bouncer" schemas: every piece of external data (IDB, localStorage,
- * URL params) must pass validation before being injected into the Zustand stores.
- * Validation failures are logged and the mutation is rejected to prevent state poisoning.
+ * "Bouncer" layer: ALL external data (IDB, localStorage, URL params) must pass
+ * through these schemas before injection into any Zustand store.
  *
- * Rule: schemas are PERMISSIVE on optional fields (use z.unknown() or .optional() rather
- * than crashing on forward-compatible extensions) but STRICT on structural invariants
- * (required IDs, numeric ranges, enum membership).
+ * Design rules:
+ *  - NEVER use .parse() — it throws and can crash the session. Always use .safeParse().
+ *  - Structural invariants (IDs, numeric ranges, enum membership) are STRICT.
+ *  - Forward-compatible extension fields use .passthrough() on object schemas.
+ *  - fxParams uses discriminated unions for known effect types; unknown types fall
+ *    through to a legacy z.record adapter rather than hard-failing.
+ *  - Recursive types (ClipEvent → embeddedEffectClips) use z.lazy().
  */
 
 import { z } from "zod";
@@ -25,37 +28,131 @@ const ProjectSettingsSchema = z.object({
 });
 
 const MediaPoolItemSchema = z.object({
-  id:          z.string().min(1),
-  name:        z.string(),
-  type:        z.enum(["video", "audio", "image"]),
-  duration:    z.number().nonnegative(),
-  previewUrl:  z.string().optional(),
+  id:           z.string().min(1),
+  name:         z.string(),
+  type:         z.enum(["video", "audio", "image"]),
+  duration:     z.number().nonnegative(),
+  previewUrl:   z.string().optional(),
   peakManifest: z.array(z.number()).optional(),
 });
 
-const ClipEventSchema = z.object({
-  id:        z.string().min(1),
-  trackId:   z.string().min(1),
-  sourceId:  z.string(),
-  startTime: z.number().nonnegative(),
-  duration:  z.number().positive(),
-  mediaOffset: z.number().nonnegative(),
-  // Allow all optional fields as unknown to remain forward-compatible
-  groupId:             z.string().optional(),
-  fadeInDuration:      z.number().optional(),
-  fadeOutDuration:     z.number().optional(),
-  manualFadeIn:        z.boolean().optional(),
-  manualFadeOut:       z.boolean().optional(),
-  effects:             z.array(z.unknown()).optional(),
-  keyframes:           z.array(z.unknown()).optional(),
-  panCrop:             z.unknown().optional(),
-  playbackRate:        z.number().optional(),
-  level:               z.number().optional(),
-  fxParams:            z.record(z.string(), z.unknown()).optional(),
-  embeddedEffectClips: z.array(z.unknown()).optional(),
-  embeddedTextClips:   z.array(z.unknown()).optional(),
-  renderedCss:         z.unknown().optional(),
+const MarkerSchema = z.object({
+  id:    z.string().min(1),
+  time:  z.number().nonnegative(),
+  color: z.string(),
+  label: z.string().optional(),
 });
+
+// ── Rendered CSS (baked from fxParams on publish) ─────────────────────────────
+
+const RenderedCssSchema = z.object({
+  filter:    z.string(),
+  transform: z.string(),
+  animation: z.string().optional(),
+});
+
+// ── fxParams: discriminated unions for known effect types + legacy fallback ───
+//
+// First-match semantics: known types are validated strictly; any unrecognised
+// effectType (or a record with no effectType at all) falls through to the legacy
+// adapter z.record(z.string(), z.unknown()), which accepts any key-value object.
+// This prevents new/future effect types from breaking existing saved data.
+
+const _fxBase = { intensity: z.number().min(0).max(100).optional() };
+
+const FxParamsKnownSchema = z.discriminatedUnion("effectType", [
+  z.object({ effectType: z.literal("blur"),
+    blurAmount: z.number().min(0).max(50).optional(), ..._fxBase }).passthrough(),
+  z.object({ effectType: z.literal("glitch"),
+    speed: z.number().min(0).max(100).optional(), ..._fxBase }).passthrough(),
+  z.object({ effectType: z.literal("strobe"),
+    speed: z.number().min(0).max(100).optional(), ..._fxBase }).passthrough(),
+  z.object({ effectType: z.literal("chromatic-aberration"),
+    caOffset: z.number().min(0).max(30).optional(), ..._fxBase }).passthrough(),
+  z.object({ effectType: z.literal("hypno-tunnel"), ..._fxBase }).passthrough(),
+  z.object({ effectType: z.literal("hue-rotate"),
+    hueRotate: z.number().min(-360).max(360).optional(), ..._fxBase }).passthrough(),
+  z.object({ effectType: z.literal("invert"), ..._fxBase }).passthrough(),
+  z.object({ effectType: z.literal("pixelate"),
+    blockSize: z.number().min(1).max(64).optional(), ..._fxBase }).passthrough(),
+  z.object({ effectType: z.literal("none"),
+    saturate:   z.number().optional(),
+    contrast:   z.number().optional(),
+    brightness: z.number().optional(),
+    hueRotate:  z.number().optional(),
+    ..._fxBase }).passthrough(),
+]);
+
+/** Accepts known effect shapes strictly; unknown effectTypes via legacy record adapter. */
+export const FxParamsSchema = z.union([
+  FxParamsKnownSchema,
+  z.record(z.string(), z.unknown()), // legacy adapter: effectType absent or unrecognised
+]);
+
+// ── Keyframe & EffectInstance ─────────────────────────────────────────────────
+
+const KeyframeSchema = z.object({
+  time:          z.number(),
+  value:         z.union([z.number(), z.record(z.string(), z.unknown())]),
+  interpolation: z.enum(["linear", "ease-in", "ease-out", "step"]).optional(),
+});
+
+const EffectInstanceSchema = z.object({
+  id:         z.string().min(1),
+  type:       z.string(),
+  parameters: z.record(z.string(), z.unknown()),
+  keyframes:  z.array(KeyframeSchema).optional(),
+}).passthrough();
+
+// ── PanCropData ───────────────────────────────────────────────────────────────
+
+const PanCropDataSchema = z.object({
+  x:        z.number(),
+  y:        z.number(),
+  scale:    z.number().positive(),
+  rotation: z.number(),
+  maskType:   z.enum(["none", "rect", "circle", "polygon"]).optional(),
+  maskX:      z.number().optional(),
+  maskY:      z.number().optional(),
+  maskWidth:  z.number().optional(),
+  maskHeight: z.number().optional(),
+  maskPoints: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
+  maskFeather: z.number().optional(),
+  maskInvert:  z.boolean().optional(),
+  masks:       z.array(z.unknown()).optional(),
+}).passthrough();
+
+// ── ClipEvent (recursive — embeddedEffectClips / embeddedTextClips) ───────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const ClipEventSchema: z.ZodType<any> = z.lazy(() =>
+  z.object({
+    id:          z.string().min(1),
+    trackId:     z.string().min(1),
+    sourceId:    z.string(),
+    startTime:   z.number().nonnegative(),
+    duration:    z.number().positive(),
+    mediaOffset: z.number().nonnegative(),
+    groupId:          z.string().optional(),
+    fadeInDuration:   z.number().nonnegative().optional(),
+    fadeOutDuration:  z.number().nonnegative().optional(),
+    manualFadeIn:     z.boolean().optional(),
+    manualFadeOut:    z.boolean().optional(),
+    effects:          z.array(EffectInstanceSchema).optional(),
+    keyframes:        z.array(KeyframeSchema).optional(),
+    panCrop:          PanCropDataSchema.optional(),
+    playbackRate:     z.number().positive().optional(),
+    level:            z.number().min(0).max(200).optional(),
+    fxParams:         FxParamsSchema.optional(),
+    renderedCss:      RenderedCssSchema.optional(),
+    /** Baked FX from source's effect tracks — validated as ClipEvent[] */
+    embeddedEffectClips: z.array(ClipEventSchema).optional(),
+    /** Baked text from source's text tracks — validated as ClipEvent[] */
+    embeddedTextClips:   z.array(ClipEventSchema).optional(),
+  }).passthrough()
+);
+
+// ── Track ─────────────────────────────────────────────────────────────────────
 
 const TrackSchema = z.object({
   id:              z.string().min(1),
@@ -69,18 +166,32 @@ const TrackSchema = z.object({
   isMuted:         z.boolean().optional(),
   isSolo:          z.boolean().optional(),
   opacityOrVolume: z.number().min(0).max(100),
-  audioPan:        z.number().optional(),
+  audioPan:        z.number().min(-100).max(100).optional(),
   trackBrightness: z.number().optional(),
   trackContrast:   z.number().optional(),
   trackSaturate:   z.number().optional(),
   trackHueRotate:  z.number().optional(),
-  reverbWet:       z.number().optional(),
-  reverbRoomSize:  z.number().optional(),
-  delayMs:         z.number().optional(),
-  delayFeedback:   z.number().optional(),
+  reverbWet:       z.number().min(0).max(1).optional(),
+  reverbRoomSize:  z.number().min(0).max(1).optional(),
+  delayMs:         z.number().nonnegative().optional(),
+  delayFeedback:   z.number().min(0).max(1).optional(),
+}).passthrough();
+
+// ── HistorySnapshot & HistoryData ─────────────────────────────────────────────
+
+const HistorySnapshotSchema = z.object({
+  tracks:   z.array(TrackSchema),
+  duration: z.number().nonnegative(),
+  markers:  z.array(MarkerSchema),
+  label:    z.string(),
 });
 
-// ── Project snapshot (embedded in FeedPost or loaded from IDB) ────────────────
+export const HistoryDataSchema = z.object({
+  past:   z.array(HistorySnapshotSchema),
+  future: z.array(HistorySnapshotSchema),
+});
+
+// ── Project schemas ───────────────────────────────────────────────────────────
 
 export const ProjectSnapshotSchema = z.object({
   tracks:          z.array(TrackSchema),
@@ -89,8 +200,6 @@ export const ProjectSnapshotSchema = z.object({
   mediaPool:       z.array(MediaPoolItemSchema).optional(),
 });
 
-// ── Full serialised project (IDB project-idb.ts payload) ─────────────────────
-
 export const SerializedProjectSchema = z.object({
   projectId:         z.string().min(1),
   name:              z.string(),
@@ -98,13 +207,23 @@ export const SerializedProjectSchema = z.object({
   duration:          z.number().nonnegative(),
   projectSettings:   ProjectSettingsSchema,
   mediaPool:         z.array(MediaPoolItemSchema).optional(),
-  markers:           z.array(z.unknown()).optional(),
+  markers:           z.array(MarkerSchema).optional(),
   parentProjectId:   z.string().optional(),
   remixedFromHandle: z.string().optional(),
   rootParentId:      z.string().optional(),
   rootParentHandle:  z.string().optional(),
   updatedAt:         z.number().optional(),
 });
+
+// ── PresetData ────────────────────────────────────────────────────────────────
+
+const PresetDataSchema = z.object({
+  effectType:  z.string(),
+  fxParams:    z.record(z.string(), z.unknown()),
+  label:       z.string().optional(),
+  category:    z.enum(["blur", "distortion", "color", "glitch", "other"]).optional(),
+  previewCss:  RenderedCssSchema.optional(),
+}).passthrough();
 
 // ── FeedPost ──────────────────────────────────────────────────────────────────
 
@@ -126,50 +245,63 @@ export const FeedPostSchema = z.object({
   comments:    z.number().nonnegative().int(),
   featured:    z.boolean(),
   videoUrl:    z.string().optional(),
-  presetData:  z.unknown().optional(),
-  projectSnapshot: ProjectSnapshotSchema.optional(),
-  authorUsername:  z.string().optional(),
-  allowRemix:      z.boolean().optional(),
+  presetData:  PresetDataSchema.optional(),
+  projectSnapshot:     ProjectSnapshotSchema.optional(),
+  authorUsername:      z.string().optional(),
+  allowRemix:          z.boolean().optional(),
   remixedFromPostId:   z.string().optional(),
   remixedFromHandle:   z.string().optional(),
   rootParentId:        z.string().optional(),
   rootParentHandle:    z.string().optional(),
   createdAt:     z.number().optional(),
-  demoStartTime: z.number().optional(),
-  demoDuration:  z.number().optional(),
+  demoStartTime: z.number().nonnegative().optional(),
+  demoDuration:  z.number().positive().optional(),
   category:      z.enum(["high-sensation", "aesthetic", "cinematic", "glitch", "slow-mo"]).optional(),
-});
+}).passthrough();
 
-export type ValidatedFeedPost        = z.infer<typeof FeedPostSchema>;
+// ── Exported inferred types ───────────────────────────────────────────────────
+
+export type ValidatedFeedPost          = z.infer<typeof FeedPostSchema>;
 export type ValidatedSerializedProject = z.infer<typeof SerializedProjectSchema>;
+export type ValidatedHistoryData       = z.infer<typeof HistoryDataSchema>;
 
 // ── Validation helpers ────────────────────────────────────────────────────────
 
-/** Validate a FeedPost from IDB. Returns null and logs on failure. */
+/** Validate a FeedPost from IDB. Rejects and logs on failure — never throws. */
 export function validateFeedPost(raw: unknown, context = "IDB"): ValidatedFeedPost | null {
   const result = FeedPostSchema.safeParse(raw);
   if (!result.success) {
-    console.error(`[Schema] FeedPost validation failed (${context})`, result.error.issues);
+    console.error(`[Schema] FeedPost rejected (${context})`, result.error.issues);
     return null;
   }
   return result.data;
 }
 
-/** Validate a serialised project from IDB. Returns null and logs on failure. */
+/** Validate a serialised project from IDB. Rejects and logs on failure — never throws. */
 export function validateSerializedProject(raw: unknown, context = "IDB"): ValidatedSerializedProject | null {
   const result = SerializedProjectSchema.safeParse(raw);
   if (!result.success) {
-    console.error(`[Schema] SerializedProject validation failed (${context})`, result.error.issues);
+    console.error(`[Schema] SerializedProject rejected (${context})`, result.error.issues);
     return null;
   }
   return result.data;
 }
 
-/** Validate a project snapshot (subset used inside FeedPost). Returns null and logs on failure. */
+/** Validate a project snapshot (embedded in FeedPost). Rejects and logs on failure. */
 export function validateProjectSnapshot(raw: unknown, context = "IDB"): z.infer<typeof ProjectSnapshotSchema> | null {
   const result = ProjectSnapshotSchema.safeParse(raw);
   if (!result.success) {
-    console.error(`[Schema] ProjectSnapshot validation failed (${context})`, result.error.issues);
+    console.error(`[Schema] ProjectSnapshot rejected (${context})`, result.error.issues);
+    return null;
+  }
+  return result.data;
+}
+
+/** Validate history data (past/future HistorySnapshot arrays) from IDB. Rejects and logs on failure. */
+export function validateHistoryData(raw: unknown, context = "IDB"): ValidatedHistoryData | null {
+  const result = HistoryDataSchema.safeParse(raw);
+  if (!result.success) {
+    console.error(`[Schema] HistoryData rejected (${context})`, result.error.issues);
     return null;
   }
   return result.data;

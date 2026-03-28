@@ -377,6 +377,7 @@ export default function ExplorePage() {
         rootParentHandle:  p.rootParentHandle,
         demoStartTime:     p.demoStartTime,
         demoDuration:      p.demoDuration,
+        remixAllowed:      canRemix(p),
       });
       router.push("/studio");
     } else {

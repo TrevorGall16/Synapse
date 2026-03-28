@@ -6,6 +6,8 @@ import { Plus, FolderOpen, Trash2, Pencil, Check, X, Clock, Film, Layers } from 
 import { useProjectsRegistry, type ProjectSummary } from "@/lib/store/projects-registry";
 import { useProjectStore } from "@/lib/store/project-store";
 import { loadProjectFromIDB, deleteProjectFromIDB } from "@/lib/store/project-idb";
+import { validateSerializedProject } from "@/lib/schema";
+import type { SerializedProject } from "@/lib/store/types";
 import { releaseSnapshotMedia } from "@/lib/store/media-pool-db";
 import { runGcSweep } from "@/lib/store/gc-service";
 
@@ -222,22 +224,28 @@ export default function GalleryPage() {
       return;
     }
 
-    // Load from IDB and open as new tab
+    // Load from IDB and open as new tab (validated before injection)
     loadProjectFromIDB(project.id)
-      .then((rec) => {
-        if (rec) {
-          useProjectStore.getState().openProjectInTab({
-            projectId: rec.projectId,
-            tracks: rec.tracks,
-            duration: rec.duration,
-            projectSettings: rec.projectSettings,
-            mediaPool: rec.mediaPool,
-            name: rec.name,
-            parentProjectId: rec.parentProjectId,
-            remixedFromHandle: rec.remixedFromHandle,
-            rootParentId: rec.rootParentId,
-            rootParentHandle: rec.rootParentHandle,
-          });
+      .then((raw) => {
+        if (raw) {
+          // Bouncer: reject structurally invalid IDB records before injection.
+          // Cast is safe: structural integrity confirmed by safeParse; z.unknown() sub-fields
+          // cause Zod's inferred type to diverge from SerializedProject — cast bridges the gap.
+          const rec = validateSerializedProject(raw, `gallery open ${project.id}`) as unknown as SerializedProject | null;
+          if (rec) {
+            useProjectStore.getState().openProjectInTab({
+              projectId: rec.projectId,
+              tracks: rec.tracks,
+              duration: rec.duration,
+              projectSettings: rec.projectSettings,
+              mediaPool: rec.mediaPool,
+              name: rec.name,
+              parentProjectId: rec.parentProjectId,
+              remixedFromHandle: rec.remixedFromHandle,
+              rootParentId: rec.rootParentId,
+              rootParentHandle: rec.rootParentHandle,
+            });
+          }
         }
         router.push("/studio");
       })

@@ -55,6 +55,12 @@ export interface PlaybackState {
       demoStartTime?: number;
       /** Duration of the demo window in micros. */
       demoDuration?: number;
+      /**
+       * Policy token — must be explicitly true to allow mutation.
+       * Callers derive this from canRemix(post). When false or absent,
+       * loadSnapshot is a no-op and logs a policy violation.
+       */
+      remixAllowed?: boolean;
     }
   ) => void;
 }
@@ -106,6 +112,12 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   toggleRippleMode: () => set((s) => ({ rippleMode: !s.rippleMode })),
 
   loadSnapshot: (snap, meta) => {
+    // Policy gate: remixAllowed must be explicitly true — absent = denied.
+    if (!meta.remixAllowed) {
+      console.warn("[loadSnapshot] blocked — remixAllowed policy token not set. Caller must pass canRemix(post) result.");
+      return;
+    }
+
     const { demoStartTime, demoDuration } = meta;
     const freshId = crypto.randomUUID();
 

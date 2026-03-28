@@ -5,7 +5,7 @@ import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore } from "@/lib/store/feed-store";
 import { useHydrationStore } from "@/lib/store/hydration-store";
 import { saveProjectToIDB, loadProjectFromIDB, saveHistoryToIDB, loadHistoryFromIDB } from "@/lib/store/project-idb";
-import { validateSerializedProject } from "@/lib/schema";
+import { validateSerializedProject, validateHistoryData } from "@/lib/schema";
 import type { ProjectState } from "@/lib/store/project-store";
 import type { SerializedProject } from "@/lib/store/types";
 
@@ -51,10 +51,17 @@ export function GlobalHydrator() {
           ? validateSerializedProject(rawProjectData, `active project ${projectId}`) as unknown as SerializedProject | null
           : null;
         if (projectData && projectData.tracks.length > 0) {
-          useProjectStore.setState({ tracks: projectData.tracks, duration: projectData.duration });
+          useProjectStore.setState({
+            tracks: projectData.tracks,
+            duration: projectData.duration,
+            mediaPool: projectData.mediaPool ?? [],
+          });
         }
-        if (historyData) {
-          useProjectStore.setState({ historyPast: historyData.past, historyFuture: historyData.future });
+        const validatedHistory = historyData
+          ? validateHistoryData(historyData, `active project history ${projectId}`)
+          : null;
+        if (validatedHistory) {
+          useProjectStore.setState({ historyPast: validatedHistory.past, historyFuture: validatedHistory.future });
         }
       }
 
@@ -67,6 +74,9 @@ export function GlobalHydrator() {
         ]);
         const projectData = rawProjectData
           ? validateSerializedProject(rawProjectData, `tab project ${id}`) as unknown as SerializedProject | null
+          : null;
+        const validatedTabHistory = historyData
+          ? validateHistoryData(historyData, `tab project history ${id}`)
           : null;
         if (projectData) {
           useProjectStore.setState((s) => ({
@@ -85,8 +95,8 @@ export function GlobalHydrator() {
                 remixedFromHandle: projectData.remixedFromHandle,
                 rootParentId: projectData.rootParentId,
                 rootParentHandle: projectData.rootParentHandle,
-                historyPast: historyData?.past ?? [],
-                historyFuture: historyData?.future ?? [],
+                historyPast: validatedTabHistory?.past ?? [],
+                historyFuture: validatedTabHistory?.future ?? [],
               },
             },
           }));
@@ -109,10 +119,11 @@ export function GlobalHydrator() {
       const s = useProjectStore.getState();
       if (!s.projectId) return;
 
-      // Save active project
+      // Save active project (mediaPool included for GC symmetry — ref-counts must survive restart)
       saveProjectToIDB({
         projectId: s.projectId, name: s.name, tracks: s.tracks, duration: s.duration,
         markers: s.markers, projectSettings: s.projectSettings,
+        mediaPool: s.mediaPool,
         parentProjectId: s.parentProjectId, remixedFromHandle: s.remixedFromHandle,
         rootParentId: s.rootParentId, rootParentHandle: s.rootParentHandle,
         updatedAt: Date.now(),
@@ -136,6 +147,21 @@ export function GlobalHydrator() {
     _flushFn = doSave;
 
     const unsub = useProjectStore.subscribe((state: ProjectState, prev: ProjectState) => {
+      // Tab switch: flush the outgoing project immediately before the new one loads
+      if (state.projectId !== prev.projectId && prev.projectId) {
+        if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+        // Save the outgoing project using prev snapshot
+        saveProjectToIDB({
+          projectId: prev.projectId, name: prev.name, tracks: prev.tracks, duration: prev.duration,
+          markers: prev.markers, projectSettings: prev.projectSettings,
+          mediaPool: prev.mediaPool,
+          parentProjectId: prev.parentProjectId, remixedFromHandle: prev.remixedFromHandle,
+          rootParentId: prev.rootParentId, rootParentHandle: prev.rootParentHandle,
+          updatedAt: Date.now(),
+        }).catch(console.warn);
+        saveHistoryToIDB(prev.projectId, prev.historyPast, prev.historyFuture).catch(console.warn);
+      }
+
       const tracksChanged  = state.tracks      !== prev.tracks;
       const historyChanged = state.historyPast !== prev.historyPast || state.historyFuture !== prev.historyFuture;
       const savedChanged   = state.savedProjects !== prev.savedProjects;
