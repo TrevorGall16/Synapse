@@ -10,6 +10,7 @@ export interface ProjectSummary {
   width: number;
   height: number;
   fps: number;
+  projectStatus?: "draft" | "published";  // undefined = legacy, treat as "draft"
   parentProjectId?: string;  // set when forked from another project
   authorUsername?: string;   // username of the creator who published this
 }

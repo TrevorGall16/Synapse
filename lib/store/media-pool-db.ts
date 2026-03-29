@@ -141,3 +141,15 @@ export async function hydrateMediaPool(items: MediaPoolItem[]): Promise<MediaPoo
   );
 }
 
+/** Read refCounts for a batch of media IDs in one pass. Returns 0 for missing items. */
+export async function getMediaRefCounts(ids: string[]): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+  await Promise.all(
+    ids.map(async (id) => {
+      const stored = await get<StoredMediaItem>(itemKey(id));
+      result[id] = stored?.refCount ?? 0;
+    })
+  );
+  return result;
+}
+

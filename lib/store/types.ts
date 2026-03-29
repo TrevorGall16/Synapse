@@ -126,6 +126,7 @@ export interface MediaPoolItem {
   name: string;
   type: "video" | "audio" | "image";
   duration: number;
+  sizeBytes?: number;       // set from file.size at import; not in .SYNAPSE recipe validation
   previewUrl?: string;
   peakManifest?: number[];
 }
