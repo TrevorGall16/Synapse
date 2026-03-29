@@ -6,8 +6,13 @@ import { useFeedStore } from "@/lib/store/feed-store";
 import { useHydrationStore } from "@/lib/store/hydration-store";
 import { saveProjectToIDB, loadProjectFromIDB, saveHistoryToIDB, loadHistoryFromIDB } from "@/lib/store/project-idb";
 import { validateSerializedProject, validateHistoryData } from "@/lib/schema";
+import { registerFlush, deregisterFlush, flushProjectToIDB } from "@/lib/store/flush-registry";
+import { useSaveBarrierStore } from "@/lib/store/save-barrier-store";
 import type { ProjectState } from "@/lib/store/project-store";
 import type { SerializedProject } from "@/lib/store/types";
+
+// Re-export so publish-modal.tsx import path stays unchanged.
+export { flushProjectToIDB };
 
 /**
  * Mounted once in root layout.
@@ -22,17 +27,6 @@ import type { SerializedProject } from "@/lib/store/types";
  */
 
 let _saveTimer: ReturnType<typeof setTimeout> | null = null;
-let _flushFn: (() => Promise<void>) | null = null;
-
-/**
- * Immediately persist active project + all open tabs to IDB, bypassing the debounce.
- * Returns a Promise that resolves only after all IDB writes are physically complete —
- * safe to await before navigating away (Publish flow) or in beforeunload handlers.
- */
-export async function flushProjectToIDB(): Promise<void> {
-  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
-  if (_flushFn) await _flushFn();
-}
 
 export function GlobalHydrator() {
   useEffect(() => {
@@ -119,36 +113,45 @@ export function GlobalHydrator() {
     // ── Step 4: debounced IDB write on every tracks/history change ──
     // doSave is async so flushProjectToIDB() can await physical write completion.
     const doSave = async (): Promise<void> => {
-      const s = useProjectStore.getState();
-      if (!s.projectId) return;
+      const { setFlushing, setDirty } = useSaveBarrierStore.getState();
+      setFlushing(true);
+      try {
+        const s = useProjectStore.getState();
+        if (!s.projectId) return;
 
-      await Promise.all([
-        // Active project — mediaPool always included for GC symmetry (ref-counts must survive restart)
-        saveProjectToIDB({
-          projectId: s.projectId, name: s.name, tracks: s.tracks, duration: s.duration,
-          markers: s.markers, projectSettings: s.projectSettings,
-          mediaPool: s.mediaPool,
-          parentProjectId: s.parentProjectId, remixedFromHandle: s.remixedFromHandle,
-          rootParentId: s.rootParentId, rootParentHandle: s.rootParentHandle,
-          updatedAt: Date.now(),
-        }),
-        saveHistoryToIDB(s.projectId, s.historyPast, s.historyFuture),
-        // All open tabs
-        ...Object.entries(s.savedProjects).map(([id, proj]) =>
+        await Promise.all([
+          // Active project — mediaPool always included for GC symmetry (ref-counts must survive restart)
           saveProjectToIDB({
-            projectId: id, name: proj.name, tracks: proj.tracks, duration: proj.duration,
-            markers: proj.markers, projectSettings: proj.projectSettings,
-            mediaPool: proj.mediaPool,
-            parentProjectId: proj.parentProjectId, remixedFromHandle: proj.remixedFromHandle,
-            rootParentId: proj.rootParentId, rootParentHandle: proj.rootParentHandle,
+            projectId: s.projectId, name: s.name, tracks: s.tracks, duration: s.duration,
+            markers: s.markers, projectSettings: s.projectSettings,
+            mediaPool: s.mediaPool,
+            parentProjectId: s.parentProjectId, remixedFromHandle: s.remixedFromHandle,
+            rootParentId: s.rootParentId, rootParentHandle: s.rootParentHandle,
             updatedAt: Date.now(),
-          })
-        ),
-      ]);
+            projectStatus: (s as unknown as { projectStatus?: "draft" | "published" }).projectStatus ?? "draft",
+          }),
+          saveHistoryToIDB(s.projectId, s.historyPast, s.historyFuture),
+          // All open tabs
+          ...Object.entries(s.savedProjects).map(([id, proj]) =>
+            saveProjectToIDB({
+              projectId: id, name: proj.name, tracks: proj.tracks, duration: proj.duration,
+              markers: proj.markers, projectSettings: proj.projectSettings,
+              mediaPool: proj.mediaPool,
+              parentProjectId: proj.parentProjectId, remixedFromHandle: proj.remixedFromHandle,
+              rootParentId: proj.rootParentId, rootParentHandle: proj.rootParentHandle,
+              updatedAt: Date.now(),
+              projectStatus: (proj as unknown as { projectStatus?: "draft" | "published" }).projectStatus ?? "draft",
+            })
+          ),
+        ]);
+        setDirty(false);
+      } finally {
+        useSaveBarrierStore.getState().setFlushing(false);
+      }
     };
 
-    // Expose flush for external callers (publish, tab switch, pagehide)
-    _flushFn = doSave;
+    // Register flush fn in neutral registry (breaks circular dep with project-store)
+    registerFlush(doSave);
 
     const unsub = useProjectStore.subscribe((state: ProjectState, prev: ProjectState) => {
       // Tab switch: flush the outgoing project immediately before the new one loads
@@ -171,6 +174,9 @@ export function GlobalHydrator() {
       const savedChanged   = state.savedProjects !== prev.savedProjects;
       if (!tracksChanged && !historyChanged && !savedChanged) return;
 
+      // Mark dirty — unsaved changes exist until doSave completes.
+      useSaveBarrierStore.getState().setDirty(true);
+
       if (_saveTimer) clearTimeout(_saveTimer);
       _saveTimer = setTimeout(() => { void doSave(); }, 500);
     });
@@ -182,14 +188,33 @@ export function GlobalHydrator() {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pagehide", handlePageHide);
 
+    // Warn on hard reload / tab close when there are unsaved changes.
+    // Note: beforeunload does NOT fire for Next.js SPA navigation — that is handled
+    // by ensureFlushedBeforeNav() wrapping all router.push calls.
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const { isDirty } = useSaveBarrierStore.getState();
+      if (!isDirty) return;
+      // Trigger the browser's native "Leave site?" dialog.
+      e.preventDefault();
+      // returnValue is required for cross-browser compatibility (Chrome ignores custom strings).
+      e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+      // Attempt a best-effort flush — browser may not wait, but it helps if it does.
+      void flushProjectToIDB();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
     return () => {
       unsub();
       if (_saveTimer) clearTimeout(_saveTimer);
-      _flushFn = null;
+      deregisterFlush();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, []);
 
   return null;
 }
+
+// Suppress unused import warning — SerializedProject is used for type assertions above.
+type _SerializedProjectCompat = SerializedProject;
