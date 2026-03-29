@@ -4,6 +4,8 @@ import type { Track, TrackType, MediaPoolItem, Marker, ClipEvent, PanCropData, P
 import { usePlaybackStore } from "./playback-store";
 import { hydrateMediaPool } from "./media-pool-db";
 import { saveAttributionLock } from "./attribution-idb";
+import { flushProjectToIDB } from "@/lib/store/flush-registry";
+import { useSaveBarrierStore } from "@/lib/store/save-barrier-store";
 import {
   TRACK_COLORS, TRACK_HEIGHTS,
   createTrack, findClipLocation,
@@ -435,3 +437,20 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     // savedProjects excluded — tracks, history, and mediaPool saved to IDB via GlobalHydrator.
   }),
 }));
+
+/**
+ * Await this before any intentional navigation (router.push, router.replace).
+ * If no unsaved changes exist, returns immediately (zero overhead).
+ * If a pending IDB write exists, shows the SaveBarrierOverlay and waits for completion.
+ */
+export async function ensureFlushedBeforeNav(): Promise<void> {
+  const { isDirty } = useSaveBarrierStore.getState();
+  if (!isDirty) return;
+  useSaveBarrierStore.getState().setFlushing(true);
+  try {
+    await flushProjectToIDB();
+    useSaveBarrierStore.getState().setDirty(false);
+  } finally {
+    useSaveBarrierStore.getState().setFlushing(false);
+  }
+}

@@ -5,6 +5,7 @@ import { GlobalHydrator } from "@/components/GlobalHydrator";
 import { GlobalSvgFilters } from "@/components/GlobalSvgFilters";
 import { HydrationBarrier } from "@/components/HydrationBarrier";
 import { AppBootstrap } from "@/components/AppBootstrap";
+import { SaveBarrierOverlay } from "@/components/SaveBarrierOverlay";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,6 +37,7 @@ export default function RootLayout({
         <GlobalSvgFilters />
         <GlobalHydrator />
         <AppBootstrap />
+        <SaveBarrierOverlay />
         <div className="flex h-screen w-screen overflow-hidden">
           <Sidebar />
           <main className="ml-56 flex-1 overflow-hidden min-w-0 min-h-0 h-full">
