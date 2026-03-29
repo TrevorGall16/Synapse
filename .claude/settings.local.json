@@ -40,7 +40,12 @@
       "Bash(echo \"exit:$?\")",
       "Bash(mkdir -p D:/Projects/Synapse/scripts)",
       "Bash(mkdir -p D:/Projects/Synapse/app/niche)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(find ./components -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
+      "Bash(find ./app -maxdepth 2 -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
+      "Bash(npx eslint:*)",
+      "Bash(git show:*)",
+      "Bash(npx vitest:*)"
     ]
   }
 }
