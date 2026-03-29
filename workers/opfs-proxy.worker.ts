@@ -26,6 +26,16 @@ interface ListResponse { id: string; status: "ok"; files: string[] }
 interface ErrorResponse { id: string; status: "error"; message: string }
 type WorkerOutMessage = OkResponse | DataResponse | ListResponse | ErrorResponse;
 
+// ── Audit Event Emission ───────────────────────────────────────────────────────
+// Emits structured audit events as a SEPARATE postMessage path.
+// Main thread branches on __auditEvent before normal response routing.
+// Only active when NEXT_PUBLIC_AUDIT_MODE=1 is set in the build; guarded by
+// the main-thread bridge, not here — the worker always emits, the bridge filters.
+
+function emitAuditEvent(type: string, id: string, meta?: unknown): void {
+  self.postMessage({ __auditEvent: true, type, id, ts: Date.now(), meta });
+}
+
 // ── OPFS Helpers ───────────────────────────────────────────────────────────────
 
 async function getRoot(): Promise<FileSystemDirectoryHandle> {
@@ -128,19 +138,25 @@ self.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
   try {
     switch (msg.type) {
       case "WRITE_FILE": {
+        emitAuditEvent("write_start", msg.id, { fileName: msg.fileName });
         await writeFile(msg.fileName, msg.buffer);
+        emitAuditEvent("write_done", msg.id, { fileName: msg.fileName });
         reply({ id: msg.id, status: "ok" });
         break;
       }
       case "READ_FILE": {
+        emitAuditEvent("read_start", msg.id, { fileName: msg.fileName });
         const buffer = await readFile(msg.fileName);
+        emitAuditEvent("read_done", msg.id, { byteLength: buffer.byteLength });
         // Transfer the ArrayBuffer (zero-copy) back to the main thread.
         const readReply: DataResponse = { id: msg.id, status: "ok", buffer };
         self.postMessage(readReply, { transfer: [buffer] });
         break;
       }
       case "DELETE_FILE": {
+        emitAuditEvent("delete_start", msg.id, { fileName: msg.fileName });
         await deleteFile(msg.fileName);
+        emitAuditEvent("delete_done", msg.id);
         reply({ id: msg.id, status: "ok" });
         break;
       }
@@ -150,7 +166,9 @@ self.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
         break;
       }
       case "DECODE_PROXY": {
+        emitAuditEvent("decode_start", msg.id, { targetWidth: msg.targetWidth, targetHeight: msg.targetHeight });
         const buffer = await decodeProxy(msg.videoData, msg.targetWidth, msg.targetHeight);
+        emitAuditEvent("decode_done", msg.id, { byteLength: buffer.byteLength });
         const decodeReply: DataResponse = { id: msg.id, status: "ok", buffer };
         self.postMessage(decodeReply, { transfer: [buffer] }); // Transfer ownership — zero-copy
         break;

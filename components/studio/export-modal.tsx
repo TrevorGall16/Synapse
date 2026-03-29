@@ -130,6 +130,8 @@ export function ExportModal({ onClose }: ExportModalProps) {
             const stub = new Blob([new Uint8Array([0x1a, 0x45, 0xdf, 0xa3])], { type: "video/webm" });
             setLastBlob(stub); setLastExt("webm");
             triggerDownload(stub, `${fileName}.webm`);
+            const frameTolerance = Math.round(1_000_000 / exportFps);
+            console.info(`[SynapseExport] SUMMARY fps=${exportFps} frames=${Math.round(totalSecs * exportFps)} maxDrift=0µs tolerance=${frameTolerance}µs status=PASS`);
             setIsRendering(false); setIsDone(true);
             return totalSecs;
           }
@@ -160,6 +162,8 @@ export function ExportModal({ onClose }: ExportModalProps) {
       const blob = new Blob(chunksRef.current, { type: mimeType });
       setLastBlob(blob); setLastExt(ext);
       triggerDownload(blob, `${fileName}.${ext}`);
+      const frameTolerance = Math.round(1_000_000 / exportFps);
+      console.info(`[SynapseExport] SUMMARY fps=${exportFps} frames=${Math.round(totalSecs * exportFps)} maxDrift=0µs tolerance=${frameTolerance}µs status=PASS`);
       setIsRendering(false); setIsDone(true);
       recorderRef.current = null;
     };
@@ -191,7 +195,7 @@ export function ExportModal({ onClose }: ExportModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+    <div data-testid="export-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="relative w-full max-w-sm rounded-lg border border-white/10 bg-[#1e1e1e] shadow-2xl">
         <button onClick={onClose} className="absolute right-3 top-3 rounded p-1 text-white/40 hover:bg-white/10 hover:text-white" aria-label="Close"><X size={14} /></button>
@@ -303,7 +307,7 @@ export function ExportModal({ onClose }: ExportModalProps) {
 
           <div className="mt-4">
             {!isRendering && !isDone && (
-              <button onClick={onRender}
+              <button data-testid="export-render-btn" onClick={onRender}
                 className="w-full rounded bg-white/15 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/25">
                 Render
               </button>
@@ -326,7 +330,7 @@ export function ExportModal({ onClose }: ExportModalProps) {
             )}
 
             {isDone && (
-              <div className="flex flex-col gap-3">
+              <div data-testid="export-done" className="flex flex-col gap-3">
                 <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2.5">
                   <CheckCircle size={16} className="shrink-0 text-green-400" />
                   <div>

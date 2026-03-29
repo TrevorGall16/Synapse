@@ -1,0 +1,38 @@
+<testsuites id="" name="" tests="8" failures="0" skipped="2" errors="0" time="21.377277999999997">
+<testsuite name="export-accuracy.spec.ts" timestamp="2026-03-29T17:11:54.838Z" hostname="chromium" tests="1" failures="0" skipped="0" time="16.81" errors="0">
+<testcase name="Export Accuracy › export produces PASS A/V sync status within tolerance" classname="export-accuracy.spec.ts" time="16.81">
+</testcase>
+</testsuite>
+<testsuite name="long-task-budget.spec.ts" timestamp="2026-03-29T17:11:54.838Z" hostname="chromium" tests="3" failures="0" skipped="0" time="2.222" errors="0">
+<testcase name="Long-Task Budget › scrub playhead stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="0.783">
+</testcase>
+<testcase name="Long-Task Budget › batch delete stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.021">
+</testcase>
+<testcase name="Long-Task Budget › proxy generation stays under 50ms long-task budget on main thread" classname="long-task-budget.spec.ts" time="0.418">
+</testcase>
+</testsuite>
+<testsuite name="nav-durability.spec.ts" timestamp="2026-03-29T17:11:54.838Z" hostname="chromium" tests="1" failures="0" skipped="0" time="0.995" errors="0">
+<testcase name="Navigation Durability › flush completes before route transition after project mutation" classname="nav-durability.spec.ts" time="0.995">
+</testcase>
+</testsuite>
+<testsuite name="worker-isolation.spec.ts" timestamp="2026-03-29T17:11:54.838Z" hostname="chromium" tests="3" failures="0" skipped="2" time="1.687" errors="0">
+<testcase name="Worker Isolation › OPFS write operations emit ordered worker events" classname="worker-isolation.spec.ts" time="0.788">
+<properties>
+<property name="skip" value="">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+<testcase name="Worker Isolation › OPFS decode operations emit ordered worker events with monotonic timestamps" classname="worker-isolation.spec.ts" time="0.491">
+<properties>
+<property name="skip" value="">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+<testcase name="Worker Isolation › all worker events have monotonically increasing timestamps" classname="worker-isolation.spec.ts" time="0.408">
+</testcase>
+</testsuite>
+</testsuites>

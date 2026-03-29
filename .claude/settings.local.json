@@ -45,7 +45,14 @@
       "Bash(find ./app -maxdepth 2 -type f \\\\\\(-name *.ts -o -name *.tsx \\\\\\))",
       "Bash(npx eslint:*)",
       "Bash(git show:*)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(rg -n 'from \"\"\"\"next/link\"\"\"\"|<Link' components/ui/sidebar.tsx)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in {**d.get\\(''''dependencies'''',{}\\),**d.get\\(''''devDependencies'''',{}\\)}.items\\(\\)}, indent=2\\)\\)\")",
+      "Bash(find D:/Projects/Synapse -name *.test.ts)",
+      "Bash(npm show:*)",
+      "Bash(npm run:*)"
     ]
   }
 }

@@ -12,7 +12,21 @@ function getWorker(): Worker {
     _worker = new Worker(new URL("../../workers/opfs-proxy.worker.ts", import.meta.url), {
       type: "module",
     });
-    _worker.onmessage = (event: MessageEvent<{ id: string; status: "ok" | "error"; buffer?: ArrayBuffer; files?: string[]; message?: string }>) => {
+    _worker.onmessage = (event: MessageEvent<{ __auditEvent?: boolean; type?: string; id: string; ts?: number; meta?: unknown; status?: "ok" | "error"; buffer?: ArrayBuffer; files?: string[]; message?: string }>) => {
+      // Branch audit events FIRST, before normal response handling.
+      // Audit events are a separate postMessage path — they must not resolve any pending promise.
+      if (event.data?.__auditEvent === true && process.env.NEXT_PUBLIC_AUDIT_MODE === "1") {
+        if (typeof window !== "undefined" && window.__synapseAudit) {
+          window.__synapseAudit.workerEvents.push({
+            type: event.data.type ?? "unknown",
+            id: event.data.id,
+            ts: event.data.ts ?? Date.now(),
+            meta: event.data.meta,
+          });
+        }
+        return;
+      }
+
       const { id, status, ...rest } = event.data;
       const pending = _pendingRequests.get(id);
       if (!pending) return;

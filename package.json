@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "audit": "playwright test",
+    "test-auth-policy": "vitest run lib/policy.test.ts"
   },
   "dependencies": {
     "idb-keyval": "^6.2.2",
@@ -21,11 +23,13 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.2",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",

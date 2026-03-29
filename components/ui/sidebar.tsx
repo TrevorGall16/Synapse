@@ -36,6 +36,7 @@ export function Sidebar() {
           return (
             <button
               key={item.href}
+              data-testid={`sidebar-nav-${item.label.toLowerCase()}`}
               onClick={() => handleNav(item.href)}
               className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
                 isActive

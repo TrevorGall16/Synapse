@@ -31,6 +31,7 @@ function StudioSplash({ onCreateProject }: { onCreateProject: () => void }) {
         <p className="mt-1 text-xs text-white/40">Create a new project to begin editing</p>
       </div>
       <button
+        data-testid="studio-create-project"
         onClick={onCreateProject}
         className="flex items-center gap-2 rounded-lg bg-white/10 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/20"
       >

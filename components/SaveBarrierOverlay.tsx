@@ -13,6 +13,7 @@ export function SaveBarrierOverlay() {
 
   return (
     <div
+      data-testid="save-barrier-overlay"
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-[1px]"
       aria-live="polite"
       aria-label="Saving project"

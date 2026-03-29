@@ -158,7 +158,7 @@ export function TimelineToolbar() {
         </button>
 
         {/* Export */}
-        <button onClick={() => setShowExport(true)} title="Export Project" aria-label="Export Project"
+        <button data-testid="export-btn" onClick={() => setShowExport(true)} title="Export Project" aria-label="Export Project"
           className="rounded p-1 text-white/50 transition-colors hover:bg-white/10 hover:text-white">
           <Download size={12} />
         </button>
