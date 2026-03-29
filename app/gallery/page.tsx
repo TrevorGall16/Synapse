@@ -10,6 +10,7 @@ import { validateSerializedProject } from "@/lib/schema";
 import type { SerializedProject } from "@/lib/store/types";
 import { releaseSnapshotMedia } from "@/lib/store/media-pool-db";
 import { runGcSweep } from "@/lib/store/gc-service";
+import { ensureFlushedBeforeNav } from "@/lib/store/project-store";
 
 function formatDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -206,12 +207,14 @@ export default function GalleryPage() {
     }
   }, [projects]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleNewProject = useCallback(() => {
+  const handleNewProject = useCallback(async () => {
+    await ensureFlushedBeforeNav();
     openNewTab();
     router.push("/studio");
   }, [openNewTab, router]);
 
-  const handleOpen = useCallback((project: ProjectSummary) => {
+  const handleOpen = useCallback(async (project: ProjectSummary) => {
+    await ensureFlushedBeforeNav(); // flush before any store mutation
     const store = useProjectStore.getState();
 
     // Already active → just navigate
@@ -249,7 +252,7 @@ export default function GalleryPage() {
         }
         router.push("/studio");
       })
-      .catch(() => router.push("/studio"));
+      .catch(() => router.push("/studio")); // .catch is NOT a finally block — compliant
   }, [router]);
 
   const handleDelete = useCallback(async (project: ProjectSummary) => {
