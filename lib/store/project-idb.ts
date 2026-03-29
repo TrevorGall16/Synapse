@@ -27,6 +27,8 @@ export interface IDBProjectRecord {
   rootParentId?: string;
   rootParentHandle?: string;
   updatedAt: number;
+  /** "draft" | "published" — older records without this field are coerced to "draft" by Zod. */
+  projectStatus?: "draft" | "published";
 }
 
 export async function saveProjectToIDB(record: IDBProjectRecord): Promise<void> {

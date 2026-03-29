@@ -263,6 +263,13 @@ export const SerializedProjectSchema = z.object({
   rootParentId:      z.string().optional(),
   rootParentHandle:  z.string().optional(),
   updatedAt:         z.number().optional(),
+  /**
+   * "draft" = editing in progress, not yet published.
+   * "published" = at least one successful publish has completed.
+   * .default("draft") — IDB records written before this field existed
+   * resolve to "draft" without failing validation.
+   */
+  projectStatus: z.enum(["draft", "published"]).default("draft"),
 });
 
 // ── PresetData ────────────────────────────────────────────────────────────────

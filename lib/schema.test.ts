@@ -7,6 +7,7 @@ import {
   coerceUserProfile,
   DISPLAY_NAME_MAX,
   BIO_MAX,
+  SerializedProjectSchema,
 } from "./schema";
 
 describe("UserProfileSchema", () => {
@@ -165,5 +166,36 @@ describe("coerceUserProfile", () => {
     expect(result.displayName).toBe("Trevor");
     expect(result.bio).toBe("Short bio");
     expect(result.hue).toBe(270);
+  });
+});
+
+describe("SerializedProjectSchema — projectStatus migration", () => {
+  const baseProject = {
+    projectId: "test-123",
+    name: "My Project",
+    tracks: [],
+    duration: 60_000_000,
+    projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" },
+  };
+
+  it("defaults to 'draft' when projectStatus is absent (legacy record)", () => {
+    const result = SerializedProjectSchema.safeParse(baseProject);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.projectStatus).toBe("draft");
+    }
+  });
+
+  it("accepts 'published' when present", () => {
+    const result = SerializedProjectSchema.safeParse({ ...baseProject, projectStatus: "published" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.projectStatus).toBe("published");
+    }
+  });
+
+  it("rejects an invalid projectStatus value", () => {
+    const result = SerializedProjectSchema.safeParse({ ...baseProject, projectStatus: "archived" });
+    expect(result.success).toBe(false);
   });
 });

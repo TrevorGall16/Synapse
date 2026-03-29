@@ -144,4 +144,7 @@ export interface SerializedProject {
   rootParentHandle?: string;
   historyPast: HistorySnapshot[];
   historyFuture: HistorySnapshot[];
+  updatedAt?: number;
+  /** "draft" | "published" — undefined means legacy record, treat as "draft". */
+  projectStatus?: "draft" | "published";
 }
