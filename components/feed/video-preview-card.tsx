@@ -20,8 +20,9 @@
 //
 // Performance contract (20+ cards on screen):
 //   - One shared IntersectionObserver per rootMargin config (observeViewport pool).
-//   - `preload="none"` until in-view; the browser switches to buffering only when
-//     the card enters the viewport.
+//   - `preload="none"` until in-view; switches to `preload="metadata"` on entry
+//     (fetches duration/dimensions only, not the full video). Resets to `preload="none"`
+//     on exit to free connection slots for the Chrome 6-connection limit.
 //   - rAF loop is stopped when the card leaves the viewport.
 //   - play() Promises are tracked and awaited before any pause() call to prevent
 //     the "play() interrupted by pause()" DOMException.
@@ -132,8 +133,9 @@ export function VideoPreviewCard({
         inViewRef.current = intersecting;
 
         if (intersecting && v && url) {
-          // Switch the browser to full buffering mode on first entry.
-          v.preload = "auto";
+          // Fetch only metadata (duration, dimensions) — not the full video.
+          // Avoids saturating Chrome's 6-connection limit on a 7-column grid.
+          v.preload = "metadata";
 
           // Rule 1: .play() called directly from the observer callback.
           playPromiseRef.current = v.play();
@@ -154,6 +156,9 @@ export function VideoPreviewCard({
             v.pause();
           }
           playPromiseRef.current = null;
+          // Signal browser to stop buffering off-screen cards.
+          // This frees connection slots for visible cards and reduces memory pressure.
+          v.preload = "none";
         }
       },
       "0px",
@@ -202,6 +207,9 @@ export function VideoPreviewCard({
           preload="none"
           muted
           playsInline
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-expect-error — fetchpriority is a valid HTML attribute not yet in React types
+          fetchpriority="low"
           className="absolute inset-0 h-full w-full object-cover"
           onLoadedMetadata={handleLoadedMetadata}
           onError={handleError}

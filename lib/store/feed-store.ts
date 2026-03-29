@@ -66,6 +66,9 @@ interface FeedState {
   likedPostIds: string[];
   addPost:    (post: FeedPost) => void;
   removePost: (id: string) => void;
+  /** Batch remove — awaits all IDB deletes before updating Zustand state.
+   *  Throws if any IDB delete fails; state is left unchanged on error. */
+  removePosts: (ids: string[]) => Promise<void>;
   toggleLike: (postId: string) => void;
   hydrateAllPosts: () => Promise<void>;
 }
@@ -98,6 +101,22 @@ export const useFeedStore = create<FeedState>()(
         }
         set((s) => ({ userPosts: s.userPosts.filter((p) => p.id !== id) }));
         removePostFromIDB(id).catch(console.warn);
+      },
+
+      removePosts: async (ids) => {
+        if (ids.length === 0) return;
+        const posts = get().userPosts.filter((p) => ids.includes(p.id));
+        // Release OPFS blobs — non-durable cleanup, failures are swallowed.
+        await Promise.all(
+          posts
+            .filter((p) => p.projectSnapshot?.mediaPool?.length)
+            .map((p) => releaseSnapshotMedia(p.projectSnapshot!.mediaPool!).catch(console.warn))
+        );
+        // Durability: NO per-item .catch() — any IDB failure throws, state stays unchanged.
+        await Promise.all(ids.map((id) => removePostFromIDB(id)));
+        // State updates only after all IDB deletes have landed.
+        const idSet = new Set(ids);
+        set((s) => ({ userPosts: s.userPosts.filter((p) => !idSet.has(p.id)) }));
       },
 
       /**

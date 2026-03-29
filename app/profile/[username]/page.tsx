@@ -201,11 +201,14 @@ function useRemixCount(postId: string, allPosts: FeedPost[]): number {
 }
 
 // ── Compact Preview Row (56px, 16:9 static thumbnail + metadata) ─────────────
-function PostCompactRow({ item, allPosts, onOpen, onDelete }: {
+function PostCompactRow({ item, allPosts, onOpen, onDelete, isMultiSelectMode = false, isSelected = false, onSelect }: {
   item: { type: "feed" | "registry"; id: string; title: string; accent: string; bg: string; date: number; post: FeedPost | null };
   allPosts: FeedPost[];
   onOpen: () => void;
   onDelete?: () => void;
+  isMultiSelectMode?: boolean;
+  isSelected?: boolean;
+  onSelect?: (id: string) => void;
 }) {
   const thumbRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -245,7 +248,21 @@ function PostCompactRow({ item, allPosts, onOpen, onDelete }: {
   }, []);
 
   return (
-    <div className="group flex items-center gap-3 rounded-lg border border-white/6 bg-white/[0.02] px-2 py-1.5 transition-colors hover:border-white/14 hover:bg-white/[0.04]">
+    <div
+      onClick={isMultiSelectMode ? () => onSelect?.(item.id) : undefined}
+      className={`group flex items-center gap-3 rounded-lg border px-2 py-1.5 transition-colors ${
+        isSelected
+          ? "border-red-500/30 bg-red-500/8"
+          : "border-white/6 bg-white/[0.02] hover:border-white/14 hover:bg-white/[0.04]"
+      } ${isMultiSelectMode ? "cursor-pointer" : ""}`}
+    >
+      {isMultiSelectMode && (
+        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+          isSelected ? "border-red-400 bg-red-500/30" : "border-white/20 bg-transparent"
+        }`}>
+          {isSelected && <Check size={9} className="text-red-300" />}
+        </div>
+      )}
       {/* 16:9 thumbnail — 99×56px, static frame, no autoplay */}
       <div ref={thumbRef} className="relative h-[56px] w-[99px] shrink-0 overflow-hidden rounded-md" style={{ background: item.bg }}>
         {thumbSrc && isVisible && (
@@ -313,7 +330,8 @@ export default function ProfilePage() {
   const openProjectInTab = useProjectStore((s) => s.openProjectInTab);
   const loadProject      = useProjectStore((s) => s.loadProject);
   const allUserPosts     = useFeedStore((s) => s.userPosts);
-  const removePost       = useFeedStore((s) => s.removePost);
+  const removePost   = useFeedStore((s) => s.removePost);
+  const removePosts  = useFeedStore((s) => s.removePosts);
   const registryProjects = useProjectsRegistry((s) => s.projects);
 
   const [tab, setTab]                  = useState<Tab>("published");
@@ -321,6 +339,9 @@ export default function ProfilePage() {
   const [showEditProfile, setShowEdit] = useState(false);
   const [forceRender, setForceRender]  = useState(false);
   const [theaterPost, setTheaterPost]  = useState<FeedPost | null>(null);
+  const [selectedIds, setSelectedIds]      = useState<Set<string>>(new Set());
+  const [isMultiSelect, setIsMultiSelect]  = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
   // Timeout fallback: if hydration takes >300ms, unblock render anyway
   useEffect(() => {
@@ -385,6 +406,31 @@ export default function ProfilePage() {
     const { removePost: rp } = useFeedStore.getState();
     offlinePosts.forEach((p) => rp(p.id));
   };
+
+  const handleBatchDelete = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setIsBatchDeleting(true);
+    try {
+      await removePosts(ids);
+      setSelectedIds(new Set());
+      setIsMultiSelect(false);
+    } catch (err) {
+      console.error("[Profile] batch delete failed:", err);
+      // Posts remain in store — IDB and state are consistent (removePosts only
+      // updates state after all IDB deletes succeed).
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  }, [selectedIds, removePosts]);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  }, []);
 
   const handleOpenPost = (item: typeof unifiedPosts[0]) => {
     if (item.type === "feed" && item.post) {
@@ -560,6 +606,31 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+        {tab === "published" && isOwnProfile && viewMode === "compact" && (
+          <div className="flex items-center gap-2 border-t border-white/6 bg-[#141414]/80 px-6 py-2">
+            <button
+              onClick={() => { setIsMultiSelect((v) => !v); setSelectedIds(new Set()); }}
+              className={`rounded-md px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                isMultiSelect ? "bg-white/12 text-white/80" : "text-white/35 hover:bg-white/8 hover:text-white/60"
+              }`}
+            >
+              {isMultiSelect ? "Cancel" : "Select"}
+            </button>
+            {isMultiSelect && selectedIds.size > 0 && (
+              <button
+                onClick={handleBatchDelete}
+                disabled={isBatchDeleting}
+                className="flex items-center gap-1 rounded-md bg-red-500/20 px-2.5 py-1 text-[10px] font-bold text-red-400 transition-colors hover:bg-red-500/30 disabled:opacity-50"
+              >
+                <Trash2 size={9} />
+                {isBatchDeleting ? `Deleting ${selectedIds.size}…` : `Delete ${selectedIds.size}`}
+              </button>
+            )}
+            {isMultiSelect && selectedIds.size === 0 && (
+              <span className="text-[10px] text-white/30">Tap rows to select</span>
+            )}
+          </div>
+        )}
 
         <div className="px-6 py-5">
           {tab === "published" && (
@@ -592,6 +663,9 @@ export default function ProfilePage() {
                     <PostCompactRow key={item.id} item={item} allPosts={allUserPosts}
                       onOpen={() => handleOpenPost(item)}
                       onDelete={item.type === "feed" ? () => removePost(item.id) : undefined}
+                      isMultiSelectMode={isMultiSelect}
+                      isSelected={selectedIds.has(item.id)}
+                      onSelect={toggleSelect}
                     />
                   ))}
                 </div>
