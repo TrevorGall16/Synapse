@@ -41,7 +41,8 @@ Declared in `types/audit.d.ts` (app writes) and re-used in `e2e/fixtures/audit-p
 
 ```typescript
 interface SynapseAuditLongTask {
-  startTime: number;   // DOMHighResTimeStamp
+  /** Absolute epoch time (ms) derived from performance.timeOrigin + entry.startTime. */
+  epochStartTime: number;
   duration: number;    // ms
   name: string;
 }
@@ -49,7 +50,8 @@ interface SynapseAuditLongTask {
 interface SynapseAuditWorkerEvent {
   type: string;        // e.g. "decode_start", "decode_done", "write_start"
   id: string;          // correlates request ↔ response
-  ts: number;          // Date.now() in worker
+  /** Date.now() in the worker at event emission time. Same epoch domain as __auditStartTs. */
+  ts: number;
   meta?: unknown;
 }
 
@@ -59,7 +61,13 @@ interface Window {
     exportSummaries: string[];        // raw [SynapseExport] SUMMARY lines
     workerEvents: SynapseAuditWorkerEvent[];
   };
-  /** Set by markAuditStart() / resetAuditBuffers(); used to filter entries to the current flow only. */
+  /**
+   * Set by markAuditStart() / resetAuditBuffers() as Date.now() (epoch ms).
+   * All filter helpers compare against this value.
+   * Long tasks are stored as epochStartTime (Date.now() domain).
+   * Worker events use ts = Date.now() (same domain).
+   * No performance.now() values are stored — clocks are unified in Date.now() epoch.
+   */
   __auditStartTs?: number;
 }
 ```
@@ -81,7 +89,9 @@ if (process.env.NEXT_PUBLIC_AUDIT_MODE === "1") {
   const obs = new PerformanceObserver((list) => {
     for (const e of list.getEntries()) {
       window.__synapseAudit!.longTasks.push({
-        startTime: e.startTime,
+        // Convert performance-relative startTime → absolute epoch ms so it's
+        // comparable to __auditStartTs (Date.now()) and worker ts (Date.now()).
+        epochStartTime: Math.round(performance.timeOrigin + e.startTime),
         duration: e.duration,
         name: e.name,
       });
@@ -193,17 +203,19 @@ This keeps `export-pipeline.ts` free of any window/audit dependencies (it has ze
 ### 4.1 Buffer Management
 
 ```typescript
-/** Record the current timestamp as the start of an audited flow. */
+/** Record Date.now() as the start of an audited flow. */
 markAuditStart(): Promise<void>
-  // stores window.__auditStartTs = performance.now()
+  // stores window.__auditStartTs = Date.now()
 
 /** Clear all audit buffers and reset the start timestamp. */
 resetAuditBuffers(): Promise<void>
   // sets window.__synapseAudit = { longTasks: [], exportSummaries: [], workerEvents: [] }
-  // also resets window.__auditStartTs
+  // sets window.__auditStartTs = Date.now()
 ```
 
-**Rule:** `resetAuditBuffers()` is called at the beginning of every test flow. All filtering helpers (`readLongTasks`, `parseExportSummary`, `waitForWorkerEvent`) filter their results to entries with `startTime` / `ts` ≥ `window.__auditStartTs`.
+**Clock domain:** `__auditStartTs` is always `Date.now()` (epoch ms). Long-task `epochStartTime`, worker event `ts`, and `__auditStartTs` are all in the same domain — no conversion needed at filter time.
+
+**Rule:** `resetAuditBuffers()` is called at the beginning of every test flow. All filtering helpers (`readLongTasks`, `parseExportSummary`, `waitForWorkerEvent`) filter their results to entries with `epochStartTime` / `ts` ≥ `window.__auditStartTs`.
 
 ### 4.2 `readLongTasks()`
 
@@ -216,7 +228,7 @@ readLongTasks(): Promise<LongTaskResult>
 ```
 
 - Reads `window.__synapseAudit.longTasks`.
-- Filters to entries where `startTime >= __auditStartTs`.
+- Filters to entries where `epochStartTime >= __auditStartTs` (both in Date.now() epoch domain).
 - Returns entries array + computed `maxLongTaskMs = Math.max(0, ...entries.map(e => e.duration))`.
 
 ### 4.3 `parseExportSummary()`
@@ -249,7 +261,7 @@ waitForWorkerEvent(type: string, options?: WaitForWorkerEventOptions): Promise<S
 
 - Polls `window.__synapseAudit.workerEvents` (100ms interval) until a matching entry appears.
 - Matches on `event.type === type` and, if `id` is provided, `event.id === id`.
-- Filters to events after `__auditStartTs`.
+- Filters to events where `event.ts >= __auditStartTs` (both Date.now() epoch).
 - Returns the matched event.
 - Throws `TimeoutError` if not found within `timeoutMs`.
 
@@ -327,7 +339,12 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
-  reporter: [["html", { outputFolder: "playwright-report", open: "never" }]],
+  reporter: [
+    // HTML report for human review
+    ["html", { outputFolder: "playwright-report", open: "never" }],
+    // JUnit XML for CI systems (GitHub Actions, Jenkins, etc.)
+    ["junit", { outputFile: "playwright-report/results.xml" }],
+  ],
   webServer: {
     command: "NEXT_PUBLIC_AUDIT_MODE=1 npm run dev",
     url: "http://localhost:3000",
@@ -340,10 +357,12 @@ export default defineConfig({
 
 **`package.json` script:**
 ```json
-"audit": "playwright test --reporter=html"
+"audit": "playwright test"
 ```
 
-Artifacts on failure: `playwright-report/index.html`, per-test screenshots, video, and `.zip` trace files in `playwright-report/`.
+Reporters are defined exclusively in `playwright.config.ts` — no `--reporter` flag in the script, preventing duplication and drift.
+
+Artifacts on failure: `playwright-report/index.html`, `playwright-report/results.xml`, per-test screenshots, video, and `.zip` trace files in `playwright-report/`.
 
 ---
 
@@ -357,4 +376,5 @@ Artifacts on failure: `playwright-report/index.html`, per-test screenshots, vide
 | Observer cleanup | `obs.disconnect()` in `useEffect` return |
 | Worker message safety | `__auditEvent` branch fires `return` before normal response routing |
 | Stable selectors | All test interactions use `data-testid` attributes — never CSS class selectors |
-| Time isolation | All fixture helpers filter to entries after `window.__auditStartTs` |
+| Unified clock | All timestamps (`epochStartTime`, worker `ts`, `__auditStartTs`) use `Date.now()` epoch ms — never `performance.now()` for stored values |
+| Time isolation | All fixture helpers filter to entries where timestamp ≥ `window.__auditStartTs` |
