@@ -339,9 +339,10 @@ export default function ProfilePage() {
   const [showEditProfile, setShowEdit] = useState(false);
   const [forceRender, setForceRender]  = useState(false);
   const [theaterPost, setTheaterPost]  = useState<FeedPost | null>(null);
-  const [selectedIds, setSelectedIds]      = useState<Set<string>>(new Set());
-  const [isMultiSelect, setIsMultiSelect]  = useState(false);
+  const [selectedIds, setSelectedIds]         = useState<Set<string>>(new Set());
+  const [isMultiSelect, setIsMultiSelect]     = useState(false);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [isBatchConfirming, setIsBatchConfirming] = useState(false);
 
   // Timeout fallback: if hydration takes >300ms, unblock render anyway
   useEffect(() => {
@@ -408,6 +409,13 @@ export default function ProfilePage() {
   };
 
   const handleBatchDelete = useCallback(async () => {
+    // Action-path guard — executes even if UI state is tampered via DevTools.
+    if (!isOwnProfile) {
+      console.warn("[Profile] handleBatchDelete: unauthorized call on non-own profile — ignoring");
+      return;
+    }
+    // Require explicit user confirmation before touching IDB.
+    if (!isBatchConfirming) return;
     const ids = [...selectedIds];
     if (ids.length === 0) return;
     setIsBatchDeleting(true);
@@ -415,6 +423,7 @@ export default function ProfilePage() {
       await removePosts(ids);
       setSelectedIds(new Set());
       setIsMultiSelect(false);
+      setIsBatchConfirming(false);
     } catch (err) {
       console.error("[Profile] batch delete failed:", err);
       // Posts remain in store — IDB and state are consistent (removePosts only
@@ -422,9 +431,10 @@ export default function ProfilePage() {
     } finally {
       setIsBatchDeleting(false);
     }
-  }, [selectedIds, removePosts]);
+  }, [selectedIds, removePosts, isOwnProfile, isBatchConfirming]);
 
   const toggleSelect = useCallback((id: string) => {
+    setIsBatchConfirming(false); // changing selection dismisses any pending confirm
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) { next.delete(id); } else { next.add(id); }
@@ -609,22 +619,42 @@ export default function ProfilePage() {
         {tab === "published" && isOwnProfile && viewMode === "compact" && (
           <div className="flex items-center gap-2 border-t border-white/6 bg-[#141414]/80 px-6 py-2">
             <button
-              onClick={() => { setIsMultiSelect((v) => !v); setSelectedIds(new Set()); }}
+              onClick={() => { setIsMultiSelect((v) => !v); setSelectedIds(new Set()); setIsBatchConfirming(false); }}
               className={`rounded-md px-2.5 py-1 text-[10px] font-semibold transition-colors ${
                 isMultiSelect ? "bg-white/12 text-white/80" : "text-white/35 hover:bg-white/8 hover:text-white/60"
               }`}
             >
               {isMultiSelect ? "Cancel" : "Select"}
             </button>
-            {isMultiSelect && selectedIds.size > 0 && (
+            {isMultiSelect && selectedIds.size > 0 && !isBatchConfirming && (
               <button
-                onClick={handleBatchDelete}
+                onClick={() => setIsBatchConfirming(true)}
                 disabled={isBatchDeleting}
                 className="flex items-center gap-1 rounded-md bg-red-500/20 px-2.5 py-1 text-[10px] font-bold text-red-400 transition-colors hover:bg-red-500/30 disabled:opacity-50"
               >
                 <Trash2 size={9} />
-                {isBatchDeleting ? `Deleting ${selectedIds.size}…` : `Delete ${selectedIds.size}`}
+                Delete {selectedIds.size}
               </button>
+            )}
+            {isMultiSelect && selectedIds.size > 0 && isBatchConfirming && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-white/50">
+                  Permanently delete {selectedIds.size} post{selectedIds.size !== 1 ? "s" : ""}?
+                </span>
+                <button
+                  onClick={() => setIsBatchConfirming(false)}
+                  className="rounded px-1.5 py-0.5 text-[9px] text-white/40 hover:bg-white/8"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBatchDelete}
+                  disabled={isBatchDeleting}
+                  className="rounded bg-red-500/25 px-1.5 py-0.5 text-[9px] font-bold text-red-400 hover:bg-red-500/35 disabled:opacity-50"
+                >
+                  {isBatchDeleting ? "Deleting…" : "Yes, delete"}
+                </button>
+              </div>
             )}
             {isMultiSelect && selectedIds.size === 0 && (
               <span className="text-[10px] text-white/30">Tap rows to select</span>
