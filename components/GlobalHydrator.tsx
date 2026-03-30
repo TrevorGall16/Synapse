@@ -10,6 +10,7 @@ import { registerFlush, deregisterFlush, flushProjectToIDB } from "@/lib/store/f
 import { useSaveBarrierStore } from "@/lib/store/save-barrier-store";
 import type { ProjectState } from "@/lib/store/project-store";
 import type { SerializedProject } from "@/lib/store/types";
+import { useProjectsRegistry } from "@/lib/store/projects-registry";
 
 // Re-export so publish-modal.tsx import path stays unchanged.
 export { flushProjectToIDB };
@@ -144,6 +145,12 @@ export function GlobalHydrator() {
             })
           ),
         ]);
+        // Sync projectStatus to the lightweight registry so /projects page
+        // can filter without loading full IDB records.
+        if (s.projectId) {
+          const status = (s as unknown as { projectStatus?: "draft" | "published" }).projectStatus ?? "draft";
+          useProjectsRegistry.getState().updateProject(s.projectId, { projectStatus: status });
+        }
         setDirty(false);
       } finally {
         useSaveBarrierStore.getState().setFlushing(false);
