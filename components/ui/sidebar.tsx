@@ -6,7 +6,7 @@ import { ensureFlushedBeforeNav } from "@/lib/store/project-store";
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: "⌂" },
   { href: "/explore", label: "Explore", icon: "◎" },
-  { href: "/gallery", label: "Gallery", icon: "⬛" },
+  { href: "/projects", label: "Projects", icon: "⬛" },
   { href: "/studio", label: "Studio", icon: "▶" },
   { href: "/niche", label: "Niche", icon: "◈" },
   { href: "/login", label: "Login", icon: "⟐" },
@@ -25,7 +25,7 @@ export function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 z-50 flex h-screen w-56 flex-col border-r border-white/10 bg-[#1a1a1a] px-3 py-6">
       <button
-        onClick={() => handleNav("/gallery")}
+        onClick={() => handleNav("/projects")}
         className="mb-8 px-3 text-left text-lg font-bold tracking-wide text-white transition-opacity hover:opacity-70"
       >
         SYNAPSE
