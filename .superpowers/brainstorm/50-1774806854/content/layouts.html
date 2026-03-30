@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Synapse Tier 2 — Layout Review</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #111;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    padding: 24px;
+    line-height: 1.5;
+  }
+
+  h1 { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+  h2 { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  h3 { font-size: 13px; font-weight: 600; color: #ccc; margin-bottom: 10px; }
+
+  .page-header { margin-bottom: 32px; border-bottom: 1px solid #222; padding-bottom: 16px; }
+  .page-header p { font-size: 12px; color: #666; margin-top: 4px; }
+
+  .section { margin-bottom: 40px; }
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #555;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1e1e1e;
+  }
+
+  /* ── SCREEN FRAME ─────────────────────────────── */
+  .screen-frame {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .screen-title {
+    background: #1a1a1a;
+    border-bottom: 1px solid #252525;
+    padding: 8px 14px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .screen-body { padding: 16px; }
+
+  /* ── APP CHROME ───────────────────────────────── */
+  .app-shell {
+    display: flex;
+    height: 480px;
+    background: #111;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .sidebar {
+    width: 52px;
+    background: #1a1a1a;
+    border-right: 1px solid #222;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 0;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .sidebar-logo {
+    width: 28px; height: 28px;
+    background: #2a2a2a;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: #777; font-weight: 800;
+  }
+  .sidebar-btn {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; cursor: default;
+    color: #555;
+    transition: background 0.1s;
+  }
+  .sidebar-btn.active { background: #252525; color: #ddd; }
+  .sidebar-btn:hover { background: #202020; color: #aaa; }
+
+  .main-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+  /* ── PROJECT LIBRARY ──────────────────────────── */
+  .page-topbar {
+    background: #1a1a1a;
+    border-bottom: 1px solid #222;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .page-topbar-title { font-size: 12px; font-weight: 700; color: #ccc; }
+  .topbar-actions { display: flex; gap: 6px; align-items: center; }
+
+  .btn {
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: default;
+    border: none;
+  }
+  .btn-primary { background: #7c3aed22; color: #a78bfa; border: 1px solid #7c3aed44; }
+  .btn-ghost { background: #ffffff0a; color: #888; border: 1px solid #ffffff15; }
+  .btn-danger-sm { background: #ff444422; color: #f87171; border: 1px solid #ff444433; padding: 3px 7px; font-size: 9px; }
+  .btn-proxy { background: #0ea5e922; color: #38bdf8; border: 1px solid #0ea5e933; padding: 3px 7px; font-size: 9px; }
+  .btn-clear { background: #ffffff08; color: #666; border: 1px solid #ffffff10; padding: 3px 7px; font-size: 9px; }
+
+  .filter-row {
+    display: flex; gap: 6px;
+    padding: 8px 16px;
+    border-bottom: 1px solid #1e1e1e;
+    flex-shrink: 0;
+    background: #161616;
+  }
+  .filter-chip {
+    padding: 2px 9px;
+    border-radius: 99px;
+    font-size: 9px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    cursor: default;
+    color: #666;
+    background: #1e1e1e;
+  }
+  .filter-chip.active { background: #2a2a2a; color: #ccc; border-color: #333; }
+
+  .project-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 12px 16px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .proj-card {
+    background: #1a1a1a;
+    border: 1px solid #252525;
+    border-radius: 7px;
+    overflow: hidden;
+    cursor: default;
+  }
+  .proj-card:hover { border-color: #333; }
+
+  .proj-thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: #222;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: #333;
+    position: relative;
+  }
+  .proj-thumb.has-preview { background: linear-gradient(135deg, #1e1035, #0f1a2e); }
+  .proj-thumb .play-icon {
+    width: 24px; height: 24px;
+    background: #ffffff15;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: #aaa;
+  }
+  .proj-status-badge {
+    position: absolute;
+    top: 6px; right: 6px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .status-draft {
+    background: #78350f33;
+    color: #fbbf24;
+    border: 1px solid #78350f66;
+  }
+  .status-published {
+    background: #14532d33;
+    color: #4ade80;
+    border: 1px solid #14532d66;
+  }
+
+  .proj-info { padding: 8px 10px; }
+  .proj-name { font-size: 11px; font-weight: 600; color: #ccc; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .proj-meta { font-size: 9px; color: #555; }
+  .proj-actions {
+    padding: 6px 10px;
+    border-top: 1px solid #1e1e1e;
+    display: flex; gap: 4px; justify-content: flex-end;
+  }
+
+  /* ── MEDIA BIN ────────────────────────────────── */
+  .media-bin-layout {
+    display: flex;
+    height: 480px;
+    gap: 0;
+    overflow: hidden;
+  }
+  .media-bin-panel {
+    flex: 1;
+    background: #141414;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-header {
+    background: #1a1a1a;
+    border-bottom: 1px solid #222;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .panel-title { font-size: 10px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.1em; }
+  .panel-subtitle { font-size: 9px; color: #444; margin-top: 1px; }
+
+  .media-list { overflow-y: auto; flex: 1; padding: 8px; }
+
+  .media-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 6px;
+    margin-bottom: 2px;
+    border: 1px solid transparent;
+    cursor: default;
+  }
+  .media-row:hover { background: #1e1e1e; border-color: #252525; }
+
+  .media-thumb {
+    width: 44px; height: 28px;
+    background: #222;
+    border-radius: 3px;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #444;
+    overflow: hidden;
+    position: relative;
+  }
+  .media-thumb.has-proxy::after {
+    content: 'P';
+    position: absolute;
+    bottom: 1px; right: 2px;
+    font-size: 7px;
+    font-weight: 800;
+    color: #38bdf8;
+    line-height: 1;
+  }
+
+  .media-info { flex: 1; min-width: 0; }
+  .media-name { font-size: 10px; font-weight: 600; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .media-stats { font-size: 9px; color: #555; display: flex; gap: 6px; margin-top: 1px; align-items: center; }
+  .ref-badge {
+    background: #ffffff0a;
+    border: 1px solid #ffffff10;
+    border-radius: 3px;
+    padding: 0 4px;
+    font-size: 8px;
+    color: #666;
+    font-weight: 600;
+  }
+  .ref-badge.used { color: #a78bfa; border-color: #7c3aed33; background: #7c3aed11; }
+  .proxy-size { font-size: 8px; color: #38bdf866; font-weight: 600; }
+
+  .media-actions { display: flex; gap: 4px; flex-shrink: 0; align-items: center; }
+
+  /* ── DIRTY STATE INDICATOR ────────────────────── */
+  .dirty-indicator-demo {
+    background: #1a1a1a;
+    border: 1px solid #252525;
+    border-radius: 7px;
+    padding: 16px;
+    margin-top: 8px;
+  }
+  .di-label { font-size: 9px; font-weight: 700; color: #444; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
+
+  .di-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .di-elem {
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 9px;
+    color: #3b82f6;
+    background: #0f172a;
+    border: 1px solid #1e3a5f;
+    border-radius: 4px;
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+  .di-annotation { font-size: 10px; color: #666; }
+  .di-annotation strong { color: #aaa; }
+
+  .studio-chrome {
+    background: #141414;
+    border: 1px solid #222;
+    border-radius: 6px;
+    overflow: hidden;
+    height: 180px;
+    position: relative;
+  }
+  .studio-topbar {
+    background: #1a1a1a;
+    border-bottom: 1px solid #222;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .studio-topbar-dot { width: 6px; height: 6px; border-radius: 50%; background: #333; }
+  .studio-topbar-title { font-size: 10px; color: #555; flex: 1; }
+  .studio-topbar-status {
+    font-size: 8px;
+    color: #fbbf2488;
+    background: #78350f22;
+    border: 1px solid #78350f44;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-weight: 700;
+  }
+  .studio-body { padding: 12px; position: relative; height: calc(100% - 32px); }
+
+  .invisible-elem {
+    font-family: monospace;
+    font-size: 8px;
+    border: 1px dashed #2a3a1a;
+    border-radius: 3px;
+    padding: 2px 6px;
+    color: #3a5a2a;
+    background: #1a2a1222;
+    display: inline-block;
+  }
+  .invisible-note {
+    font-size: 9px;
+    color: #3a5a2a;
+    margin-left: 6px;
+  }
+  .invisible-row { display: flex; align-items: center; margin-top: 8px; }
+
+  .callout {
+    background: #0f172a;
+    border: 1px solid #1e3a5f;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 12px;
+    font-size: 10px;
+    color: #93c5fd;
+    line-height: 1.6;
+  }
+  .callout strong { color: #60a5fa; }
+
+  /* ── CHOICE CARD ──────────────────────────────── */
+  .choice-group { display: flex; gap: 12px; margin-top: 12px; }
+  .choice-card {
+    flex: 1;
+    background: #1a1a1a;
+    border: 2px solid #252525;
+    border-radius: 8px;
+    padding: 14px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .choice-card:hover { border-color: #444; background: #1e1e1e; }
+  .choice-card.selected { border-color: #7c3aed; background: #7c3aed11; }
+  .choice-card h4 { font-size: 11px; font-weight: 700; color: #ccc; margin-bottom: 6px; }
+  .choice-card p { font-size: 9px; color: #666; line-height: 1.5; }
+  .choice-letter {
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    width: 18px; height: 18px;
+    border-radius: 4px;
+    background: #2a2a2a;
+    font-size: 10px;
+    font-weight: 800;
+    color: #888;
+    margin-right: 6px;
+    float: left;
+    margin-top: 1px;
+  }
+
+  hr.divider { border: none; border-top: 1px solid #1e1e1e; margin: 32px 0; }
+  .tag { display: inline-block; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 6px; border-radius: 3px; margin-left: 6px; }
+  .tag-q { background: #7c3aed22; color: #a78bfa; border: 1px solid #7c3aed44; }
+
+  .scroll-hint { font-size: 9px; color: #444; text-align: center; padding: 8px; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Synapse Tier 2 — Layout Review</h1>
+  <p>Review three layout proposals: Project Library, Media Bin, Dirty State indicator. Click options to select preferences.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 1: PROJECT LIBRARY
+════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-label">1 · Project Library — Draft / Published Status Display <span class="tag tag-q">Pick A or B</span></div>
+
+  <div class="choice-group">
+
+    <!-- OPTION A: Status badge on thumbnail -->
+    <div class="choice-card" data-choice="library-a" onclick="this.classList.toggle('selected')">
+      <h4><span class="choice-letter">A</span> Status badge on thumbnail</h4>
+      <p>Pill badge overlaid on top-right corner of the thumbnail. Color-coded: amber for Draft, green for Published. Compact — no extra row.</p>
+
+      <div class="screen-frame" style="margin-top:10px">
+        <div class="screen-title">Project Library · /projects</div>
+        <div class="screen-body" style="padding:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="font-size:11px;font-weight:700;color:#ccc">Projects</div>
+            <div style="display:flex;gap:5px;align-items:center">
+              <div class="filter-chip active">All</div>
+              <div class="filter-chip">Drafts</div>
+              <div class="filter-chip">Published</div>
+              <div class="btn btn-primary" style="margin-left:6px">+ New Project</div>
+            </div>
+          </div>
+          <div class="project-grid" style="height:300px;grid-template-columns:repeat(3,1fr)">
+
+            <div class="proj-card">
+              <div class="proj-thumb has-preview">
+                <div class="play-icon">▶</div>
+                <div class="proj-status-badge status-draft">Draft</div>
+              </div>
+              <div class="proj-info">
+                <div class="proj-name">Neon City Remix</div>
+                <div class="proj-meta">Edited 2 hours ago · 1920×1080</div>
+              </div>
+              <div class="proj-actions">
+                <div class="btn btn-ghost">Rename</div>
+                <div class="btn btn-primary">Open</div>
+              </div>
+            </div>
+
+            <div class="proj-card">
+              <div class="proj-thumb has-preview">
+                <div class="play-icon">▶</div>
+                <div class="proj-status-badge status-published">✓ Published</div>
+              </div>
+              <div class="proj-info">
+                <div class="proj-name">Summer Vibes Vol.3</div>
+                <div class="proj-meta">Edited 3 days ago · 1080×1920</div>
+              </div>
+              <div class="proj-actions">
+                <div class="btn btn-ghost">Rename</div>
+                <div class="btn btn-primary">Open</div>
+              </div>
+            </div>
+
+            <div class="proj-card">
+              <div class="proj-thumb">
+                <div style="font-size:14px;color:#333">▭</div>
+                <div class="proj-status-badge status-draft">Draft</div>
+              </div>
+              <div class="proj-info">
+                <div class="proj-name">Untitled Project</div>
+                <div class="proj-meta">Edited just now</div>
+              </div>
+              <div class="proj-actions">
+                <div class="btn btn-ghost">Rename</div>
+                <div class="btn btn-primary">Open</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OPTION B: Status row below name -->
+    <div class="choice-card" data-choice="library-b" onclick="this.classList.toggle('selected')">
+      <h4><span class="choice-letter">B</span> Status row in card body</h4>
+      <p>Status label and last-edited date share a row below the project name. More readable at a glance; slightly taller cards.</p>
+
+      <div class="screen-frame" style="margin-top:10px">
+        <div class="screen-title">Project Library · /projects</div>
+        <div class="screen-body" style="padding:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="font-size:11px;font-weight:700;color:#ccc">Projects</div>
+            <div style="display:flex;gap:5px;align-items:center">
+              <div class="filter-chip active">All</div>
+              <div class="filter-chip">Drafts</div>
+              <div class="filter-chip">Published</div>
+              <div class="btn btn-primary" style="margin-left:6px">+ New Project</div>
+            </div>
+          </div>
+
+          <div class="project-grid" style="height:300px;grid-template-columns:repeat(3,1fr)">
+
+            <div class="proj-card">
+              <div class="proj-thumb has-preview"><div class="play-icon">▶</div></div>
+              <div class="proj-info" style="padding-bottom:6px">
+                <div class="proj-name">Neon City Remix</div>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+                  <div class="proj-status-badge status-draft" style="position:static">Draft</div>
+                  <div class="proj-meta">2 hours ago</div>
+                </div>
+              </div>
+              <div class="proj-actions">
+                <div class="btn btn-ghost">Rename</div>
+                <div class="btn btn-primary">Open</div>
+              </div>
+            </div>
+
+            <div class="proj-card">
+              <div class="proj-thumb has-preview"><div class="play-icon">▶</div></div>
+              <div class="proj-info" style="padding-bottom:6px">
+                <div class="proj-name">Summer Vibes Vol.3</div>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+                  <div class="proj-status-badge status-published" style="position:static">✓ Published</div>
+                  <div class="proj-meta">3 days ago</div>
+                </div>
+              </div>
+              <div class="proj-actions">
+                <div class="btn btn-ghost">Rename</div>
+                <div class="btn btn-primary">Open</div>
+              </div>
+            </div>
+
+            <div class="proj-card">
+              <div class="proj-thumb"><div style="font-size:14px;color:#333">▭</div></div>
+              <div class="proj-info" style="padding-bottom:6px">
+                <div class="proj-name">Untitled Project</div>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+                  <div class="proj-status-badge status-draft" style="position:static">Draft</div>
+                  <div class="proj-meta">just now</div>
+                </div>
+              </div>
+              <div class="proj-actions">
+                <div class="btn btn-ghost">Rename</div>
+                <div class="btn btn-primary">Open</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 2: MEDIA BIN
+════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-label">2 · Media Bin — Proxy Button Placement <span class="tag tag-q">Pick A or B</span></div>
+
+  <div class="choice-group">
+
+    <!-- MEDIA BIN OPTION A: Inline row actions -->
+    <div class="choice-card" data-choice="mediabin-a" onclick="this.classList.toggle('selected')">
+      <h4><span class="choice-letter">A</span> Inline row buttons (always visible)</h4>
+      <p>Generate Proxy and Clear Proxy appear directly in each asset row. Immediate — no hover required. Buttons use <code style="font-size:8px;color:#a78bfa">data-testid="generate-proxy-btn-{id}"</code>.</p>
+
+      <div class="screen-frame" style="margin-top:10px">
+        <div class="screen-title">Media Bin · inside Studio</div>
+        <div class="screen-body" style="padding:8px">
+          <div class="panel-header" style="border-radius:5px 5px 0 0">
+            <div>
+              <div class="panel-title">Media Bin</div>
+              <div class="panel-subtitle">4 assets · 284 MB</div>
+            </div>
+            <div class="btn btn-ghost" style="font-size:9px">+ Import</div>
+          </div>
+          <div style="background:#161616;border:1px solid #1e1e1e;border-top:none;border-radius:0 0 5px 5px;overflow:hidden">
+
+            <!-- Row 1: has proxy -->
+            <div class="media-row" style="border-bottom:1px solid #1a1a1a">
+              <div class="media-thumb has-proxy" style="background:linear-gradient(135deg,#1e1035,#0f1a2e)">🎬</div>
+              <div class="media-info">
+                <div class="media-name">concert_main.mp4</div>
+                <div class="media-stats">
+                  <span>128 MB</span>
+                  <span class="ref-badge used">Used ×3</span>
+                  <span class="proxy-size">proxy 2.1MB</span>
+                </div>
+              </div>
+              <div class="media-actions">
+                <div class="btn btn-clear" data-testid="clear-proxy-btn-abc123">Clear Proxy</div>
+              </div>
+            </div>
+
+            <!-- Row 2: no proxy -->
+            <div class="media-row" style="border-bottom:1px solid #1a1a1a">
+              <div class="media-thumb" style="background:#1e1e1e">🎬</div>
+              <div class="media-info">
+                <div class="media-name">b-roll_street.mp4</div>
+                <div class="media-stats">
+                  <span>74 MB</span>
+                  <span class="ref-badge used">Used ×1</span>
+                </div>
+              </div>
+              <div class="media-actions">
+                <div class="btn btn-proxy" data-testid="generate-proxy-btn-def456">Gen Proxy</div>
+              </div>
+            </div>
+
+            <!-- Row 3: audio -->
+            <div class="media-row" style="border-bottom:1px solid #1a1a1a">
+              <div class="media-thumb" style="background:#1e1e1e">🎵</div>
+              <div class="media-info">
+                <div class="media-name">synth_loop_01.wav</div>
+                <div class="media-stats">
+                  <span>4.2 MB</span>
+                  <span class="ref-badge used">Used ×2</span>
+                </div>
+              </div>
+              <div class="media-actions" style="color:#333;font-size:8px">—</div>
+            </div>
+
+            <!-- Row 4: unreferenced -->
+            <div class="media-row">
+              <div class="media-thumb" style="background:#1e1e1e;opacity:0.5">🎬</div>
+              <div class="media-info" style="opacity:0.5">
+                <div class="media-name">old_take_2.mp4</div>
+                <div class="media-stats">
+                  <span>78 MB</span>
+                  <span class="ref-badge">Unused</span>
+                </div>
+              </div>
+              <div class="media-actions">
+                <div class="btn btn-danger-sm">Remove</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MEDIA BIN OPTION B: Hover-reveal actions -->
+    <div class="choice-card" data-choice="mediabin-b" onclick="this.classList.toggle('selected')">
+      <h4><span class="choice-letter">B</span> Hover-reveal action tray</h4>
+      <p>Proxy status shown as a small icon/chip; full action buttons slide in on row hover. Cleaner at rest, same <code style="font-size:8px;color:#a78bfa">data-testid</code> anchors (always present in DOM, visibility only changes).</p>
+
+      <div class="screen-frame" style="margin-top:10px">
+        <div class="screen-title">Media Bin · (row 2 hovered)</div>
+        <div class="screen-body" style="padding:8px">
+          <div class="panel-header" style="border-radius:5px 5px 0 0">
+            <div>
+              <div class="panel-title">Media Bin</div>
+              <div class="panel-subtitle">4 assets · 284 MB</div>
+            </div>
+            <div class="btn btn-ghost" style="font-size:9px">+ Import</div>
+          </div>
+          <div style="background:#161616;border:1px solid #1e1e1e;border-top:none;border-radius:0 0 5px 5px;overflow:hidden">
+
+            <!-- Row 1: at rest, has proxy -->
+            <div class="media-row" style="border-bottom:1px solid #1a1a1a">
+              <div class="media-thumb has-proxy" style="background:linear-gradient(135deg,#1e1035,#0f1a2e)">🎬</div>
+              <div class="media-info">
+                <div class="media-name">concert_main.mp4</div>
+                <div class="media-stats"><span>128 MB</span><span class="ref-badge used">×3</span><span class="proxy-size">P 2.1MB</span></div>
+              </div>
+              <div class="media-actions" style="opacity:0;pointer-events:none">
+                <div class="btn btn-clear">Clear</div>
+              </div>
+            </div>
+
+            <!-- Row 2: hovered, no proxy — buttons visible -->
+            <div class="media-row" style="border-bottom:1px solid #1a1a1a;background:#1e1e1e;border-color:#252525">
+              <div class="media-thumb" style="background:#222">🎬</div>
+              <div class="media-info">
+                <div class="media-name">b-roll_street.mp4</div>
+                <div class="media-stats"><span>74 MB</span><span class="ref-badge used">×1</span></div>
+              </div>
+              <div class="media-actions">
+                <div class="btn btn-proxy">Gen Proxy</div>
+                <div class="btn btn-danger-sm" style="margin-left:2px">✕</div>
+              </div>
+            </div>
+
+            <!-- Row 3: at rest -->
+            <div class="media-row" style="border-bottom:1px solid #1a1a1a">
+              <div class="media-thumb" style="background:#1e1e1e">🎵</div>
+              <div class="media-info">
+                <div class="media-name">synth_loop_01.wav</div>
+                <div class="media-stats"><span>4.2 MB</span><span class="ref-badge used">×2</span></div>
+              </div>
+              <div class="media-actions" style="opacity:0;pointer-events:none">
+                <div class="btn btn-ghost">—</div>
+              </div>
+            </div>
+
+            <!-- Row 4: at rest, unused -->
+            <div class="media-row">
+              <div class="media-thumb" style="background:#1e1e1e;opacity:0.4">🎬</div>
+              <div class="media-info" style="opacity:0.5">
+                <div class="media-name">old_take_2.mp4</div>
+                <div class="media-stats"><span>78 MB</span><span class="ref-badge">Unused</span></div>
+              </div>
+              <div class="media-actions" style="opacity:0;pointer-events:none">
+                <div class="btn btn-danger-sm">Remove</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SECTION 3: DIRTY STATE INDICATOR PLACEMENT
+════════════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-label">3 · Dirty State Indicator — E2E Test Hook Placement</div>
+
+  <p style="font-size:11px;color:#666;margin-bottom:16px">The dirty-state sentinel is <strong style="color:#888">invisible to users</strong> but always in the DOM so Playwright can query it. It lives in <code style="font-size:10px;color:#7c3aed;background:#7c3aed11;padding:1px 4px;border-radius:3px">AppBootstrap</code> — rendered at root layout level, <strong style="color:#888">screen-reader only</strong>. The mockup below shows where it lives in the component tree and what attributes tests use.</p>
+
+  <div class="dirty-indicator-demo">
+    <div class="di-label">Component anatomy</div>
+
+    <div class="di-row">
+      <div class="di-elem">&lt;span data-testid="<strong>dirty-state-indicator</strong>"<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-dirty="<span id="dirty-val" style="color:#fbbf24">false</span>"<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-flushing="<span id="flush-val" style="color:#888">false</span>"<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;class="<strong>sr-only</strong>" aria-hidden /&gt;</div>
+      <div>
+        <div class="di-annotation"><strong>Always in DOM</strong> — even when dirty=false</div>
+        <div class="di-annotation" style="margin-top:4px;font-size:9px;color:#555">Playwright queries: <code style="color:#7c3aed">[data-dirty="true"]</code> to assert unsaved changes</div>
+        <div class="di-annotation" style="margin-top:3px;font-size:9px;color:#555">Playwright queries: <code style="color:#38bdf8">[data-flushing="true"]</code> to assert overlay shown</div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;font-size:9px;color:#555;font-style:italic">Live demo — click the buttons to see attribute changes:</div>
+    <div style="margin-top:6px;display:flex;gap:8px;align-items:center">
+      <button onclick="
+        var d=document.getElementById('dirty-val'), f=document.getElementById('flush-val');
+        d.textContent='true'; d.style.color='#fbbf24';
+        f.textContent='false'; f.style.color='#888';
+      " style="padding:3px 10px;background:#78350f22;color:#fbbf24;border:1px solid #78350f44;border-radius:4px;font-size:9px;cursor:pointer;font-weight:600">Simulate mutation</button>
+      <button onclick="
+        var d=document.getElementById('dirty-val'), f=document.getElementById('flush-val');
+        d.textContent='true'; d.style.color='#fbbf24';
+        f.textContent='true'; f.style.color='#38bdf8';
+      " style="padding:3px 10px;background:#0ea5e922;color:#38bdf8;border:1px solid #0ea5e933;border-radius:4px;font-size:9px;cursor:pointer;font-weight:600">Simulate flushing</button>
+      <button onclick="
+        var d=document.getElementById('dirty-val'), f=document.getElementById('flush-val');
+        d.textContent='false'; d.style.color='#888';
+        f.textContent='false'; f.style.color='#888';
+      " style="padding:3px 10px;background:#14532d22;color:#4ade80;border:1px solid #14532d44;border-radius:4px;font-size:9px;cursor:pointer;font-weight:600">Simulate flush done</button>
+    </div>
+  </div>
+
+  <!-- Where it lives in the visual layout -->
+  <div class="studio-chrome" style="margin-top:16px">
+    <div class="studio-topbar">
+      <div class="studio-topbar-dot"></div>
+      <div class="studio-topbar-dot" style="background:#222"></div>
+      <div class="studio-topbar-dot" style="background:#222"></div>
+      <div class="studio-topbar-title">Studio — Neon City Remix</div>
+      <div class="studio-topbar-status">● Saving…</div>
+    </div>
+    <div class="studio-body">
+      <div style="font-size:9px;color:#444;margin-bottom:8px">Normal studio layout — user sees nothing special</div>
+      <div style="background:#1a1a1a;border:1px solid #222;border-radius:5px;padding:10px;font-size:9px;color:#555">
+        Timeline / Preview / Panels...
+      </div>
+      <div class="invisible-row">
+        <div class="invisible-elem">&lt;span class="sr-only" data-testid="dirty-state-indicator" .../&gt;</div>
+        <div class="invisible-note">← invisible to users, always in DOM · sr-only keeps it out of layout flow</div>
+      </div>
+      <div style="font-size:9px;color:#2a4a1a;margin-top:6px;margin-left:4px">⬆ Renders at AppBootstrap root · zero visual footprint · zero layout impact</div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>E2E test contract:</strong> The <code>data-testid="dirty-state-indicator"</code> element is <em>always</em> present regardless of dirty state. Tests use attribute selectors — e.g., <code>[data-dirty="true"]</code> — to observe state transitions without depending on element visibility or the overlay appearing. The save-barrier overlay (<code>data-testid="save-barrier-overlay"</code>) appears separately only when <code>isFlushing=true</code>.
+  </div>
+
+</div>
+
+<div class="scroll-hint">↑ Scroll up to review all three sections · Click choice cards to mark your selections</div>
+
+<script>
+  // No external deps — pure inline interaction
+</script>
+
+</body>
+</html>

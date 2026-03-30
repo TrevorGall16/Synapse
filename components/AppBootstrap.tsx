@@ -38,36 +38,20 @@ export function AppBootstrap() {
   }, []);
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_AUDIT_MODE !== "1") return;
-
-    window.__synapseAudit = { longTasks: [], exportSummaries: [], workerEvents: [] };
+    // ── Always-available test hooks ────────────────────────────────────────────
+    // These are harmless in production: __auditTriggerDirty is a no-op unless
+    // explicitly called; the console.info interceptor only writes when
+    // window.__synapseAudit is set (by resetAuditBuffers in tests or by the
+    // AUDIT_MODE init block below).
 
     // Test hook: directly trigger dirty state without a real project mutation.
-    // Used by nav-durability spec to reliably seed dirty=true before testing the nav guard.
+    // Used by nav-durability spec to reliably seed dirty=true before the nav guard test.
     (window as Record<string, unknown>)["__auditTriggerDirty"] = () => {
       useSaveBarrierStore.getState().setDirty(true);
     };
 
-    // PerformanceObserver: capture long tasks in Date.now() epoch domain
-    let obs: PerformanceObserver | null = null;
-    if (typeof PerformanceObserver !== "undefined") {
-      obs = new PerformanceObserver((list) => {
-        for (const e of list.getEntries()) {
-          window.__synapseAudit!.longTasks.push({
-            epochStartTime: Math.round(performance.timeOrigin + e.startTime),
-            duration: e.duration,
-            name: e.name,
-          });
-        }
-      });
-      try {
-        obs.observe({ type: "longtask", buffered: true });
-      } catch {
-        // longtask not supported in this context — safe to ignore
-      }
-    }
-
-    // console.info interceptor: capture [SynapseExport] SUMMARY lines
+    // console.info interceptor: capture [SynapseExport] SUMMARY lines.
+    // Uses optional chaining — no-op in production where window.__synapseAudit is null.
     const originalInfo = console.info.bind(console);
     console.info = (...args: unknown[]) => {
       originalInfo(...args);
@@ -76,6 +60,30 @@ export function AppBootstrap() {
         window.__synapseAudit?.exportSummaries.push(line);
       }
     };
+
+    // ── AUDIT_MODE-only hooks (expensive / not needed in production) ───────────
+    let obs: PerformanceObserver | null = null;
+    if (process.env.NEXT_PUBLIC_AUDIT_MODE === "1") {
+      window.__synapseAudit = { longTasks: [], exportSummaries: [], workerEvents: [] };
+
+      // PerformanceObserver: capture long tasks in Date.now() epoch domain
+      if (typeof PerformanceObserver !== "undefined") {
+        obs = new PerformanceObserver((list) => {
+          for (const e of list.getEntries()) {
+            window.__synapseAudit!.longTasks.push({
+              epochStartTime: Math.round(performance.timeOrigin + e.startTime),
+              duration: e.duration,
+              name: e.name,
+            });
+          }
+        });
+        try {
+          obs.observe({ type: "longtask", buffered: true });
+        } catch {
+          // longtask not supported in this context — safe to ignore
+        }
+      }
+    }
 
     return () => {
       obs?.disconnect();

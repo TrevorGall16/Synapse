@@ -52,7 +52,12 @@
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in {**d.get\\(''''dependencies'''',{}\\),**d.get\\(''''devDependencies'''',{}\\)}.items\\(\\)}, indent=2\\)\\)\")",
       "Bash(find D:/Projects/Synapse -name *.test.ts)",
       "Bash(npm show:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(find /d/Projects/Synapse -name synapse-master-checklist.md -o -name *master-checklist*)",
+      "Bash(C:\\\\Users\\\\trevo\\\\.claude\\\\plugins\\\\cache\\\\claude-plugins-official\\\\superpowers\\\\5.0.6\\\\skills\\\\brainstorming\\\\scripts\\\\start-server.sh --project-dir D:/Projects/Synapse)",
+      "Bash(bash \"/c/Users/trevo/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.6/skills/brainstorming/scripts/start-server.sh\" --project-dir \"D:/Projects/Synapse\")",
+      "Bash(ffmpeg -y -f lavfi -i testsrc=duration=1:size=320x180:rate=1 -vcodec libx264 -pix_fmt yuv420p -t 1 D:/Projects/Synapse/e2e/fixtures/test-proxy.mp4)",
+      "Bash(npx cross-env:*)"
     ]
   }
 }

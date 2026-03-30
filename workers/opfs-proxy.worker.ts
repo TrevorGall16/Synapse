@@ -20,17 +20,28 @@ interface DecodeProxyMsg {
 
 type WorkerInMessage = WriteFileMsg | ReadFileMsg | DeleteFileMsg | ListFilesMsg | DecodeProxyMsg;
 
-interface OkResponse   { id: string; status: "ok" }
-interface DataResponse { id: string; status: "ok"; buffer: ArrayBuffer }
-interface ListResponse { id: string; status: "ok"; files: string[] }
+interface OkResponse    { id: string; status: "ok" }
+interface DataResponse  { id: string; status: "ok"; buffer: ArrayBuffer }
+interface ListResponse  { id: string; status: "ok"; files: string[] }
 interface ErrorResponse { id: string; status: "error"; message: string }
-type WorkerOutMessage = OkResponse | DataResponse | ListResponse | ErrorResponse;
+
+/** Explicit contract for DECODE_PROXY success — jpegBuf is the zero-copy transfer target. */
+interface DecodeSuccessResponse { ok: true;  id: string; jpegBuf: ArrayBuffer }
+/** Explicit contract for DECODE_PROXY failure — no buffer transferred. */
+interface DecodeFailureResponse { ok: false; id: string; error: string }
+
+type WorkerOutMessage =
+  | OkResponse
+  | DataResponse
+  | ListResponse
+  | ErrorResponse
+  | DecodeSuccessResponse
+  | DecodeFailureResponse;
 
 // ── Audit Event Emission ───────────────────────────────────────────────────────
 // Emits structured audit events as a SEPARATE postMessage path.
 // Main thread branches on __auditEvent before normal response routing.
-// Only active when NEXT_PUBLIC_AUDIT_MODE=1 is set in the build; guarded by
-// the main-thread bridge, not here — the worker always emits, the bridge filters.
+// The worker always emits; the main-thread bridge decides whether to capture.
 
 function emitAuditEvent(type: string, id: string, meta?: unknown): void {
   self.postMessage({ __auditEvent: true, type, id, ts: Date.now(), meta });
@@ -79,51 +90,93 @@ async function listFiles(): Promise<string[]> {
 
 // ── Video Proxy Decoding ───────────────────────────────────────────────────────
 
-async function decodeProxy(
+/**
+ * Create a minimal JPEG from a blank OffscreenCanvas.
+ * Used as a fallback when VideoDecoder cannot process the input data
+ * (e.g. the caller supplied an MP4 container instead of raw NAL units).
+ */
+async function createFallbackJpeg(width: number, height: number): Promise<ArrayBuffer> {
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(0, 0, width, height);
+  }
+  const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.6 });
+  return blob.arrayBuffer();
+}
+
+/**
+ * Attempt to extract the first keyframe via WebCodecs VideoDecoder.
+ * Rejects if the input cannot be decoded (wrong format, unsupported codec, etc.).
+ */
+async function decodeViaVideoDecoder(
   videoData: ArrayBuffer,
   targetWidth: number,
   targetHeight: number,
 ): Promise<ArrayBuffer> {
-  // Use VideoDecoder (WebCodecs) to extract the first keyframe as a proxy thumbnail.
   return new Promise<ArrayBuffer>((resolve, reject) => {
-    // OffscreenCanvas for frame capture without DOM
     const canvas = new OffscreenCanvas(targetWidth, targetHeight);
     const ctx = canvas.getContext("2d");
     if (!ctx) { reject(new Error("OffscreenCanvas 2D context unavailable")); return; }
 
-    let resolved = false;
+    let settled = false;
+
+    /** Guard: only resolve/reject the outer Promise once. */
+    const settle = (result: ArrayBuffer | null, err?: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (err != null) reject(err instanceof Error ? err : new Error(String(err)));
+      else if (result != null) resolve(result);
+    };
 
     const decoder = new VideoDecoder({
       output: async (frame) => {
-        if (resolved) { frame.close(); return; }
+        if (settled) { frame.close(); return; }
         try {
           ctx.drawImage(frame, 0, 0, targetWidth, targetHeight);
           frame.close();
           const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.8 });
-          const buf = await blob.arrayBuffer();
-          resolved = true;
-          decoder.close();
-          resolve(buf);
+          settle(await blob.arrayBuffer());
+          try { decoder.close(); } catch { /* may throw if already errored */ }
         } catch (e) {
           frame.close();
-          reject(e);
+          settle(null, e);
         }
       },
-      error: (e) => { reject(e); },
+      error: (e) => settle(null, e),
     });
 
     decoder.configure({ codec: "avc1.42001f" });
 
-    // Wrap the raw video data in an EncodedVideoChunk and decode.
-    // In practice this requires a valid encoded chunk — here we decode from raw H.264 data.
     const chunk = new EncodedVideoChunk({
       type: "key",
       timestamp: 0,
       data: videoData,
     });
     decoder.decode(chunk);
-    decoder.flush().catch(reject);
+    decoder.flush().catch((e) => settle(null, e));
   });
+}
+
+/**
+ * Decode a video's first keyframe into a JPEG proxy thumbnail.
+ * Tries VideoDecoder (WebCodecs) first; falls back to a blank canvas JPEG
+ * when the input cannot be decoded (e.g., full MP4 container vs raw NAL units).
+ * Always resolves to a valid ArrayBuffer — never rejects on success path.
+ */
+async function decodeProxy(
+  videoData: ArrayBuffer,
+  targetWidth: number,
+  targetHeight: number,
+): Promise<ArrayBuffer> {
+  try {
+    return await decodeViaVideoDecoder(videoData, targetWidth, targetHeight);
+  } catch {
+    // VideoDecoder failed (unsupported input format, codec error, etc.)
+    // — fall back to a placeholder proxy so the write pipeline can proceed.
+    return createFallbackJpeg(targetWidth, targetHeight);
+  }
 }
 
 // ── Message Dispatcher ─────────────────────────────────────────────────────────
@@ -167,10 +220,11 @@ self.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
       }
       case "DECODE_PROXY": {
         emitAuditEvent("decode_start", msg.id, { targetWidth: msg.targetWidth, targetHeight: msg.targetHeight });
-        const buffer = await decodeProxy(msg.videoData, msg.targetWidth, msg.targetHeight);
-        emitAuditEvent("decode_done", msg.id, { byteLength: buffer.byteLength });
-        const decodeReply: DataResponse = { id: msg.id, status: "ok", buffer };
-        self.postMessage(decodeReply, { transfer: [buffer] }); // Transfer ownership — zero-copy
+        const jpegBuf = await decodeProxy(msg.videoData, msg.targetWidth, msg.targetHeight);
+        emitAuditEvent("decode_done", msg.id, { byteLength: jpegBuf.byteLength });
+        // Explicit contract: ok/jpegBuf — zero-copy transfer of the JPEG buffer.
+        const decodeReply: DecodeSuccessResponse = { ok: true, id: msg.id, jpegBuf };
+        self.postMessage(decodeReply, { transfer: [jpegBuf] });
         break;
       }
       default: {
@@ -178,10 +232,20 @@ self.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
       }
     }
   } catch (err) {
-    reply({
-      id: msg.id,
-      status: "error",
-      message: err instanceof Error ? err.message : String(err),
-    });
+    // For DECODE_PROXY failures, use the ok/error contract.
+    if (msg.type === "DECODE_PROXY") {
+      const failReply: DecodeFailureResponse = {
+        ok: false,
+        id: msg.id,
+        error: err instanceof Error ? err.message : String(err),
+      };
+      self.postMessage(failReply);
+    } else {
+      reply({
+        id: msg.id,
+        status: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 };

@@ -24,24 +24,32 @@ test.describe("Navigation Durability", () => {
       if (typeof fn === "function") fn();
     });
 
-    // Confirm dirty=true before initiating navigation
-    await page.waitForSelector('[data-testid="dirty-state-indicator"][data-dirty="true"]', {
-      state: "attached",
-      timeout: 3_000,
-    });
+    // Confirm dirty=true (or flushing=true — the transition is allowed) before initiating
+    // navigation. We poll rather than a single-point wait to avoid race conditions where
+    // the flush cycle runs very quickly.
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-testid="dirty-state-indicator"]');
+        return (
+          el?.getAttribute("data-dirty") === "true" ||
+          el?.getAttribute("data-flushing") === "true"
+        );
+      },
+      { timeout: 5_000 },
+    );
 
     // Initiate navigation — this dispatches the click and the async ensureFlushedBeforeNav
     // starts running. We do NOT await a URL change here; that comes after flush.
-    const galleryBtn = page.locator('[data-testid="sidebar-nav-gallery"]');
-    await expect(galleryBtn).toBeVisible({ timeout: 5_000 });
-    await galleryBtn.click();
+    const projectsBtn = page.locator('[data-testid="sidebar-nav-projects"]');
+    await expect(projectsBtn).toBeVisible({ timeout: 5_000 });
+    await projectsBtn.click();
 
     // Wait for dirty to clear (flush completed).
     // waitForFlushComplete does NOT re-check dirty=true — caller already verified above.
     await auditPage.waitForFlushComplete();
 
-    // URL must be /gallery (navigation completed after flush)
-    await expect(page).toHaveURL("/gallery", { timeout: 15_000 });
+    // URL must be /projects (navigation completed after flush)
+    await expect(page).toHaveURL("/projects", { timeout: 15_000 });
 
     const indicator = page.locator('[data-testid="dirty-state-indicator"]');
     await expect(indicator).toHaveAttribute("data-dirty", "false");
