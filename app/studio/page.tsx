@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
-import { MediaPool } from "@/components/studio/media-pool";
+import { MediaBin } from "@/components/studio/media-bin";
 import { PreviewMonitor } from "@/components/studio/preview-monitor";
 import { Timeline } from "@/components/studio/timeline";
 import { TextInspector } from "@/components/studio/text-inspector";
@@ -133,7 +133,7 @@ export default function StudioPage() {
                       : "text-white/40 hover:text-white/60"
                   }`}
                 >
-                  Media Pool
+                  Media Bin
                 </button>
                 <button
                   onClick={() => setLeftTab("inspector")}
@@ -168,7 +168,7 @@ export default function StudioPage() {
               </div>
               {/* Tab content */}
               <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
-                {leftTab === "pool" && <MediaPool />}
+                {leftTab === "pool" && <MediaBin />}
                 {leftTab === "inspector" && inspectingTrackType === "video" && (
                   <>
                     {/* Video sub-tab bar */}

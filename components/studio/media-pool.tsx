@@ -19,7 +19,7 @@ function handleFiles(files: FileList | File[]) {
     const previewUrl = URL.createObjectURL(file);
 
     if (type === "image") {
-      const item: MediaPoolItem = { id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, previewUrl };
+      const item: MediaPoolItem = { id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, sizeBytes: file.size, previewUrl };
       addMediaItem(item);
       saveMediaToDB(file, item).catch(console.warn);
       continue;
@@ -31,7 +31,7 @@ function handleFiles(files: FileList | File[]) {
 
     const finish = (durationSec: number) => {
       const duration = Math.round(durationSec * 1_000_000);
-      const item: MediaPoolItem = { id: crypto.randomUUID(), name: file.name, type, duration, previewUrl };
+      const item: MediaPoolItem = { id: crypto.randomUUID(), name: file.name, type, duration, sizeBytes: file.size, previewUrl };
       addMediaItem(item);
       saveMediaToDB(file, item).catch(console.warn);
     };
@@ -49,7 +49,7 @@ function handleFiles(files: FileList | File[]) {
       }
     };
     el.onerror = () => {
-      const item: MediaPoolItem = { id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, previewUrl };
+      const item: MediaPoolItem = { id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, sizeBytes: file.size, previewUrl };
       addMediaItem(item);
       saveMediaToDB(file, item).catch(console.warn);
     };
