@@ -1,26 +1,42 @@
-<testsuites id="" name="" tests="8" failures="0" skipped="0" errors="0" time="19.401827">
-<testsuite name="export-accuracy.spec.ts" timestamp="2026-03-30T17:40:07.010Z" hostname="chromium" tests="1" failures="0" skipped="0" time="17.155" errors="0">
-<testcase name="Export Accuracy › export produces PASS A/V sync status within tolerance" classname="export-accuracy.spec.ts" time="17.155">
+<testsuites id="" name="" tests="14" failures="0" skipped="0" errors="0" time="22.259914000000002">
+<testsuite name="export-accuracy.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="1" failures="0" skipped="0" time="17.14" errors="0">
+<testcase name="Export Accuracy › export produces PASS A/V sync status within tolerance" classname="export-accuracy.spec.ts" time="17.14">
 </testcase>
 </testsuite>
-<testsuite name="long-task-budget.spec.ts" timestamp="2026-03-30T17:40:07.010Z" hostname="chromium" tests="3" failures="0" skipped="0" time="2.898" errors="0">
-<testcase name="Long-Task Budget › scrub playhead stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.284">
+<testsuite name="long-task-budget.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="4" failures="0" skipped="0" time="4.417" errors="0">
+<testcase name="Long-Task Budget › scrub playhead stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.235">
 </testcase>
-<testcase name="Long-Task Budget › batch delete stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.091">
+<testcase name="Long-Task Budget › batch delete stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.178">
 </testcase>
-<testcase name="Long-Task Budget › proxy generation stays under 50ms long-task budget on main thread" classname="long-task-budget.spec.ts" time="0.523">
+<testcase name="Long-Task Budget › razor split stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.573">
 </testcase>
-</testsuite>
-<testsuite name="nav-durability.spec.ts" timestamp="2026-03-30T17:40:07.010Z" hostname="chromium" tests="1" failures="0" skipped="0" time="1.494" errors="0">
-<testcase name="Navigation Durability › flush completes before route transition after project mutation" classname="nav-durability.spec.ts" time="1.494">
+<testcase name="Long-Task Budget › proxy generation stays under 50ms long-task budget on main thread" classname="long-task-budget.spec.ts" time="0.431">
 </testcase>
 </testsuite>
-<testsuite name="worker-isolation.spec.ts" timestamp="2026-03-30T17:40:07.010Z" hostname="chromium" tests="3" failures="0" skipped="0" time="9.06" errors="0">
-<testcase name="Worker Isolation › OPFS write operations emit ordered worker events" classname="worker-isolation.spec.ts" time="2.621">
+<testsuite name="nav-durability.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="2" failures="0" skipped="0" time="2.38" errors="0">
+<testcase name="Navigation Durability › studio → /niche route is gated by save barrier when dirty" classname="nav-durability.spec.ts" time="1.629">
 </testcase>
-<testcase name="Worker Isolation › OPFS decode operations emit ordered worker events with monotonic timestamps" classname="worker-isolation.spec.ts" time="1.76">
+<testcase name="Navigation Durability › flush completes before route transition after project mutation" classname="nav-durability.spec.ts" time="0.751">
 </testcase>
-<testcase name="Worker Isolation › all worker events have monotonically increasing timestamps" classname="worker-isolation.spec.ts" time="4.679">
+</testsuite>
+<testsuite name="niche-feed.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="2" failures="0" skipped="0" time="2.515" errors="0">
+<testcase name="Niche Feed Observer Loading › no video elements on initial render of empty category" classname="niche-feed.spec.ts" time="1.443">
+</testcase>
+<testcase name="Niche Feed Observer Loading › videos are not all mounted simultaneously when many cards exist" classname="niche-feed.spec.ts" time="1.072">
+</testcase>
+</testsuite>
+<testsuite name="razor-correctness.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="2" failures="0" skipped="0" time="3.855" errors="0">
+<testcase name="Razor Correctness › split operation produces two clips sharing the same sourceId" classname="razor-correctness.spec.ts" time="2.257">
+</testcase>
+<testcase name="Razor Correctness › split clips occupy contiguous time with no gap" classname="razor-correctness.spec.ts" time="1.598">
+</testcase>
+</testsuite>
+<testsuite name="worker-isolation.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="3" failures="0" skipped="0" time="9.058" errors="0">
+<testcase name="Worker Isolation › OPFS write operations emit ordered worker events" classname="worker-isolation.spec.ts" time="2.625">
+</testcase>
+<testcase name="Worker Isolation › OPFS decode operations emit ordered worker events with monotonic timestamps" classname="worker-isolation.spec.ts" time="1.737">
+</testcase>
+<testcase name="Worker Isolation › all worker events have monotonically increasing timestamps" classname="worker-isolation.spec.ts" time="4.696">
 </testcase>
 </testsuite>
 </testsuites>
