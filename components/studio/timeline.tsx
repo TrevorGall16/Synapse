@@ -275,6 +275,22 @@ export function Timeline() {
         return;
       }
 
+      // Ctrl+Shift+R / Cmd+Shift+R — Restore Original (silent no-op if selection is invalid)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "R") {
+        e.preventDefault();
+        if (selectedClipIds.length === 0) return;
+        const { tracks: allTracks, mediaPool } = useProjectStore.getState();
+        const selClips = allTracks.flatMap((t) => t.clips).filter((c) => selectedClipIds.includes(c.id));
+        const isValid =
+          selClips.length > 0 &&
+          selClips.every((c) => c.sourceId === selClips[0].sourceId) &&
+          selClips.every((c) => c.trackId === selClips[0].trackId) &&
+          mediaPool.some((m) => m.id === selClips[0].sourceId);
+        if (!isValid) return;
+        useProjectStore.getState().restoreOriginalClips(selectedClipIds);
+        return;
+      }
+
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
         const { masterVolume, setMasterVolume } = usePlaybackStore.getState();
