@@ -66,6 +66,77 @@ export function AppBootstrap() {
     if (process.env.NEXT_PUBLIC_AUDIT_MODE === "1") {
       window.__synapseAudit = { longTasks: [], exportSummaries: [], workerEvents: [] };
 
+      // Test hook: seed a synthetic clip onto the first video track.
+      // Used by razor-correctness and long-task-budget specs to reliably create a
+      // splittable clip without UI drag simulation.
+      (window as Record<string, unknown>)["__auditAddTestClip"] = () => {
+        // Dynamic import avoids a circular reference at module load time.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { useProjectStore } = require("@/lib/store/project-store") as {
+          useProjectStore: { getState: () => { tracks: { id: string; type: string }[]; addClip: (trackId: string, clip: object) => void } };
+        };
+        const state = useProjectStore.getState();
+        const videoTrack = state.tracks.find((t) => t.type === "video");
+        if (!videoTrack) return;
+        state.addClip(videoTrack.id, {
+          id: "audit-test-clip-1",
+          trackId: videoTrack.id,
+          sourceId: "audit-source-1",
+          startTime: 0,
+          duration: 10_000_000, // 10 seconds in microseconds
+          mediaOffset: 0,
+        });
+      };
+
+      // Test hook: read current tracks from the project store.
+      // Used by razor-correctness spec to assert post-split state without importing the store.
+      (window as Record<string, unknown>)["__auditGetTracks"] = () => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { useProjectStore } = require("@/lib/store/project-store") as {
+          useProjectStore: { getState: () => { tracks: { id: string; type: string; clips: object[] }[] } };
+        };
+        return useProjectStore.getState().tracks;
+      };
+
+      // Test hook: set the playhead position for split tests.
+      (window as Record<string, unknown>)["__auditSetPlayhead"] = (micros: number) => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { usePlaybackStore } = require("@/lib/store/playback-store") as {
+          usePlaybackStore: { getState: () => { setPlayhead: (t: number) => void } };
+        };
+        usePlaybackStore.getState().setPlayhead(micros);
+      };
+
+      // Test hook: seed synthetic FeedPost entries for niche-feed observer tests.
+      // Adds N posts to the cinematic category so the grid renders with known content.
+      (window as Record<string, unknown>)["__auditSeedNichePosts"] = (count: number) => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { useFeedStore } = require("@/lib/store/feed-store") as {
+          useFeedStore: {
+            getState: () => {
+              addPost: (post: object) => void;
+            };
+          };
+        };
+        const { addPost } = useFeedStore.getState();
+        for (let i = 0; i < count; i++) {
+          addPost({
+            id: `audit-niche-post-${i}`,
+            title: `Audit Niche Post ${i}`,
+            videoUrl: "", // empty string — prevents network requests in tests
+            bg: "#071a1a",
+            accent: "#06b6d4",
+            duration: "0:10",
+            likes: 0,
+            comments: 0,
+            featured: false,
+            category: "cinematic",
+            tags: ["#Cinematic"],
+            user: { handle: `audit_user_${i}`, initial: "A", hue: 200 },
+          });
+        }
+      };
+
       // PerformanceObserver: capture long tasks in Date.now() epoch domain
       if (typeof PerformanceObserver !== "undefined") {
         obs = new PerformanceObserver((list) => {

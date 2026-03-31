@@ -4,6 +4,53 @@
 import { test, expect } from "./fixtures/audit-page";
 
 test.describe("Navigation Durability", () => {
+  test("studio → /niche route is gated by save barrier when dirty", async ({
+    page,
+    auditPage,
+  }) => {
+    await page.goto("/studio");
+    // Wait for AppBootstrap (and AUDIT_MODE hooks) to mount
+    await page.waitForSelector('[data-testid="dirty-state-indicator"]', {
+      state: "attached",
+      timeout: 15_000,
+    });
+
+    await auditPage.resetAuditBuffers();
+
+    // Seed dirty=true via the AUDIT_MODE test hook
+    await page.evaluate(() => {
+      const fn = (window as Record<string, unknown>)["__auditTriggerDirty"];
+      if (typeof fn === "function") fn();
+    });
+
+    // Confirm dirty=true (or flushing=true) before initiating navigation
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-testid="dirty-state-indicator"]');
+        return (
+          el?.getAttribute("data-dirty") === "true" ||
+          el?.getAttribute("data-flushing") === "true"
+        );
+      },
+      { timeout: 5_000 },
+    );
+
+    // Click the Niche nav link — this triggers ensureFlushedBeforeNav + router.push("/niche")
+    const nicheBtn = page.locator('[data-testid="sidebar-nav-niche"]');
+    await expect(nicheBtn).toBeVisible({ timeout: 5_000 });
+    await nicheBtn.click();
+
+    // Wait for flush to complete (dirty cleared) — verifies the barrier ran
+    await auditPage.waitForFlushComplete();
+
+    // URL must be /niche (navigation completed after flush)
+    await expect(page).toHaveURL("/niche", { timeout: 15_000 });
+
+    // Confirm dirty is false post-navigation
+    const indicator = page.locator('[data-testid="dirty-state-indicator"]');
+    await expect(indicator).toHaveAttribute("data-dirty", "false");
+  });
+
   test("flush completes before route transition after project mutation", async ({
     page,
     auditPage,

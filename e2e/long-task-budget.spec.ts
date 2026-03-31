@@ -49,6 +49,45 @@ test.describe("Long-Task Budget", () => {
     expect(maxLongTaskMs).toBeLessThanOrEqual(MAX_LONG_TASK_MS);
   });
 
+  test("razor split stays under 50ms long-task budget", async ({ page, auditPage }) => {
+    // Create project if splash is showing
+    const createBtn = page.locator('[data-testid="studio-create-project"]');
+    if (await createBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await createBtn.click();
+    }
+
+    // Dismiss any blocking modal
+    const closeBtn = page.locator('button[aria-label="Close"]').first();
+    if (await closeBtn.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await closeBtn.click();
+      await page.waitForTimeout(300);
+    }
+
+    // Seed a clip via the AUDIT_MODE hook
+    await page.evaluate(() => {
+      const fn = (window as Record<string, unknown>)["__auditAddTestClip"];
+      if (typeof fn === "function") fn();
+    });
+    await page.waitForTimeout(100);
+
+    // Position playhead at midpoint (5s)
+    await page.evaluate(() => {
+      const fn = (window as Record<string, unknown>)["__auditSetPlayhead"];
+      if (typeof fn === "function") fn(5_000_000);
+    });
+    await page.waitForTimeout(100);
+
+    await auditPage.resetAuditBuffers();
+    await auditPage.markAuditStart();
+
+    // Trigger the split
+    await page.keyboard.press("s");
+    await page.waitForTimeout(200);
+
+    const { maxLongTaskMs } = await auditPage.readLongTasks();
+    expect(maxLongTaskMs).toBeLessThanOrEqual(MAX_LONG_TASK_MS);
+  });
+
   test("proxy generation stays under 50ms long-task budget on main thread", async ({
     page,
     auditPage,
