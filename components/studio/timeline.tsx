@@ -358,14 +358,9 @@ export function Timeline() {
               ref={trackAreaRef}
               data-testid="timeline-track-area"
               className="relative"
-              style={{ contain: "layout" }}
+              style={{ contain: "layout", transformOrigin: "left center" }}
             >
               <TimelineGrid />
-              <div className="pointer-events-none absolute inset-0 z-10">
-                <Playhead />
-                <SnapIndicator />
-                <TimelineMarkers />
-              </div>
               {tracks.map((track) => {
                 const effectiveHeight = track.collapsed ? COLLAPSED_HEIGHT : track.height;
                 return (
@@ -389,6 +384,14 @@ export function Timeline() {
               {/* Drop zone to create a new track */}
               <NewTrackDropZone />
             </div>
+          </div>
+          {/* Overlay: Playhead, SnapIndicator, TimelineMarkers — sibling of the scaled
+              trackArea so CSS scaleX on trackAreaRef does not distort these elements.
+              Positioned relative to the scrollContainerRef (which has position:relative). */}
+          <div className="pointer-events-none absolute inset-0 z-10">
+            <Playhead />
+            <SnapIndicator />
+            <TimelineMarkers />
           </div>
         </div>
       </div>

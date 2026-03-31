@@ -43,7 +43,6 @@ export function ZoomSlider({ scrollContainerRef, trackAreaRef }: ZoomSliderProps
       if (trackAreaRef.current) {
         const committedZoom = usePlaybackStore.getState().zoomLevel;
         const scale = sliderToZoom(newSlider) / committedZoom;
-        trackAreaRef.current.style.transformOrigin = "left center";
         trackAreaRef.current.style.transform = `scaleX(${scale})`;
       }
     },
@@ -76,6 +75,8 @@ export function ZoomSlider({ scrollContainerRef, trackAreaRef }: ZoomSliderProps
     }
   }, [localSlider, setZoom, scrollContainerRef, trackAreaRef]);
 
+  const displayZoom = sliderToZoom(localSlider);
+
   return (
     <div className="flex items-center gap-2">
       <span className="text-[10px] text-white/40">-</span>
@@ -86,6 +87,7 @@ export function ZoomSlider({ scrollContainerRef, trackAreaRef }: ZoomSliderProps
         step={0.001}
         value={localSlider}
         onChange={onZoomChange}
+        onPointerDown={(e) => (e.target as HTMLInputElement).setPointerCapture(e.pointerId)}
         onPointerUp={onPointerUp}
         className="h-1 w-24 cursor-pointer"
         aria-label="Timeline zoom"
@@ -93,7 +95,7 @@ export function ZoomSlider({ scrollContainerRef, trackAreaRef }: ZoomSliderProps
       />
       <span className="text-[10px] text-white/40">+</span>
       <span className="min-w-[3ch] text-right text-[10px] tabular-nums text-white/50">
-        {Math.round(zoomLevel * 100)}%
+        {Math.round(displayZoom * 100)}%
       </span>
     </div>
   );
