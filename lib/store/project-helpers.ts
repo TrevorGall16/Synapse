@@ -1,4 +1,4 @@
-import type { Track, TrackType, ClipEvent } from "./types";
+import type { Track, TrackType, ClipEvent, MediaPoolItem } from "./types";
 
 // ── Constants ───────────────────────────────────────────
 
@@ -384,4 +384,106 @@ export function computeCrossfades(clips: ClipEvent[]): ClipEvent[] {
   }
 
   return sorted;
+}
+
+/**
+ * Restore selected fragments sharing a single sourceId to one uncut clip.
+ *
+ * ## Deterministic Placement Rule
+ * 1. All selected clips must share one `sourceId` and one `trackId`.
+ * 2. Scope: every clip on the same track with matching `sourceId` whose range
+ *    overlaps `[earliestStart, latestEnd)` — catches unselected gap fragments.
+ * 3. Sync-preserving anchor:
+ *      rawStart = earliestFragment.startTime - earliestFragment.mediaOffset
+ *    - rawStart >= 0 → startTime = rawStart, mediaOffset = 0, duration = media.duration
+ *    - rawStart <  0 → startTime = 0, mediaOffset = -rawStart, duration = media.duration - mediaOffset
+ * 4. refCount: no change — split/restore are timeline-fragment operations only.
+ *
+ * @returns Updated `Track[]` on success, or `{ error: string }` on validation failure.
+ */
+export function performRestoreOriginal(
+  tracks: Track[],
+  selectedClipIds: string[],
+  mediaPool: MediaPoolItem[]
+): Track[] | { error: string } {
+  if (selectedClipIds.length === 0) return { error: "No clips selected." };
+
+  // Collect selected clips across all tracks
+  const selected: ClipEvent[] = [];
+  for (const t of tracks) {
+    for (const c of t.clips) {
+      if (selectedClipIds.includes(c.id)) selected.push(c);
+    }
+  }
+  if (selected.length === 0) return { error: "Selected clips not found." };
+
+  // Validate: all share one sourceId and one trackId
+  const sourceId = selected[0].sourceId;
+  const trackId = selected[0].trackId;
+  if (!selected.every((c) => c.sourceId === sourceId))
+    return { error: "Selected clips must share the same source." };
+  if (!selected.every((c) => c.trackId === trackId))
+    return { error: "Selected clips must be on the same track." };
+
+  // Sync anchor: fragment with the earliest startTime
+  const earliestFragment = selected.reduce((a, b) => (a.startTime <= b.startTime ? a : b));
+  const latestEnd = selected.reduce((max, c) => Math.max(max, c.startTime + c.duration), 0);
+  const earliestStart = earliestFragment.startTime;
+
+  // Scope: all clips on the target track with the same sourceId overlapping [earliestStart, latestEnd)
+  const targetTrack = tracks.find((t) => t.id === trackId);
+  if (!targetTrack) return { error: "Target track not found." };
+  const scopeIds = new Set<string>();
+  for (const c of targetTrack.clips) {
+    if (
+      c.sourceId === sourceId &&
+      c.startTime < latestEnd &&
+      c.startTime + c.duration > earliestStart
+    ) {
+      scopeIds.add(c.id);
+    }
+  }
+
+  // Look up media in pool
+  const media = mediaPool.find((m) => m.id === sourceId);
+  if (!media) return { error: "Source media not found in pool." };
+
+  // Compute sync-preserving anchor
+  const rawStart = earliestFragment.startTime - earliestFragment.mediaOffset;
+  let startTime: number;
+  let mediaOffset: number;
+  let duration: number;
+  if (rawStart >= 0) {
+    startTime = rawStart;
+    mediaOffset = 0;
+    duration = media.duration;
+  } else {
+    // Media start would precede timeline origin — clamp and compensate
+    startTime = 0;
+    mediaOffset = -rawStart;
+    duration = media.duration - mediaOffset;
+  }
+
+  // Build the restored clip at explicit defaults (no inherited fx/fades/group)
+  const restoredClip: ClipEvent = {
+    id: crypto.randomUUID(),
+    trackId,
+    sourceId,
+    startTime,
+    duration,
+    mediaOffset,
+    level: 100,
+    fadeInDuration: 0,
+    fadeOutDuration: 0,
+    manualFadeIn: false,
+    manualFadeOut: false,
+    groupId: undefined,
+  };
+
+  // Remove scope fragments, insert restored clip, recompute crossfades
+  return tracks.map((t) => {
+    if (t.id !== trackId) return t;
+    const remaining = t.clips.filter((c) => !scopeIds.has(c.id));
+    return { ...t, clips: computeCrossfades([...remaining, restoredClip]) };
+  });
 }
