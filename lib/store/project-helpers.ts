@@ -181,7 +181,29 @@ export function computeMove(
   return { tracks, duration: newDuration };
 }
 
-/** Split a single clip at splitTime (group-aware). Returns new tracks or null. */
+/**
+ * Split a single clip at `splitTime` (group-aware). Returns new tracks array or null.
+ *
+ * ## Per-Asset refCount Model
+ * `ClipEvent.sourceId` references a `MediaPoolItem.id` — one entry per imported asset.
+ * The GC service (`gc-service.ts`) builds `referencedIds` by scanning `clip.sourceId`
+ * across all clips. Splitting does **not** create or remove any `MediaPoolItem`; both
+ * result clips carry the same `sourceId` as the original, so the asset remains referenced
+ * and the GC never orphans it. No `refCount` field exists on `ClipEvent` itself.
+ *
+ * ### Invariants guaranteed after every split
+ * - Both halves share the original `sourceId` (net media-pool delta = 0).
+ * - `clipA.duration + clipB.duration === original.duration` (no gap, no overlap).
+ * - `clipB.mediaOffset === original.mediaOffset + clipA.duration` (no media data corrupted).
+ * - `clipB.id` is a fresh UUID; `clipA.id` is unchanged.
+ * - If the clip belongs to a group, **all** other group members whose range spans
+ *   `splitTime` are also split; their right-halves receive a new shared `groupId`.
+ *
+ * @returns The updated `Track[]` on success, or `null` if:
+ *   - the clip cannot be found,
+ *   - `splitTime` is at or before `clip.startTime`, or
+ *   - `splitTime` is at or after `clip.startTime + clip.duration`.
+ */
 export function performSplitClip(
   tracks: Track[],
   clipId: string,
@@ -233,7 +255,24 @@ export function performSplitClip(
   });
 }
 
-/** Bulk split selected clips with group-aware right-half linking. Returns new tracks. */
+/**
+ * Bulk-split a set of selected clips at `splitTime` (group-aware). Always returns a
+ * new `Track[]` — clips that don't span `splitTime` are left untouched.
+ *
+ * ## Per-Asset refCount Model
+ * Identical to `performSplitClip`: each `MediaPoolItem` is one imported asset; its `id`
+ * is stored as `ClipEvent.sourceId`. Splitting never touches the media pool — both result
+ * clips inherit the same `sourceId`, keeping the GC reference intact. No `refCount` field
+ * exists or is needed on `ClipEvent`.
+ *
+ * ### Invariants guaranteed for every split clip
+ * - Both halves share the original `sourceId` (net media-pool delta = 0).
+ * - `clipA.duration + clipB.duration === original.duration` (no gap, no overlap).
+ * - `clipB.mediaOffset === original.mediaOffset + clipA.duration` (no media data corrupted).
+ * - Clips sharing a `groupId` produce right-halves with the **same new** `groupId`
+ *   (one stable UUID per original group, generated lazily via `newGroupMap`).
+ * - Clips whose entire range is before or after `splitTime` are returned unchanged.
+ */
 export function performBulkSplit(
   tracks: Track[],
   clipIds: string[],
