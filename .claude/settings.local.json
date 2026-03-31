@@ -58,7 +58,13 @@
       "Bash(bash \"/c/Users/trevo/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.6/skills/brainstorming/scripts/start-server.sh\" --project-dir \"D:/Projects/Synapse\")",
       "Bash(ffmpeg -y -f lavfi -i testsrc=duration=1:size=320x180:rate=1 -vcodec libx264 -pix_fmt yuv420p -t 1 D:/Projects/Synapse/e2e/fixtures/test-proxy.mp4)",
       "Bash(npx cross-env:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(find /d/Projects/Synapse/docs -type f -name *.md)",
+      "Bash(ls -lh /d/Projects/Synapse/*.docx)",
+      "Bash(npm test:*)",
+      "Bash(ls -la /d/Projects/Synapse/vitest.config.*)",
+      "Bash(git checkout:*)",
+      "Bash(ls lib/utils/coords*.ts)"
     ]
   }
 }

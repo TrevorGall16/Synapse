@@ -1,42 +1,325 @@
-<testsuites id="" name="" tests="14" failures="0" skipped="0" errors="0" time="22.259914000000002">
-<testsuite name="export-accuracy.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="1" failures="0" skipped="0" time="17.14" errors="0">
-<testcase name="Export Accuracy › export produces PASS A/V sync status within tolerance" classname="export-accuracy.spec.ts" time="17.14">
+<testsuites id="" name="" tests="15" failures="6" skipped="0" errors="0" time="65.545892">
+<testsuite name="export-accuracy.spec.ts" timestamp="2026-03-31T19:48:58.896Z" hostname="chromium" tests="1" failures="0" skipped="0" time="17.185" errors="0">
+<testcase name="Export Accuracy › export produces PASS A/V sync status within tolerance" classname="export-accuracy.spec.ts" time="17.185">
 </testcase>
 </testsuite>
-<testsuite name="long-task-budget.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="4" failures="0" skipped="0" time="4.417" errors="0">
-<testcase name="Long-Task Budget › scrub playhead stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.235">
+<testsuite name="long-task-budget.spec.ts" timestamp="2026-03-31T19:48:58.896Z" hostname="chromium" tests="4" failures="0" skipped="0" time="4.957" errors="0">
+<testcase name="Long-Task Budget › scrub playhead stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.305">
 </testcase>
-<testcase name="Long-Task Budget › batch delete stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.178">
+<testcase name="Long-Task Budget › batch delete stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.221">
 </testcase>
-<testcase name="Long-Task Budget › razor split stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.573">
+<testcase name="Long-Task Budget › razor split stays under 50ms long-task budget" classname="long-task-budget.spec.ts" time="1.723">
 </testcase>
-<testcase name="Long-Task Budget › proxy generation stays under 50ms long-task budget on main thread" classname="long-task-budget.spec.ts" time="0.431">
-</testcase>
-</testsuite>
-<testsuite name="nav-durability.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="2" failures="0" skipped="0" time="2.38" errors="0">
-<testcase name="Navigation Durability › studio → /niche route is gated by save barrier when dirty" classname="nav-durability.spec.ts" time="1.629">
-</testcase>
-<testcase name="Navigation Durability › flush completes before route transition after project mutation" classname="nav-durability.spec.ts" time="0.751">
+<testcase name="Long-Task Budget › proxy generation stays under 50ms long-task budget on main thread" classname="long-task-budget.spec.ts" time="0.708">
 </testcase>
 </testsuite>
-<testsuite name="niche-feed.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="2" failures="0" skipped="0" time="2.515" errors="0">
-<testcase name="Niche Feed Observer Loading › no video elements on initial render of empty category" classname="niche-feed.spec.ts" time="1.443">
+<testsuite name="nav-durability.spec.ts" timestamp="2026-03-31T19:48:58.896Z" hostname="chromium" tests="2" failures="2" skipped="0" time="62.165" errors="0">
+<testcase name="Navigation Durability › studio → /niche route is gated by save barrier when dirty" classname="nav-durability.spec.ts" time="31.055">
+<failure message="nav-durability.spec.ts:7:7 studio → /niche route is gated by save barrier when dirty" type="FAILURE">
+<![CDATA[  [chromium] › nav-durability.spec.ts:7:7 › Navigation Durability › studio → /niche route is gated by save barrier when dirty 
+
+    Test timeout of 30000ms exceeded.
+
+    Error: page.waitForFunction: Test timeout of 30000ms exceeded.
+
+      25 |
+      26 |     // Confirm dirty=true (or flushing=true) before initiating navigation
+    > 27 |     await page.waitForFunction(
+         |                ^
+      28 |       () => {
+      29 |         const el = document.querySelector('[data-testid="dirty-state-indicator"]');
+      30 |         return (
+        at D:\Projects\Synapse\e2e\nav-durability.spec.ts:27:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\nav-durability-Navigation--002bf--by-save-barrier-when-dirty-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    ..\test-results\nav-durability-Navigation--002bf--by-save-barrier-when-dirty-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\nav-durability-Navigation--002bf--by-save-barrier-when-dirty-chromium\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\test-results\nav-durability-Navigation--002bf--by-save-barrier-when-dirty-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\test-results\nav-durability-Navigation--002bf--by-save-barrier-when-dirty-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\test-results\nav-durability-Navigation--002bf--by-save-barrier-when-dirty-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\test-results\nav-durability-Navigation--002bf--by-save-barrier-when-dirty-chromium\video.webm]]
+
+[[ATTACHMENT|..\test-results\nav-durability-Navigation--002bf--by-save-barrier-when-dirty-chromium\error-context.md]]
+
+[[ATTACHMENT|..\test-results\nav-durability-Navigation--002bf--by-save-barrier-when-dirty-chromium\trace.zip]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Niche Feed Observer Loading › videos are not all mounted simultaneously when many cards exist" classname="niche-feed.spec.ts" time="1.072">
+<testcase name="Navigation Durability › flush completes before route transition after project mutation" classname="nav-durability.spec.ts" time="31.11">
+<failure message="nav-durability.spec.ts:54:7 flush completes before route transition after project mutation" type="FAILURE">
+<![CDATA[  [chromium] › nav-durability.spec.ts:54:7 › Navigation Durability › flush completes before route transition after project mutation 
+
+    Test timeout of 30000ms exceeded.
+
+    Error: page.waitForFunction: Test timeout of 30000ms exceeded.
+
+      75 |     // navigation. We poll rather than a single-point wait to avoid race conditions where
+      76 |     // the flush cycle runs very quickly.
+    > 77 |     await page.waitForFunction(
+         |                ^
+      78 |       () => {
+      79 |         const el = document.querySelector('[data-testid="dirty-state-indicator"]');
+      80 |         return (
+        at D:\Projects\Synapse\e2e\nav-durability.spec.ts:77:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\nav-durability-Navigation--905b7-tion-after-project-mutation-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    ..\test-results\nav-durability-Navigation--905b7-tion-after-project-mutation-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\nav-durability-Navigation--905b7-tion-after-project-mutation-chromium\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\test-results\nav-durability-Navigation--905b7-tion-after-project-mutation-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\test-results\nav-durability-Navigation--905b7-tion-after-project-mutation-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\test-results\nav-durability-Navigation--905b7-tion-after-project-mutation-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\test-results\nav-durability-Navigation--905b7-tion-after-project-mutation-chromium\video.webm]]
+
+[[ATTACHMENT|..\test-results\nav-durability-Navigation--905b7-tion-after-project-mutation-chromium\error-context.md]]
+
+[[ATTACHMENT|..\test-results\nav-durability-Navigation--905b7-tion-after-project-mutation-chromium\trace.zip]]
+]]>
+</system-out>
 </testcase>
 </testsuite>
-<testsuite name="razor-correctness.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="2" failures="0" skipped="0" time="3.855" errors="0">
-<testcase name="Razor Correctness › split operation produces two clips sharing the same sourceId" classname="razor-correctness.spec.ts" time="2.257">
+<testsuite name="niche-feed.spec.ts" timestamp="2026-03-31T19:48:58.896Z" hostname="chromium" tests="2" failures="1" skipped="0" time="12.143" errors="0">
+<testcase name="Niche Feed Observer Loading › no video elements on initial render of empty category" classname="niche-feed.spec.ts" time="1.221">
 </testcase>
-<testcase name="Razor Correctness › split clips occupy contiguous time with no gap" classname="razor-correctness.spec.ts" time="1.598">
+<testcase name="Niche Feed Observer Loading › videos are not all mounted simultaneously when many cards exist" classname="niche-feed.spec.ts" time="10.922">
+<failure message="niche-feed.spec.ts:30:7 videos are not all mounted simultaneously when many cards exist" type="FAILURE">
+<![CDATA[  [chromium] › niche-feed.spec.ts:30:7 › Niche Feed Observer Loading › videos are not all mounted simultaneously when many cards exist 
+
+    TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.
+    Call log:
+      - waiting for locator('[data-testid="niche-card"]')
+
+
+      49 |
+      50 |     // Wait for React to re-render the grid with the seeded posts
+    > 51 |     await page.waitForSelector('[data-testid="niche-card"]', {
+         |                ^
+      52 |       state: "attached",
+      53 |       timeout: 10_000,
+      54 |     });
+        at D:\Projects\Synapse\e2e\niche-feed.spec.ts:51:16
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\niche-feed-Niche-Feed-Obse-30ff0-ously-when-many-cards-exist-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    ..\test-results\niche-feed-Niche-Feed-Obse-30ff0-ously-when-many-cards-exist-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\niche-feed-Niche-Feed-Obse-30ff0-ously-when-many-cards-exist-chromium\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\test-results\niche-feed-Niche-Feed-Obse-30ff0-ously-when-many-cards-exist-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\test-results\niche-feed-Niche-Feed-Obse-30ff0-ously-when-many-cards-exist-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\test-results\niche-feed-Niche-Feed-Obse-30ff0-ously-when-many-cards-exist-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\test-results\niche-feed-Niche-Feed-Obse-30ff0-ously-when-many-cards-exist-chromium\video.webm]]
+
+[[ATTACHMENT|..\test-results\niche-feed-Niche-Feed-Obse-30ff0-ously-when-many-cards-exist-chromium\error-context.md]]
+
+[[ATTACHMENT|..\test-results\niche-feed-Niche-Feed-Obse-30ff0-ously-when-many-cards-exist-chromium\trace.zip]]
+]]>
+</system-out>
 </testcase>
 </testsuite>
-<testsuite name="worker-isolation.spec.ts" timestamp="2026-03-31T06:44:50.135Z" hostname="chromium" tests="3" failures="0" skipped="0" time="9.058" errors="0">
-<testcase name="Worker Isolation › OPFS write operations emit ordered worker events" classname="worker-isolation.spec.ts" time="2.625">
+<testsuite name="razor-correctness.spec.ts" timestamp="2026-03-31T19:48:58.896Z" hostname="chromium" tests="3" failures="3" skipped="0" time="6.345" errors="0">
+<testcase name="Razor Correctness › split operation produces two clips sharing the same sourceId" classname="razor-correctness.spec.ts" time="2.557">
+<failure message="razor-correctness.spec.ts:31:7 split operation produces two clips sharing the same sourceId" type="FAILURE">
+<![CDATA[  [chromium] › razor-correctness.spec.ts:31:7 › Razor Correctness › split operation produces two clips sharing the same sourceId 
+
+    Error: Video track with audit-source-1 clips must exist
+
+    expect(received).toBeTruthy()
+
+    Received: undefined
+
+      89 |       (t) => t.type === "video" && t.clips.some((c) => c.sourceId === "audit-source-1"),
+      90 |     );
+    > 91 |     expect(videoTrack, "Video track with audit-source-1 clips must exist").toBeTruthy();
+         |                                                                            ^
+      92 |
+      93 |     const splitClips = videoTrack!.clips.filter((c) => c.sourceId === "audit-source-1");
+      94 |
+        at D:\Projects\Synapse\e2e\razor-correctness.spec.ts:91:76
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\razor-correctness-Razor-Co-3ef94-s-sharing-the-same-sourceId-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    ..\test-results\razor-correctness-Razor-Co-3ef94-s-sharing-the-same-sourceId-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\razor-correctness-Razor-Co-3ef94-s-sharing-the-same-sourceId-chromium\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\test-results\razor-correctness-Razor-Co-3ef94-s-sharing-the-same-sourceId-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\test-results\razor-correctness-Razor-Co-3ef94-s-sharing-the-same-sourceId-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-3ef94-s-sharing-the-same-sourceId-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-3ef94-s-sharing-the-same-sourceId-chromium\video.webm]]
+
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-3ef94-s-sharing-the-same-sourceId-chromium\error-context.md]]
+
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-3ef94-s-sharing-the-same-sourceId-chromium\trace.zip]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Worker Isolation › OPFS decode operations emit ordered worker events with monotonic timestamps" classname="worker-isolation.spec.ts" time="1.737">
+<testcase name="Razor Correctness › split clips occupy contiguous time with no gap" classname="razor-correctness.spec.ts" time="2.102">
+<failure message="razor-correctness.spec.ts:113:7 split clips occupy contiguous time with no gap" type="FAILURE">
+<![CDATA[  [chromium] › razor-correctness.spec.ts:113:7 › Razor Correctness › split clips occupy contiguous time with no gap 
+
+    Error: expect(received).toBeTruthy()
+
+    Received: undefined
+
+      155 |       (t) => t.type === "video" && t.clips.some((c) => c.sourceId === "audit-source-1"),
+      156 |     );
+    > 157 |     expect(videoTrack).toBeTruthy();
+          |                        ^
+      158 |
+      159 |     const splitClips = videoTrack!.clips
+      160 |       .filter((c) => c.sourceId === "audit-source-1")
+        at D:\Projects\Synapse\e2e\razor-correctness.spec.ts:157:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\razor-correctness-Razor-Co-fc43c-contiguous-time-with-no-gap-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    ..\test-results\razor-correctness-Razor-Co-fc43c-contiguous-time-with-no-gap-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\razor-correctness-Razor-Co-fc43c-contiguous-time-with-no-gap-chromium\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\test-results\razor-correctness-Razor-Co-fc43c-contiguous-time-with-no-gap-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\test-results\razor-correctness-Razor-Co-fc43c-contiguous-time-with-no-gap-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-fc43c-contiguous-time-with-no-gap-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-fc43c-contiguous-time-with-no-gap-chromium\video.webm]]
+
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-fc43c-contiguous-time-with-no-gap-chromium\error-context.md]]
+
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-fc43c-contiguous-time-with-no-gap-chromium\trace.zip]]
+]]>
+</system-out>
 </testcase>
-<testcase name="Worker Isolation › all worker events have monotonically increasing timestamps" classname="worker-isolation.spec.ts" time="4.696">
+<testcase name="Razor Correctness › restore original after multi-split: clip count returns to 1, duration matches media" classname="razor-correctness.spec.ts" time="1.686">
+<failure message="razor-correctness.spec.ts:170:7 restore original after multi-split: clip count returns to 1, duration matches media" type="FAILURE">
+<![CDATA[  [chromium] › razor-correctness.spec.ts:170:7 › Razor Correctness › restore original after multi-split: clip count returns to 1, duration matches media 
+
+    Error: expect(received).toHaveLength(expected)
+
+    Expected length: 3
+    Received length: 0
+    Received array:  []
+
+      206 |     });
+      207 |     const clipsAfterSplit = tracksAfterSplit.flatMap((t) => t.clips);
+    > 208 |     expect(clipsAfterSplit).toHaveLength(3);
+          |                             ^
+      209 |
+      210 |     // Select all fragments via audit hook
+      211 |     await page.evaluate(() => {
+        at D:\Projects\Synapse\e2e\razor-correctness.spec.ts:208:29
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ..\test-results\razor-correctness-Razor-Co-257a1-to-1-duration-matches-media-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    ..\test-results\razor-correctness-Razor-Co-257a1-to-1-duration-matches-media-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ..\test-results\razor-correctness-Razor-Co-257a1-to-1-duration-matches-media-chromium\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ..\test-results\razor-correctness-Razor-Co-257a1-to-1-duration-matches-media-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace ..\test-results\razor-correctness-Razor-Co-257a1-to-1-duration-matches-media-chromium\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+]]>
+</failure>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-257a1-to-1-duration-matches-media-chromium\test-failed-1.png]]
+
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-257a1-to-1-duration-matches-media-chromium\video.webm]]
+
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-257a1-to-1-duration-matches-media-chromium\error-context.md]]
+
+[[ATTACHMENT|..\test-results\razor-correctness-Razor-Co-257a1-to-1-duration-matches-media-chromium\trace.zip]]
+]]>
+</system-out>
+</testcase>
+</testsuite>
+<testsuite name="worker-isolation.spec.ts" timestamp="2026-03-31T19:48:58.896Z" hostname="chromium" tests="3" failures="0" skipped="0" time="10.028" errors="0">
+<testcase name="Worker Isolation › OPFS write operations emit ordered worker events" classname="worker-isolation.spec.ts" time="2.799">
+</testcase>
+<testcase name="Worker Isolation › OPFS decode operations emit ordered worker events with monotonic timestamps" classname="worker-isolation.spec.ts" time="2.001">
+</testcase>
+<testcase name="Worker Isolation › all worker events have monotonically increasing timestamps" classname="worker-isolation.spec.ts" time="5.228">
 </testcase>
 </testsuite>
 </testsuites>

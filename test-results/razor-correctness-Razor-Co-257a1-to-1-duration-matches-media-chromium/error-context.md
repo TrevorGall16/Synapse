@@ -1,0 +1,206 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - button "SYNAPSE" [ref=e5]
+      - navigation [ref=e6]:
+        - button "⌂ Home" [ref=e7]:
+          - generic [ref=e8]: ⌂
+          - text: Home
+        - button "◎ Explore" [ref=e9]:
+          - generic [ref=e10]: ◎
+          - text: Explore
+        - button "⬛ Projects" [ref=e11]:
+          - generic [ref=e12]: ⬛
+          - text: Projects
+        - button "▶ Studio" [ref=e13]:
+          - generic [ref=e14]: ▶
+          - text: Studio
+        - button "◈ Niche" [ref=e15]:
+          - generic [ref=e16]: ◈
+          - text: Niche
+        - button "⟐ Login" [ref=e17]:
+          - generic [ref=e18]: ⟐
+          - text: Login
+    - main [ref=e19]:
+      - generic [ref=e22]:
+        - generic [ref=e25]:
+          - generic [ref=e27]:
+            - generic [ref=e28]:
+              - button "Media Bin" [ref=e29]
+              - button "Inspector" [ref=e30]
+              - button "History" [ref=e31]
+              - button "Presets" [ref=e32]
+            - generic [ref=e34]:
+              - generic [ref=e35]:
+                - generic [ref=e36]: Media Bin
+                - button "+ Import" [ref=e37]
+              - paragraph [ref=e39]: Drop files or click Import to begin
+          - separator [ref=e40]
+          - generic [ref=e43]:
+            - generic [ref=e44]:
+              - heading "Preview" [level=2] [ref=e45]
+              - generic [ref=e46]:
+                - combobox "Preview zoom" [ref=e47]:
+                  - option "Fit" [selected]
+                  - option "25%"
+                  - option "50%"
+                  - option "100%"
+                  - option "200%"
+                - combobox "Preview quality" [ref=e48]:
+                  - option "Draft"
+                  - option "Auto" [selected]
+                  - option "Good"
+                  - option "Best"
+            - generic [ref=e53]:
+              - button "Go to start" [ref=e54]:
+                - img [ref=e55]
+              - button "Prev frame" [ref=e57]:
+                - img [ref=e58]
+              - button "Play" [ref=e60]:
+                - img [ref=e61]
+              - button "Next frame" [ref=e63]:
+                - img [ref=e64]
+              - button "Go to end" [ref=e66]:
+                - img [ref=e67]
+              - generic [ref=e69]: 00:00.000
+        - separator [ref=e70]
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - combobox "Add new track" [ref=e76]:
+              - option "+ Add Track" [disabled] [selected]
+              - option "Video"
+              - option "Audio"
+              - option "Text"
+              - option "Effect"
+            - generic [ref=e77]:
+              - textbox "Untitled Project" [ref=e78]
+              - button "Delete Project" [ref=e79]:
+                - img [ref=e80]
+              - button "Split (S)" [disabled] [ref=e85]:
+                - img [ref=e86]
+              - button "Ungroup (U)" [disabled] [ref=e92]:
+                - img [ref=e93]
+              - button "Regroup (G)" [disabled] [ref=e96]:
+                - img [ref=e97]
+              - button "Delete (Del)" [disabled] [ref=e100]:
+                - img [ref=e101]
+              - button "Heal (H)" [disabled] [ref=e104]:
+                - img [ref=e105]
+              - button "Add Text" [ref=e113]:
+                - img [ref=e114]
+              - button "Add FX" [ref=e116]:
+                - img [ref=e117]
+              - button "Ripple Edit" [ref=e121]:
+                - img [ref=e122]
+              - generic [ref=e126]:
+                - img [ref=e127]
+                - spinbutton "BPM" [ref=e131]: "120"
+                - generic [ref=e132]: BPM
+              - button "Project Settings" [ref=e133]:
+                - img [ref=e134]
+              - button "Publish to Feed" [ref=e137]:
+                - img [ref=e138]
+                - text: Publish
+              - button "Export Project" [ref=e141]:
+                - img [ref=e142]
+            - generic [ref=e146]:
+              - generic [ref=e147]: "-"
+              - slider "Timeline zoom" [ref=e148] [cursor=pointer]: "0.863"
+              - generic [ref=e149]: +
+              - generic [ref=e150]: 100%
+          - generic [ref=e151]:
+            - generic [ref=e152]:
+              - generic [ref=e155]:
+                - button "Collapse track" [ref=e156]:
+                  - img [ref=e157]
+                - img [ref=e160]
+                - button "Pick track color" [ref=e167]
+                - generic [ref=e168]: Video 1
+                - button "Mute Video 1" [ref=e169]: M
+                - button "Solo Video 1" [ref=e170]: S
+                - button "Delete Video 1" [ref=e171]:
+                  - img [ref=e172]
+              - generic [ref=e176]:
+                - button "Collapse track" [ref=e177]:
+                  - img [ref=e178]
+                - img [ref=e181]
+                - button "Pick track color" [ref=e188]
+                - generic [ref=e189]: Audio 1
+                - button "Mute Audio 1" [ref=e190]: M
+                - button "Solo Audio 1" [ref=e191]: S
+                - button "Delete Audio 1" [ref=e192]:
+                  - img [ref=e193]
+              - generic [ref=e197]:
+                - button "Collapse track" [ref=e198]:
+                  - img [ref=e199]
+                - img [ref=e202]
+                - button "Pick track color" [ref=e209]
+                - generic [ref=e210]: Effect 1
+                - button "Mute Effect 1" [ref=e211]: M
+                - button "Solo Effect 1" [ref=e212]: S
+                - button "Delete Effect 1" [ref=e213]:
+                  - img [ref=e214]
+              - generic [ref=e218]:
+                - button "Collapse track" [ref=e219]:
+                  - img [ref=e220]
+                - img [ref=e223]
+                - button "Pick track color" [ref=e230]
+                - generic [ref=e231]: Text 1
+                - button "Mute Text 1" [ref=e232]: M
+                - button "Solo Text 1" [ref=e233]: S
+                - button "Delete Text 1" [ref=e234]:
+                  - img [ref=e235]
+            - generic [ref=e239]:
+              - generic [ref=e241]:
+                - generic [ref=e242] [cursor=pointer]:
+                  - generic [ref=e244]: 00:00
+                  - generic [ref=e247]: 00:02
+                  - generic [ref=e250]: 00:04
+                  - generic [ref=e253]: 00:06
+                  - generic [ref=e256]: 00:08
+                  - generic [ref=e259]: 00:10
+                - generic [ref=e261]:
+                  - generic [ref=e263] [cursor=pointer]:
+                    - generic:
+                      - generic: Drag Media Here
+                  - generic [ref=e265] [cursor=pointer]:
+                    - generic:
+                      - generic: Drag Media Here
+                  - generic [ref=e267] [cursor=pointer]:
+                    - generic:
+                      - generic: Drop FX Here
+                  - generic [ref=e269] [cursor=pointer]:
+                    - generic:
+                      - generic: Drag Media Here
+                  - paragraph [ref=e271]:
+                    - text: This project is empty
+                    - text: Drag media from the pool onto a track to begin.
+                  - generic [ref=e272]:
+                    - generic: Drop here to create new track
+              - slider "Timeline horizontal scroll position" [ref=e274] [cursor=pointer]: "0"
+        - separator [ref=e275]
+        - generic [ref=e278]:
+          - generic [ref=e279]:
+            - generic: "1: Audio 1"
+            - generic [ref=e280]: audio
+            - generic [ref=e281]:
+              - 'slider "Pan: C" [ref=e282] [cursor=pointer]': "0"
+              - generic [ref=e283]: C
+            - slider [ref=e285] [cursor=pointer]: "100"
+            - generic [ref=e287]: "100"
+            - generic [ref=e288]: 0.0 dB
+            - generic [ref=e289]:
+              - button "M" [ref=e290]
+              - button "S" [ref=e291]
+          - generic [ref=e292]:
+            - generic [ref=e293]: Master
+            - slider [ref=e295] [cursor=pointer]: "100"
+            - generic [ref=e296]: "100"
+            - generic [ref=e297]: 0.0 dB
+  - button "Open Next.js Dev Tools" [ref=e303] [cursor=pointer]:
+    - img [ref=e304]
+  - alert [ref=e307]
+```
