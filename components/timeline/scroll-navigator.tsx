@@ -56,7 +56,7 @@ export function ScrollNavigator({ scrollContainerRef }: ScrollNavigatorProps) {
   };
 
   return (
-    <div className="flex items-center px-2 py-1 border-t border-white/8 bg-[#151515]">
+    <div className="sticky bottom-0 flex items-center px-2 py-1 border-t border-white/8 bg-[#151515]">
       <input
         ref={rangeRef}
         type="range"
