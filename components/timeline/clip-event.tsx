@@ -9,6 +9,7 @@ import { ClipFilmstrip } from "./clip-filmstrip";
 import { ClipWaveform } from "./clip-waveform";
 import { ClipContextMenu } from "./clip-context-menu";
 import { snapToNearby } from "@/lib/utils/snap";
+import { timeMicrosToTimelinePx, timelinePxToTimeMicros } from "@/lib/utils/coords";
 
 const SNAP_BREAK_PX = 20;       // px/pointermove — break out of snap magnets when dragging fast
 const HARD_WALL_LEFT_PX  = 20;  // px to the LEFT of snap before overlap territory opens
@@ -70,8 +71,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const [dropBlockMsg, setDropBlockMsg] = useState<string | null>(null);
   const [isPulsing, setIsPulsing] = useState(false);
 
-  const xPx = (clip.startTime / 1_000_000) * pixelsPerSecond;
-  const wPx = (clip.duration / 1_000_000) * pixelsPerSecond;
+  const xPx = timeMicrosToTimelinePx(clip.startTime, pixelsPerSecond);
+  const wPx = timeMicrosToTimelinePx(clip.duration, pixelsPerSecond);
   const clipLevel = clip.level ?? 100;
 
   const fadeInPx = clip.fadeInDuration ? (clip.fadeInDuration / 1_000_000) * pixelsPerSecond : 0;
@@ -105,7 +106,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       snapshotHistory("Move Clip");
 
       const rect = e.currentTarget.getBoundingClientRect();
-      const clickTime = clip.startTime + Math.round(((e.clientX - rect.left) / pixelsPerSecond) * 1_000_000);
+      const clickTime = clip.startTime + Math.round(timelinePxToTimeMicros(e.clientX - rect.left, pixelsPerSecond));
       usePlaybackStore.getState().setPlayhead(clickTime);
 
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -135,7 +136,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       // New code uses TOTAL accumulated displacement from the fixed mousedown anchor,
       // so after dragging 21px left past the snap, virtualTime is 21px past it and the wall breaks.
       const totalDeltaX = e.clientX - dragAnchorX.current;
-      const virtualTime = Math.max(0, dragAnchorTime.current + Math.round((totalDeltaX / pixelsPerSecond) * 1_000_000));
+      const virtualTime = Math.max(0, dragAnchorTime.current + Math.round(timelinePxToTimeMicros(totalDeltaX, pixelsPerSecond)));
 
       let newStart: number;
 
