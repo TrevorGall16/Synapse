@@ -28,6 +28,9 @@ test.describe("Niche Feed Observer Loading", () => {
   });
 
   test("videos are not all mounted simultaneously when many cards exist", async ({ page }) => {
+    // Use a small viewport so only the first few cards fit above the fold
+    await page.setViewportSize({ width: 1024, height: 600 });
+
     // Navigate to cinematic niche first so the page is ready
     await page.goto("/niche/cinematic");
 
@@ -37,10 +40,11 @@ test.describe("Niche Feed Observer Loading", () => {
       timeout: 15_000,
     });
 
-    // Seed 20 posts — far more than a single viewport column (5 columns max) can show
+    // Seed 30 posts with a non-empty videoUrl so that IntersectionObserver gating
+    // (not an empty URL) is what prevents off-screen video elements from mounting.
     await page.evaluate(() => {
       const fn = (window as Record<string, unknown>)["__auditSeedNichePosts"];
-      if (typeof fn === "function") fn(20);
+      if (typeof fn === "function") fn(30);
     });
 
     // Wait for React to re-render the grid with the seeded posts
@@ -50,17 +54,17 @@ test.describe("Niche Feed Observer Loading", () => {
     });
 
     // Give IntersectionObserver callbacks time to fire for above-fold cards
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(400);
 
     const cardCount = await page.locator('[data-testid="niche-card"]').count();
-    expect(cardCount).toBe(20);
+    expect(cardCount).toBeGreaterThanOrEqual(30);
 
-    // Count how many video elements are in the DOM.
-    // Since videoUrl is "" (empty string), the condition `isVisible && post.videoUrl`
-    // is falsy — no <video> elements will be rendered regardless of visibility.
-    // This confirms the guard prevents unnecessary DOM elements: videoCount must be 0.
+    // IntersectionObserver gating: only above-fold cards should have video elements.
+    // videoCount must be > 0 (above-fold cards DO get videos) but < cardCount
+    // (off-screen cards are blocked from mounting their video element).
     const videoCount = await page.locator('[data-testid="niche-card-video"]').count();
-    expect(videoCount).toBe(0);
+    expect(videoCount).toBeGreaterThan(0);
+    expect(videoCount).toBeLessThan(cardCount);
   });
 
   test("observer sets isVisible only for cards in or near the viewport", async ({ page }) => {
@@ -86,19 +90,21 @@ test.describe("Niche Feed Observer Loading", () => {
     await page.waitForTimeout(400);
 
     const cardCount = await page.locator('[data-testid="niche-card"]').count();
-    expect(cardCount).toBe(30);
+    expect(cardCount).toBeGreaterThanOrEqual(30);
 
     // The NicheCard component only renders <video> when isVisible===true AND videoUrl is truthy.
-    // Since our seeded posts have videoUrl="" (empty string), no videos are mounted.
-    // This assertion confirms the guard is active and prevents DOM bloat.
+    // Posts are seeded with a non-empty videoUrl so IntersectionObserver gating is what
+    // prevents off-screen cards from mounting their video element (not an empty URL guard).
+    // Above-fold cards must have videos; below-fold cards must not yet.
     const videoCount = await page.locator('[data-testid="niche-card-video"]').count();
-    expect(videoCount).toBe(0);
+    expect(videoCount).toBeGreaterThan(0);
+    expect(videoCount).toBeLessThan(cardCount);
 
     // Verify the page is scrollable (content extends beyond viewport), confirming the
     // lazy-loading scenario is realistic (cards genuinely extend below the fold)
     const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
     const viewportHeight = await page.evaluate(() => window.innerHeight);
     // With 30 cards in a 9:16 aspect ratio grid, content must overflow the viewport
-    expect(scrollHeight).toBeGreaterThanOrEqual(viewportHeight);
+    expect(scrollHeight).toBeGreaterThan(viewportHeight);
   });
 });

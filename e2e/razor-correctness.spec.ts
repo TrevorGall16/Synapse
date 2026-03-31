@@ -101,14 +101,10 @@ test.describe("Razor Correctness", () => {
     expect(totalDuration).toBe(ORIGINAL_DURATION);
 
     // 4. Assert: isDirty === true (split triggered the save-barrier)
-    // The split calls snapshotHistory which triggers the project store persist middleware,
-    // which in turn marks dirty. We accept either dirty=true or that the flush already
-    // completed (dirty=false after a quick auto-flush).
+    // The split changes tracks in the project store, which triggers GlobalHydrator's
+    // subscribe callback to call setDirty(true). This should happen within milliseconds.
     const indicator = page.locator('[data-testid="dirty-state-indicator"]');
-    // After a split, dirty must have been true at least momentarily.
-    // We verify the indicator exists (state machine wired up) and the split produced
-    // the expected structural change — the dirty flag assertion is a secondary signal.
-    await expect(indicator).toBeAttached();
+    await expect(indicator).toHaveAttribute("data-dirty", "true", { timeout: 5_000 });
   });
 
   test("split clips occupy contiguous time with no gap", async ({ page }) => {

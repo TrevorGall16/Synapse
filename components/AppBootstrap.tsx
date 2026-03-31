@@ -123,7 +123,7 @@ export function AppBootstrap() {
           addPost({
             id: `audit-niche-post-${i}`,
             title: `Audit Niche Post ${i}`,
-            videoUrl: "", // empty string — prevents network requests in tests
+            videoUrl: "https://example.com/test.mp4", // non-empty — lets IntersectionObserver gating be the guard
             bg: "#071a1a",
             accent: "#06b6d4",
             duration: "0:10",
