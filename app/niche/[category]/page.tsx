@@ -30,6 +30,7 @@ const CATEGORY_META: Record<NicheCategory, { label: string; description: string;
 function NicheCard({ post, onClick }: { post: FeedPost; onClick: () => void }) {
   const [isVisible, setIsVisible] = useState(false);
   const ref = useRef<HTMLElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -42,6 +43,13 @@ function NicheCard({ post, onClick }: { post: FeedPost; onClick: () => void }) {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!isVisible && videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.src = "";
+    }
+  }, [isVisible]);
+
   return (
     <article
       ref={ref}
@@ -52,6 +60,7 @@ function NicheCard({ post, onClick }: { post: FeedPost; onClick: () => void }) {
       <div className="relative" style={{ aspectRatio: "9/16", background: post.bg }}>
         {isVisible && post.videoUrl && (
           <video
+            ref={videoRef}
             src={post.videoUrl}
             preload="metadata"
             data-testid="niche-card-video"
