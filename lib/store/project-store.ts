@@ -12,6 +12,7 @@ import {
   findClipsByGroupId, computeMove,
   performSplitClip, performBulkSplit,
   computeCrossfades, performJoinClips, performDeleteClips,
+  performRestoreOriginal,
 } from "./project-helpers";
 
 /** Revoke any blob: previewUrls in a media pool to free browser memory. */
@@ -96,6 +97,7 @@ export interface ProjectState {
   addMarker: (marker: Marker) => void;
   removeMarker: (id: string) => void;
   removeProject: (id: string) => void;
+  restoreOriginalClips: (clipIds: string[]) => void;
 }
 
 const MIN_CLIP_DURATION = 33_333;
@@ -417,6 +419,21 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     const { [nextId]: _d, ...rest2 } = restSaved;
     return { ...target, openProjectIds: ids, savedProjects: rest2, selectedClipIds: [], inspectingClipId: null };
   }),
+  restoreOriginalClips: (clipIds) =>
+    set((s) => {
+      const result = performRestoreOriginal(s.tracks, clipIds, s.mediaPool);
+      if ("error" in result) {
+        // toast is called by the UI layer or we just silently return — no mutation, no history
+        return s;
+      }
+      const past = [
+        ...s.historyPast.slice(-(MAX_HISTORY - 1)),
+        { tracks: s.tracks, duration: s.duration, markers: s.markers, label: "Restore Original" },
+      ];
+      useSaveBarrierStore.getState().setDirty(true);
+      return { tracks: result, historyPast: past, historyFuture: [] };
+    }),
+
   setFxMaskEditingClipId: (id) => set({ fxMaskEditingClipId: id }),
   updateFxMask: (clipId, mask) =>
     set((s) => ({ tracks: s.tracks.map((t) => ({ ...t, clips: t.clips.map((c) =>
