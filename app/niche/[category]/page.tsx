@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Zap } from "lucide-react";
 import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
@@ -24,6 +24,62 @@ const CATEGORY_META: Record<NicheCategory, { label: string; description: string;
   "slow-mo":        { label: "Slow Mo",         description: "Time-stretch, optical flow, high-fps glass.", accent: "#f59e0b", tagAliases: ["#SlowMo", "#slowmo", "#slow-mo"] },
 };
 
+// ---------------------------------------------------------------------------
+// NicheCard — lazy-loads video only when inside (or near) the viewport
+// ---------------------------------------------------------------------------
+function NicheCard({ post, onClick }: { post: FeedPost; onClick: () => void }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const ref = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsVisible(entry.isIntersecting),
+      { rootMargin: "100px", threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <article
+      ref={ref}
+      data-testid="niche-card"
+      onClick={onClick}
+      className="group cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all hover:scale-[1.02] hover:border-white/20"
+    >
+      <div className="relative" style={{ aspectRatio: "9/16", background: post.bg }}>
+        {isVisible && post.videoUrl && (
+          <video
+            src={post.videoUrl}
+            preload="metadata"
+            data-testid="niche-card-video"
+            muted
+            loop
+            playsInline
+            className="absolute inset-0 h-full w-full object-cover"
+            onMouseEnter={(e) => (e.target as HTMLVideoElement).play().catch(() => {})}
+            onMouseLeave={(e) => {
+              const v = e.target as HTMLVideoElement;
+              v.pause();
+              v.currentTime = 0;
+            }}
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80" />
+        <div className="absolute inset-x-0 bottom-0 p-3">
+          <p className="truncate text-[10px] font-medium text-white/55">{post.title}</p>
+          <p className="text-[8px] text-white/30">@{post.user.handle}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 export default function NichePage() {
   const params = useParams();
   const router = useRouter();
@@ -108,23 +164,7 @@ export default function NichePage() {
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {filtered.map((post) => (
-              <article key={post.id}
-                onClick={() => setTheaterPost(post)}
-                className="group cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all hover:scale-[1.02] hover:border-white/20">
-                <div className="relative" style={{ aspectRatio: "9/16", background: post.bg }}>
-                  {post.videoUrl && (
-                    <video src={post.videoUrl} muted loop playsInline preload="metadata"
-                      className="absolute inset-0 h-full w-full object-cover"
-                      onMouseEnter={(e) => (e.target as HTMLVideoElement).play().catch(() => {})}
-                      onMouseLeave={(e) => { (e.target as HTMLVideoElement).pause(); }} />
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80" />
-                  <div className="absolute inset-x-0 bottom-0 p-3">
-                    <p className="truncate text-[10px] font-medium text-white/55">{post.title}</p>
-                    <p className="text-[8px] text-white/30">@{post.user.handle}</p>
-                  </div>
-                </div>
-              </article>
+              <NicheCard key={post.id} post={post} onClick={() => setTheaterPost(post)} />
             ))}
           </div>
         )}
