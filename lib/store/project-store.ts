@@ -419,20 +419,17 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
     const { [nextId]: _d, ...rest2 } = restSaved;
     return { ...target, openProjectIds: ids, savedProjects: rest2, selectedClipIds: [], inspectingClipId: null };
   }),
-  restoreOriginalClips: (clipIds) =>
-    set((s) => {
-      const result = performRestoreOriginal(s.tracks, clipIds, s.mediaPool);
-      if ("error" in result) {
-        // toast is called by the UI layer or we just silently return — no mutation, no history
-        return s;
-      }
-      const past = [
-        ...s.historyPast.slice(-(MAX_HISTORY - 1)),
-        { tracks: s.tracks, duration: s.duration, markers: s.markers, label: "Restore Original" },
-      ];
-      useSaveBarrierStore.getState().setDirty(true);
-      return { tracks: result, historyPast: past, historyFuture: [] };
-    }),
+  restoreOriginalClips: (clipIds) => {
+    const s = useProjectStore.getState();
+    const result = performRestoreOriginal(s.tracks, clipIds, s.mediaPool);
+    if ("error" in result) return;
+    const past = [
+      ...s.historyPast.slice(-(MAX_HISTORY - 1)),
+      { tracks: s.tracks, duration: s.duration, markers: s.markers, label: "Restore Original" },
+    ];
+    set({ tracks: result, historyPast: past, historyFuture: [] });
+    useSaveBarrierStore.getState().setDirty(true);
+  },
 
   setFxMaskEditingClipId: (id) => set({ fxMaskEditingClipId: id }),
   updateFxMask: (clipId, mask) =>
