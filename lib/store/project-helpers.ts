@@ -464,6 +464,8 @@ export function performRestoreOriginal(
     duration = media.duration - mediaOffset;
   }
 
+  if (duration <= 0) return { error: "Restored clip would have zero or negative duration after clamping." };
+
   // Build the restored clip at explicit defaults (no inherited fx/fades/group)
   const restoredClip: ClipEvent = {
     id: crypto.randomUUID(),
