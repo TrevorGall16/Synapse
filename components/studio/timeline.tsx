@@ -94,6 +94,7 @@ export function Timeline() {
   const duration = useProjectStore((s) => s.duration);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const trackAreaRef = useRef<HTMLDivElement>(null);
   const scrollDirtyRef = useRef(false);
   const scrollTickIdRef = useRef<number | null>(null);
 
@@ -307,7 +308,7 @@ export function Timeline() {
         </div>
         <TimelineToolbar />
         <div className="pr-3">
-          <ZoomSlider scrollContainerRef={scrollContainerRef} />
+          <ZoomSlider scrollContainerRef={scrollContainerRef} trackAreaRef={trackAreaRef} />
         </div>
       </div>
 
@@ -353,7 +354,12 @@ export function Timeline() {
           <div style={{ width: contentWidth }} className="flex flex-col min-h-full">
             <TimelineRuler scrollContainerRef={scrollContainerRef} />
 
-            <div className="relative">
+            <div
+              ref={trackAreaRef}
+              data-testid="timeline-track-area"
+              className="relative"
+              style={{ contain: "layout" }}
+            >
               <TimelineGrid />
               <div className="pointer-events-none absolute inset-0 z-10">
                 <Playhead />
