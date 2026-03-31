@@ -1,7 +1,7 @@
 // lib/store/project-helpers.test.ts — split invariant unit tests
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { performSplitClip, performBulkSplit } from "./project-helpers";
-import type { Track, ClipEvent } from "./types";
+import { performSplitClip, performBulkSplit, performRestoreOriginal } from "./project-helpers";
+import type { Track, ClipEvent, MediaPoolItem } from "./types";
 
 // ── Deterministic UUID factory ─────────────────────────────────────
 let uuidCounter = 0;
@@ -39,6 +39,16 @@ function makeTrack(clips: ClipEvent[], id = "track-1"): Track {
     color: "#3b82f6",
     clips,
     opacityOrVolume: 100,
+  };
+}
+
+function makeMedia(overrides: Partial<MediaPoolItem> = {}): MediaPoolItem {
+  return {
+    id: "asset-A",
+    name: "test-video.mp4",
+    type: "video",
+    duration: 10_000_000,
+    ...overrides,
   };
 }
 
@@ -340,5 +350,88 @@ describe("performBulkSplit", () => {
     const afterIds = new Set(result.flatMap((t) => t.clips.map((c) => c.sourceId)));
 
     expect(afterIds).toEqual(beforeIds);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// performRestoreOriginal
+// ══════════════════════════════════════════════════════════════════════
+
+describe("performRestoreOriginal", () => {
+  it("sync anchor: restored startTime = earliestFragment.startTime - earliestFragment.mediaOffset", () => {
+    const clip = makeClip({ startTime: 5_000_000, mediaOffset: 2_000_000, duration: 4_000_000, sourceId: "asset-A" });
+    const tracks = [makeTrack([clip])];
+    const media = makeMedia({ id: "asset-A", duration: 10_000_000 });
+
+    const result = performRestoreOriginal(tracks, [clip.id], [media]);
+    expect("error" in result).toBe(false);
+    const restored = (result as Track[])[0].clips[0];
+
+    expect(restored.startTime).toBe(3_000_000);
+    expect(restored.mediaOffset).toBe(0);
+    expect(restored.duration).toBe(10_000_000);
+  });
+
+  it("clamps negative rawStart: startTime=0, mediaOffset compensates, duration adjusted", () => {
+    const clip = makeClip({ startTime: 1_000_000, mediaOffset: 3_000_000, duration: 5_000_000, sourceId: "asset-B" });
+    const tracks = [makeTrack([clip])];
+    const media = makeMedia({ id: "asset-B", duration: 8_000_000 });
+
+    const result = performRestoreOriginal(tracks, [clip.id], [media]);
+    expect("error" in result).toBe(false);
+    const restored = (result as Track[])[0].clips[0];
+
+    expect(restored.startTime).toBe(0);
+    expect(restored.mediaOffset).toBe(2_000_000);
+    expect(restored.duration).toBe(6_000_000);
+  });
+
+  it("leaves clips with a different sourceId on the same track unchanged", () => {
+    const target = makeClip({ id: "clip-target", startTime: 0, duration: 10_000_000, sourceId: "asset-A" });
+    const other = makeClip({ id: "clip-other", startTime: 15_000_000, duration: 3_000_000, sourceId: "asset-Z" });
+    const tracks = [makeTrack([target, other])];
+    const media = makeMedia({ id: "asset-A", duration: 10_000_000 });
+
+    const result = performRestoreOriginal(tracks, [target.id], [media]);
+    expect("error" in result).toBe(false);
+    const clips = (result as Track[])[0].clips;
+
+    const otherClip = clips.find((c) => c.id === "clip-other");
+    expect(otherClip).toBeDefined();
+    expect(otherClip!.startTime).toBe(15_000_000);
+    expect(otherClip!.duration).toBe(3_000_000);
+    expect(otherClip!.sourceId).toBe("asset-Z");
+  });
+
+  it("does not mutate the mediaPool (refCount invariance)", () => {
+    const clip = makeClip({ sourceId: "asset-A" });
+    const tracks = [makeTrack([clip])];
+    const media = makeMedia({ id: "asset-A" });
+    const snapshot = JSON.stringify(media);
+
+    performRestoreOriginal(tracks, [clip.id], [media]);
+
+    expect(JSON.stringify(media)).toBe(snapshot);
+  });
+
+  it("multi-split then restore: returns 1 clip with correct sync anchor", () => {
+    const original = makeClip({ startTime: 0, mediaOffset: 0, duration: 10_000_000, sourceId: "asset-A" });
+    const tracks = [makeTrack([original])];
+    const media = makeMedia({ id: "asset-A", duration: 10_000_000 });
+
+    const after1 = performBulkSplit(tracks, [original.id], 3_000_000);
+    const secondId = after1[0].clips[1].id;
+    const after2 = performBulkSplit(after1, [secondId], 7_000_000);
+    expect(after2[0].clips).toHaveLength(3);
+
+    const allIds = after2[0].clips.map((c) => c.id);
+    const result = performRestoreOriginal(after2, allIds, [media]);
+    expect("error" in result).toBe(false);
+    const clips = (result as Track[])[0].clips;
+
+    expect(clips).toHaveLength(1);
+    expect(clips[0].startTime).toBe(0);
+    expect(clips[0].mediaOffset).toBe(0);
+    expect(clips[0].duration).toBe(10_000_000);
   });
 });
