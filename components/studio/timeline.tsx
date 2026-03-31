@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useMemo } from "react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { audioEngine } from "@/lib/audio/audio-engine";
@@ -17,6 +17,7 @@ import { TimelineToolbar } from "@/components/timeline/timeline-toolbar";
 import { TimelineGrid } from "@/components/timeline/timeline-grid";
 import { requestAudioPeaks } from "@/lib/utils/media-extractor";
 import type { TrackType } from "@/lib/store/types";
+import { screenXToTimeMicros, screenPxToTimelinePx } from "@/lib/utils/coords";
 
 const COLLAPSED_HEIGHT = 24;
 
@@ -92,6 +93,7 @@ export function Timeline() {
   const ungroupClips = useProjectStore((s) => s.ungroupClips);
   const selectedClipIds = useProjectStore((s) => s.selectedClipIds);
   const duration = useProjectStore((s) => s.duration);
+  const containerWidth = usePlaybackStore((s) => s.containerWidth);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const trackAreaRef = useRef<HTMLDivElement>(null);
@@ -110,13 +112,16 @@ export function Timeline() {
     const container = scrollContainerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
-    const clickedMicros = Math.max(0, Math.round(((e.clientX - rect.left + container.scrollLeft) / pixelsPerSecond) * 1_000_000));
+    const clickedMicros = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, rect, container.scrollLeft, pixelsPerSecond)));
     const { selectionStart, setSelection } = usePlaybackStore.getState();
     const anchor = selectionStart ?? clickedMicros;
     setSelection(Math.min(anchor, clickedMicros), Math.max(anchor, clickedMicros));
   }, [pixelsPerSecond]);
 
-  const contentWidth = (duration / 1_000_000) * pixelsPerSecond;
+  const contentWidth = useMemo(
+    () => Math.max(containerWidth, (duration / 1_000_000) * pixelsPerSecond + 200),
+    [duration, pixelsPerSecond, containerWidth]
+  );
 
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -127,7 +132,7 @@ export function Timeline() {
       const rect = container.getBoundingClientRect();
       const { zoomLevel, pixelsPerSecond: oldPPS } = usePlaybackStore.getState();
       const mouseX = e.clientX - rect.left;
-      const timeAtMouse = (container.scrollLeft + mouseX) / oldPPS;
+      const timeAtMouse = screenPxToTimelinePx(e.clientX, rect, container.scrollLeft) / oldPPS;
       const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
       const newZoom = Math.max(0.001, Math.min(3, zoomLevel * factor));
       container.scrollLeft = timeAtMouse * (100 * newZoom) - mouseX;
