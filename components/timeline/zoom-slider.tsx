@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, type RefObject } from "react";
 import { usePlaybackStore } from "@/lib/store/playback-store";
+import { timeMicrosToTimelinePx } from "@/lib/utils/coords";
 
 interface ZoomSliderProps {
   scrollContainerRef: RefObject<HTMLDivElement | null>;
@@ -61,14 +62,14 @@ export function ZoomSlider({ scrollContainerRef, trackAreaRef }: ZoomSliderProps
     const container = scrollContainerRef.current;
     if (container) {
       const { playheadPosition, pixelsPerSecond: oldPPS } = usePlaybackStore.getState();
-      const playheadPx = (playheadPosition / 1_000_000) * oldPPS;
+      const playheadPx = timeMicrosToTimelinePx(playheadPosition, oldPPS);
       const playheadScreenX = playheadPx - container.scrollLeft;
 
       setZoom(finalZoom);
 
       const clampedZoom = Math.max(0.001, Math.min(3, finalZoom));
       const newPPS = 100 * clampedZoom;
-      const newPlayheadPx = (playheadPosition / 1_000_000) * newPPS;
+      const newPlayheadPx = timeMicrosToTimelinePx(playheadPosition, newPPS);
       container.scrollLeft = newPlayheadPx - playheadScreenX;
     } else {
       setZoom(finalZoom);
