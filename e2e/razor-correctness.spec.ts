@@ -166,4 +166,71 @@ test.describe("Razor Correctness", () => {
     const endOfFirst = splitClips[0].startTime + splitClips[0].duration;
     expect(endOfFirst).toBe(splitClips[1].startTime);
   });
+
+  test("restore original after multi-split: clip count returns to 1, duration matches media", async ({
+    page,
+    auditPage,
+  }) => {
+    // Seed a 10-second clip
+    await page.evaluate(() => {
+      const fn = (window as unknown as Record<string, unknown>)["__auditAddTestClip"];
+      if (typeof fn === "function") fn();
+    });
+    await page.waitForTimeout(100);
+
+    const ORIGINAL_DURATION = 10_000_000;
+
+    // Split at 3s
+    await page.evaluate((t: number) => {
+      const fn = (window as unknown as Record<string, unknown>)["__auditSetPlayhead"];
+      if (typeof fn === "function") fn(t);
+    }, 3_000_000);
+    await page.waitForTimeout(50);
+    await page.waitForSelector('[data-testid="timeline-track-area"]', { timeout: 10_000 });
+    await page.keyboard.press("s");
+    await page.waitForTimeout(100);
+
+    // Split at 7s
+    await page.evaluate((t: number) => {
+      const fn = (window as unknown as Record<string, unknown>)["__auditSetPlayhead"];
+      if (typeof fn === "function") fn(t);
+    }, 7_000_000);
+    await page.waitForTimeout(50);
+    await page.keyboard.press("s");
+    await page.waitForTimeout(100);
+
+    // Verify 3 fragments exist
+    const tracksAfterSplit = await page.evaluate(() => {
+      const fn = (window as unknown as Record<string, unknown>)["__auditGetTracks"];
+      return typeof fn === "function" ? (fn() as { clips: { id: string; duration: number; sourceId: string }[] }[]) : [];
+    });
+    const clipsAfterSplit = tracksAfterSplit.flatMap((t) => t.clips);
+    expect(clipsAfterSplit).toHaveLength(3);
+
+    // Select all fragments via audit hook
+    await page.evaluate(() => {
+      const getTracks = (window as unknown as Record<string, unknown>)["__auditGetTracks"] as () => { clips: { id: string }[] }[];
+      const setSelected = (window as unknown as Record<string, unknown>)["__auditSetSelectedClipIds"] as (ids: string[]) => void;
+      if (!getTracks || !setSelected) return;
+      const allIds = getTracks().flatMap((t) => t.clips.map((c) => c.id));
+      setSelected(allIds);
+    });
+    await page.waitForTimeout(100);
+
+    // Trigger Restore Original via keyboard shortcut
+    await page.keyboard.press("Control+Shift+R");
+    await page.waitForTimeout(200);
+
+    // Verify: 1 clip, duration matches original media
+    const tracksAfterRestore = await page.evaluate(() => {
+      const fn = (window as unknown as Record<string, unknown>)["__auditGetTracks"];
+      return typeof fn === "function" ? (fn() as { clips: { id: string; duration: number; sourceId: string }[] }[]) : [];
+    });
+    const clipsAfterRestore = tracksAfterRestore.flatMap((t) => t.clips);
+
+    expect(clipsAfterRestore).toHaveLength(1);
+    expect(clipsAfterRestore[0].duration).toBe(ORIGINAL_DURATION);
+
+    void auditPage; // fixture referenced by signature — no audit-page assertions needed in this test
+  });
 });

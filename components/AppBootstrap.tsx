@@ -91,6 +91,11 @@ export function AppBootstrap() {
         usePlaybackStore.getState().setPlayhead(micros);
       };
 
+      // Test hook: set selected clip IDs for Restore Original tests.
+      (window as unknown as Record<string, unknown>)["__auditSetSelectedClipIds"] = (ids: string[]) => {
+        useProjectStore.getState().setSelectedClipIds(ids);
+      };
+
       // Test hook: seed synthetic FeedPost entries for niche-feed observer tests.
       // Adds N posts to the cinematic category so the grid renders with known content.
       (window as unknown as Record<string, unknown>)["__auditSeedNichePosts"] = (count: number) => {
