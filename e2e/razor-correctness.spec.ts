@@ -56,6 +56,9 @@ test.describe("Razor Correctness", () => {
     await auditPage.resetAuditBuffers();
     await auditPage.markAuditStart();
 
+    // Ensure the timeline keyboard handler is mounted before sending the split key
+    await page.waitForSelector('[data-testid="timeline-track-area"]', { timeout: 10_000 });
+
     // Press 'S' to split the clip under the playhead
     // Focus the page first to ensure keyboard events are received by the timeline
     await page.keyboard.press("s");
@@ -123,6 +126,10 @@ test.describe("Razor Correctness", () => {
     }, SPLIT_POINT);
 
     await page.waitForTimeout(100);
+
+    // Ensure the timeline keyboard handler is mounted before sending the split key
+    await page.waitForSelector('[data-testid="timeline-track-area"]', { timeout: 10_000 });
+
     await page.keyboard.press("s");
     await page.waitForTimeout(200);
 

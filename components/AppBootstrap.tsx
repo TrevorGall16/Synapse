@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { registerIdbToast } from "@/lib/store/idb-safe-write";
 import { runGcSweep } from "@/lib/store/gc-service";
 import { useSaveBarrierStore } from "@/lib/store/save-barrier-store";
+import { useProjectStore } from "@/lib/store/project-store";
+import { usePlaybackStore } from "@/lib/store/playback-store";
+import { useFeedStore } from "@/lib/store/feed-store";
 
 /**
  * Mounts once in root layout (client-side only).
@@ -38,18 +41,6 @@ export function AppBootstrap() {
   }, []);
 
   useEffect(() => {
-    // ── Always-available test hooks ────────────────────────────────────────────
-    // These are harmless in production: __auditTriggerDirty is a no-op unless
-    // explicitly called; the console.info interceptor only writes when
-    // window.__synapseAudit is set (by resetAuditBuffers in tests or by the
-    // AUDIT_MODE init block below).
-
-    // Test hook: directly trigger dirty state without a real project mutation.
-    // Used by nav-durability spec to reliably seed dirty=true before the nav guard test.
-    (window as Record<string, unknown>)["__auditTriggerDirty"] = () => {
-      useSaveBarrierStore.getState().setDirty(true);
-    };
-
     // console.info interceptor: capture [SynapseExport] SUMMARY lines.
     // Uses optional chaining — no-op in production where window.__synapseAudit is null.
     const originalInfo = console.info.bind(console);
@@ -66,15 +57,16 @@ export function AppBootstrap() {
     if (process.env.NEXT_PUBLIC_AUDIT_MODE === "1") {
       window.__synapseAudit = { longTasks: [], exportSummaries: [], workerEvents: [] };
 
+      // Test hook: directly trigger dirty state without a real project mutation.
+      // Used by nav-durability spec to reliably seed dirty=true before the nav guard test.
+      (window as Record<string, unknown>)["__auditTriggerDirty"] = () => {
+        useSaveBarrierStore.getState().setDirty(true);
+      };
+
       // Test hook: seed a synthetic clip onto the first video track.
       // Used by razor-correctness and long-task-budget specs to reliably create a
       // splittable clip without UI drag simulation.
       (window as Record<string, unknown>)["__auditAddTestClip"] = () => {
-        // Dynamic import avoids a circular reference at module load time.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { useProjectStore } = require("@/lib/store/project-store") as {
-          useProjectStore: { getState: () => { tracks: { id: string; type: string }[]; addClip: (trackId: string, clip: object) => void } };
-        };
         const state = useProjectStore.getState();
         const videoTrack = state.tracks.find((t) => t.type === "video");
         if (!videoTrack) return;
@@ -91,33 +83,17 @@ export function AppBootstrap() {
       // Test hook: read current tracks from the project store.
       // Used by razor-correctness spec to assert post-split state without importing the store.
       (window as Record<string, unknown>)["__auditGetTracks"] = () => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { useProjectStore } = require("@/lib/store/project-store") as {
-          useProjectStore: { getState: () => { tracks: { id: string; type: string; clips: object[] }[] } };
-        };
         return useProjectStore.getState().tracks;
       };
 
       // Test hook: set the playhead position for split tests.
       (window as Record<string, unknown>)["__auditSetPlayhead"] = (micros: number) => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { usePlaybackStore } = require("@/lib/store/playback-store") as {
-          usePlaybackStore: { getState: () => { setPlayhead: (t: number) => void } };
-        };
         usePlaybackStore.getState().setPlayhead(micros);
       };
 
       // Test hook: seed synthetic FeedPost entries for niche-feed observer tests.
       // Adds N posts to the cinematic category so the grid renders with known content.
       (window as Record<string, unknown>)["__auditSeedNichePosts"] = (count: number) => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { useFeedStore } = require("@/lib/store/feed-store") as {
-          useFeedStore: {
-            getState: () => {
-              addPost: (post: object) => void;
-            };
-          };
-        };
         const { addPost } = useFeedStore.getState();
         for (let i = 0; i < count; i++) {
           addPost({

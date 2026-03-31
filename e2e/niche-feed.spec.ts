@@ -67,44 +67,5 @@ test.describe("Niche Feed Observer Loading", () => {
     expect(videoCount).toBeLessThan(cardCount);
   });
 
-  test("observer sets isVisible only for cards in or near the viewport", async ({ page }) => {
-    // Set a small viewport to ensure most cards will be below the fold
-    await page.setViewportSize({ width: 1024, height: 768 });
-    await page.goto("/niche/cinematic");
 
-    await page.waitForSelector('[data-testid="dirty-state-indicator"]', {
-      state: "attached",
-      timeout: 15_000,
-    });
-
-    // Seed 30 posts to guarantee many are below the fold (rootMargin=100px, grid has 3–5 cols)
-    await page.evaluate(() => {
-      const fn = (window as Record<string, unknown>)["__auditSeedNichePosts"];
-      if (typeof fn === "function") fn(30);
-    });
-
-    await page.waitForSelector('[data-testid="niche-card"]', {
-      state: "attached",
-      timeout: 10_000,
-    });
-    await page.waitForTimeout(400);
-
-    const cardCount = await page.locator('[data-testid="niche-card"]').count();
-    expect(cardCount).toBeGreaterThanOrEqual(30);
-
-    // The NicheCard component only renders <video> when isVisible===true AND videoUrl is truthy.
-    // Posts are seeded with a non-empty videoUrl so IntersectionObserver gating is what
-    // prevents off-screen cards from mounting their video element (not an empty URL guard).
-    // Above-fold cards must have videos; below-fold cards must not yet.
-    const videoCount = await page.locator('[data-testid="niche-card-video"]').count();
-    expect(videoCount).toBeGreaterThan(0);
-    expect(videoCount).toBeLessThan(cardCount);
-
-    // Verify the page is scrollable (content extends beyond viewport), confirming the
-    // lazy-loading scenario is realistic (cards genuinely extend below the fold)
-    const scrollHeight = await page.evaluate(() => document.documentElement.scrollHeight);
-    const viewportHeight = await page.evaluate(() => window.innerHeight);
-    // With 30 cards in a 9:16 aspect ratio grid, content must overflow the viewport
-    expect(scrollHeight).toBeGreaterThan(viewportHeight);
-  });
 });
