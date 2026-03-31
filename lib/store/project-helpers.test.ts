@@ -34,6 +34,9 @@ function makeTrack(clips: ClipEvent[], id = "track-1"): Track {
     height: 60,
     collapsed: false,
     locked: false,
+    isMuted: false,
+    isSolo: false,
+    color: "#3b82f6",
     clips,
     opacityOrVolume: 100,
   };
@@ -76,9 +79,8 @@ describe("performSplitClip", () => {
     const splitTime = 4_000_000;
     const result = performSplitClip(tracks, "clip-1", splitTime);
     expect(result).not.toBeNull();
-    const [clipA, clipB] = result![0].clips;
-    const durationA = clipA.duration;
-    expect(clipB.mediaOffset).toBe(1_000_000 + durationA);
+    const [, clipB] = result![0].clips;
+    expect(clipB.mediaOffset).toBe(5_000_000);
   });
 
   // ── Test 4: Net clip count: before=1, after=2 ───────────────────
@@ -151,6 +153,10 @@ describe("performSplitClip", () => {
     // Both tracks were split
     expect(track1Clips).toHaveLength(2);
     expect(track2Clips).toHaveLength(2);
+
+    // Left halves retain the original groupId
+    expect(track1Clips[0].groupId).toBe(groupId);
+    expect(track2Clips[0].groupId).toBe(groupId);
 
     // Right halves get a new shared groupId (not the original)
     const rightGroupIdT1 = track1Clips[1].groupId;
