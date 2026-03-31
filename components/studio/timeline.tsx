@@ -18,6 +18,7 @@ import { TimelineGrid } from "@/components/timeline/timeline-grid";
 import { requestAudioPeaks } from "@/lib/utils/media-extractor";
 import type { TrackType } from "@/lib/store/types";
 import { screenXToTimeMicros, screenPxToTimelinePx } from "@/lib/utils/coords";
+import { ScrollNavigator } from "@/components/timeline/scroll-navigator";
 
 const COLLAPSED_HEIGHT = 24;
 
@@ -364,10 +365,11 @@ export function Timeline() {
           <div className="min-h-12 border-b border-dashed border-white/10" />
         </div>
 
-        {/* Right Column: Scrollable canvas */}
+        {/* Right Column: Scrollable canvas + scroll navigator */}
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <div
           ref={scrollContainerRef}
-          className="scrollbar-hidden flex-1 flex flex-col overflow-x-auto overflow-y-auto min-w-0 relative"
+          className="flex-1 flex flex-col overflow-x-auto overflow-y-auto min-w-0 relative"
           onWheel={onWheel}
           onScroll={onScroll}
           onClick={onTrackAreaClick}
@@ -379,7 +381,7 @@ export function Timeline() {
               ref={trackAreaRef}
               data-testid="timeline-track-area"
               className="relative"
-              style={{ contain: "layout", transformOrigin: "left center" }}
+              style={{ contain: "layout", transformOrigin: "left center", willChange: "transform" }}
             >
               <TimelineGrid />
               {tracks.map((track) => {
@@ -414,6 +416,8 @@ export function Timeline() {
             <SnapIndicator />
             <TimelineMarkers />
           </div>
+        </div>
+        <ScrollNavigator scrollContainerRef={scrollContainerRef} />
         </div>
       </div>
     </section>
