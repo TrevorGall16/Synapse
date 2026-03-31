@@ -59,14 +59,14 @@ export function AppBootstrap() {
 
       // Test hook: directly trigger dirty state without a real project mutation.
       // Used by nav-durability spec to reliably seed dirty=true before the nav guard test.
-      (window as Record<string, unknown>)["__auditTriggerDirty"] = () => {
+      (window as unknown as Record<string, unknown>)["__auditTriggerDirty"] = () => {
         useSaveBarrierStore.getState().setDirty(true);
       };
 
       // Test hook: seed a synthetic clip onto the first video track.
       // Used by razor-correctness and long-task-budget specs to reliably create a
       // splittable clip without UI drag simulation.
-      (window as Record<string, unknown>)["__auditAddTestClip"] = () => {
+      (window as unknown as Record<string, unknown>)["__auditAddTestClip"] = () => {
         const state = useProjectStore.getState();
         const videoTrack = state.tracks.find((t) => t.type === "video");
         if (!videoTrack) return;
@@ -82,18 +82,18 @@ export function AppBootstrap() {
 
       // Test hook: read current tracks from the project store.
       // Used by razor-correctness spec to assert post-split state without importing the store.
-      (window as Record<string, unknown>)["__auditGetTracks"] = () => {
+      (window as unknown as Record<string, unknown>)["__auditGetTracks"] = () => {
         return useProjectStore.getState().tracks;
       };
 
       // Test hook: set the playhead position for split tests.
-      (window as Record<string, unknown>)["__auditSetPlayhead"] = (micros: number) => {
+      (window as unknown as Record<string, unknown>)["__auditSetPlayhead"] = (micros: number) => {
         usePlaybackStore.getState().setPlayhead(micros);
       };
 
       // Test hook: seed synthetic FeedPost entries for niche-feed observer tests.
       // Adds N posts to the cinematic category so the grid renders with known content.
-      (window as Record<string, unknown>)["__auditSeedNichePosts"] = (count: number) => {
+      (window as unknown as Record<string, unknown>)["__auditSeedNichePosts"] = (count: number) => {
         const { addPost } = useFeedStore.getState();
         for (let i = 0; i < count; i++) {
           addPost({

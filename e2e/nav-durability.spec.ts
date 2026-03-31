@@ -19,7 +19,7 @@ test.describe("Navigation Durability", () => {
 
     // Seed dirty=true via the AUDIT_MODE test hook
     await page.evaluate(() => {
-      const fn = (window as Record<string, unknown>)["__auditTriggerDirty"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditTriggerDirty"];
       if (typeof fn === "function") fn();
     });
 
@@ -67,7 +67,7 @@ test.describe("Navigation Durability", () => {
     // Seed dirty=true via the AUDIT_MODE test hook.
     // This is equivalent to any project mutation that modifies tracks/history/savedProjects.
     await page.evaluate(() => {
-      const fn = (window as Record<string, unknown>)["__auditTriggerDirty"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditTriggerDirty"];
       if (typeof fn === "function") fn();
     });
 

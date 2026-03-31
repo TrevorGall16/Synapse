@@ -43,7 +43,7 @@ test.describe("Niche Feed Observer Loading", () => {
     // Seed 30 posts with a non-empty videoUrl so that IntersectionObserver gating
     // (not an empty URL) is what prevents off-screen video elements from mounting.
     await page.evaluate(() => {
-      const fn = (window as Record<string, unknown>)["__auditSeedNichePosts"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditSeedNichePosts"];
       if (typeof fn === "function") fn(30);
     });
 

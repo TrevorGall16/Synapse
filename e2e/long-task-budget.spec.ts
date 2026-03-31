@@ -65,14 +65,14 @@ test.describe("Long-Task Budget", () => {
 
     // Seed a clip via the AUDIT_MODE hook
     await page.evaluate(() => {
-      const fn = (window as Record<string, unknown>)["__auditAddTestClip"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditAddTestClip"];
       if (typeof fn === "function") fn();
     });
     await page.waitForTimeout(100);
 
     // Position playhead at midpoint (5s)
     await page.evaluate(() => {
-      const fn = (window as Record<string, unknown>)["__auditSetPlayhead"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditSetPlayhead"];
       if (typeof fn === "function") fn(5_000_000);
     });
     await page.waitForTimeout(100);

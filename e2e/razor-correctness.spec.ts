@@ -34,7 +34,7 @@ test.describe("Razor Correctness", () => {
   }) => {
     // Seed a 10-second clip onto the first video track via the AUDIT_MODE hook
     await page.evaluate(() => {
-      const fn = (window as Record<string, unknown>)["__auditAddTestClip"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditAddTestClip"];
       if (typeof fn === "function") fn();
     });
 
@@ -46,7 +46,7 @@ test.describe("Razor Correctness", () => {
     const SPLIT_POINT = ORIGINAL_DURATION / 2; // 5_000_000µs
 
     await page.evaluate((splitMicros: number) => {
-      const fn = (window as Record<string, unknown>)["__auditSetPlayhead"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditSetPlayhead"];
       if (typeof fn === "function") fn(splitMicros);
     }, SPLIT_POINT);
 
@@ -79,7 +79,7 @@ test.describe("Razor Correctness", () => {
     }
 
     const tracks: TrackData[] = await page.evaluate(() => {
-      const fn = (window as Record<string, unknown>)["__auditGetTracks"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditGetTracks"];
       if (typeof fn === "function") return fn() as TrackData[];
       return [];
     });
@@ -113,7 +113,7 @@ test.describe("Razor Correctness", () => {
   test("split clips occupy contiguous time with no gap", async ({ page }) => {
     // Seed clip
     await page.evaluate(() => {
-      const fn = (window as Record<string, unknown>)["__auditAddTestClip"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditAddTestClip"];
       if (typeof fn === "function") fn();
     });
     await page.waitForTimeout(100);
@@ -121,7 +121,7 @@ test.describe("Razor Correctness", () => {
     // Split at 3s mark (3_000_000µs)
     const SPLIT_POINT = 3_000_000;
     await page.evaluate((splitMicros: number) => {
-      const fn = (window as Record<string, unknown>)["__auditSetPlayhead"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditSetPlayhead"];
       if (typeof fn === "function") fn(splitMicros);
     }, SPLIT_POINT);
 
@@ -146,7 +146,7 @@ test.describe("Razor Correctness", () => {
     }
 
     const tracks: TrackData[] = await page.evaluate(() => {
-      const fn = (window as Record<string, unknown>)["__auditGetTracks"];
+      const fn = (window as unknown as Record<string, unknown>)["__auditGetTracks"];
       if (typeof fn === "function") return fn() as TrackData[];
       return [];
     });
