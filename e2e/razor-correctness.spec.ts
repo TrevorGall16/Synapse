@@ -14,6 +14,13 @@ test.describe("Razor Correctness", () => {
       timeout: 15_000,
     });
 
+    // Wait for AUDIT_MODE hooks to be registered by AppBootstrap's useEffect.
+    // dirty-state-indicator is always rendered but hooks live in a separate useEffect.
+    await page.waitForFunction(
+      () => typeof (window as unknown as Record<string, unknown>)["__auditAddTestClip"] === "function",
+      { timeout: 5_000 },
+    );
+
     // Create project if splash is showing
     const createBtn = page.locator('[data-testid="studio-create-project"]');
     if (await createBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
@@ -38,8 +45,15 @@ test.describe("Razor Correctness", () => {
       if (typeof fn === "function") fn();
     });
 
-    // Brief wait for Zustand state update to propagate
-    await page.waitForTimeout(100);
+    // Precondition: confirm the seeded clip is present in a video track before proceeding
+    await page.waitForFunction(
+      () => {
+        const getTracks = (window as unknown as Record<string, unknown>)["__auditGetTracks"] as (() => { type: string; clips: { sourceId: string }[] }[]) | undefined;
+        if (!getTracks) return false;
+        return getTracks().some((t) => t.type === "video" && t.clips.some((c) => c.sourceId === "audit-source-1"));
+      },
+      { timeout: 3_000 },
+    );
 
     // Position the playhead at the midpoint of the clip (5s = 5_000_000µs)
     const ORIGINAL_DURATION = 10_000_000; // 10 seconds in microseconds
@@ -116,7 +130,16 @@ test.describe("Razor Correctness", () => {
       const fn = (window as unknown as Record<string, unknown>)["__auditAddTestClip"];
       if (typeof fn === "function") fn();
     });
-    await page.waitForTimeout(100);
+
+    // Precondition: confirm clip is present before splitting
+    await page.waitForFunction(
+      () => {
+        const getTracks = (window as unknown as Record<string, unknown>)["__auditGetTracks"] as (() => { type: string; clips: { sourceId: string }[] }[]) | undefined;
+        if (!getTracks) return false;
+        return getTracks().some((t) => t.type === "video" && t.clips.some((c) => c.sourceId === "audit-source-1"));
+      },
+      { timeout: 3_000 },
+    );
 
     // Split at 3s mark (3_000_000µs)
     const SPLIT_POINT = 3_000_000;
@@ -176,7 +199,16 @@ test.describe("Razor Correctness", () => {
       const fn = (window as unknown as Record<string, unknown>)["__auditAddTestClip"];
       if (typeof fn === "function") fn();
     });
-    await page.waitForTimeout(100);
+
+    // Precondition: confirm clip is present before splitting
+    await page.waitForFunction(
+      () => {
+        const getTracks = (window as unknown as Record<string, unknown>)["__auditGetTracks"] as (() => { type: string; clips: { sourceId: string }[] }[]) | undefined;
+        if (!getTracks) return false;
+        return getTracks().some((t) => t.type === "video" && t.clips.some((c) => c.sourceId === "audit-source-1"));
+      },
+      { timeout: 3_000 },
+    );
 
     const ORIGINAL_DURATION = 10_000_000;
 

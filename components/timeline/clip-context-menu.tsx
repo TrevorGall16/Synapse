@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Scissors, Copy, Trash2, VolumeX, Volume2, Layers, RotateCcw } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
+import { canRestoreOriginal } from "@/lib/store/project-helpers";
 
 interface ClipContextMenuProps {
   clipId: string;
@@ -75,10 +76,7 @@ export function ClipContextMenu({ clipId, trackId, x, y, onClose }: ClipContextM
 
   // Restore Original — only available when full selection shares one sourceId and one trackId
   const selectedClips = allTracksReactive.flatMap((t) => t.clips).filter((c) => selectedClipIdsReactive.includes(c.id));
-  const canRestore =
-    selectedClips.length > 0 &&
-    selectedClips.every((c) => c.sourceId === selectedClips[0].sourceId) &&
-    selectedClips.every((c) => c.trackId === selectedClips[0].trackId);
+  const canRestore = canRestoreOriginal(selectedClipIdsReactive, allTracksReactive);
 
   // Compute human-readable bounds for the confirmation message
   const restoreMediaName = (() => {

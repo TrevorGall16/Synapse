@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine, ArrowRightLeft, Music, Settings, Download, X, Globe, FolderX } from "lucide-react";
+import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine, ArrowRightLeft, Music, Settings, Download, X, Globe, FolderX, RotateCcw } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { removeMediaFromDB } from "@/lib/store/media-pool-db";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import type { ClipEvent } from "@/lib/store/types";
+import { canRestoreOriginal } from "@/lib/store/project-helpers";
 import { ExportModal } from "@/components/studio/export-modal";
 import { ProjectSettingsModal } from "@/components/studio/project-settings-modal";
 import { PublishModal } from "@/components/studio/publish-modal";
@@ -13,6 +14,7 @@ import { PublishModal } from "@/components/studio/publish-modal";
 
 export function TimelineToolbar() {
   const selectedClipIds = useProjectStore((s) => s.selectedClipIds);
+  const tracks = useProjectStore((s) => s.tracks);
   const rippleMode = usePlaybackStore((s) => s.rippleMode);
   const globalBpm = usePlaybackStore((s) => s.globalBpm);
   const selectionStart = usePlaybackStore((s) => s.selectionStart);
@@ -61,6 +63,13 @@ export function TimelineToolbar() {
     if (ids.length > 1) joinClips(ids);
   };
 
+  const isRestoreValid = canRestoreOriginal(selectedClipIds, tracks);
+
+  const onRestoreOriginal = () => {
+    if (!isRestoreValid) return;
+    useProjectStore.getState().restoreOriginalClips(selectedClipIds);
+  };
+
   const onAddText = () => {
     const { tracks, addClip } = useProjectStore.getState();
     const { playheadPosition } = usePlaybackStore.getState();
@@ -105,6 +114,7 @@ export function TimelineToolbar() {
         <Btn icon={<Link size={12} />} label="Regroup (G)" disabled={selectedClipIds.length < 2} onClick={onRegroup} />
         <Btn icon={<Trash2 size={12} />} label="Delete (Del)" disabled={!hasSelection} onClick={onDelete} />
         <Btn icon={<Combine size={12} />} label="Heal (H)" disabled={selectedClipIds.length < 2} onClick={onHeal} />
+        <Btn icon={<RotateCcw size={12} />} label="Restore Original (Ctrl+Shift+R)" disabled={!isRestoreValid} onClick={onRestoreOriginal} />
 
         <div className="mx-1 h-4 w-px bg-white/10" />
 

@@ -64,13 +64,18 @@ export function AppBootstrap() {
       };
 
       // Test hook: seed a synthetic clip onto the first video track.
+      // Creates a video track if none exists — prevents silent no-op in fresh projects.
       // Used by razor-correctness and long-task-budget specs to reliably create a
       // splittable clip without UI drag simulation.
       (window as unknown as Record<string, unknown>)["__auditAddTestClip"] = () => {
         const state = useProjectStore.getState();
-        const videoTrack = state.tracks.find((t) => t.type === "video");
+        let videoTrack = state.tracks.find((t) => t.type === "video");
+        if (!videoTrack) {
+          state.addTrack("video");
+          videoTrack = useProjectStore.getState().tracks.find((t) => t.type === "video");
+        }
         if (!videoTrack) return;
-        state.addClip(videoTrack.id, {
+        useProjectStore.getState().addClip(videoTrack.id, {
           id: "audit-test-clip-1",
           trackId: videoTrack.id,
           sourceId: "audit-source-1",

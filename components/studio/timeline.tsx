@@ -19,6 +19,7 @@ import { requestAudioPeaks } from "@/lib/utils/media-extractor";
 import type { TrackType } from "@/lib/store/types";
 import { screenXToTimeMicros, screenPxToTimelinePx } from "@/lib/utils/coords";
 import { ScrollNavigator } from "@/components/timeline/scroll-navigator";
+import { canRestoreOriginal } from "@/lib/store/project-helpers";
 
 const COLLAPSED_HEIGHT = 24;
 
@@ -184,8 +185,9 @@ export function Timeline() {
   // ── Keyboard shortcuts ────────────────────────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const target = e.target as HTMLElement;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
 
       // Ctrl+Z — Undo
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
@@ -278,16 +280,9 @@ export function Timeline() {
 
       // Ctrl+Shift+R / Cmd+Shift+R — Restore Original (silent no-op if selection is invalid)
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "R") {
+        const { tracks: allTracks } = useProjectStore.getState();
+        if (!canRestoreOriginal(selectedClipIds, allTracks)) return;
         e.preventDefault();
-        if (selectedClipIds.length === 0) return;
-        const { tracks: allTracks, mediaPool } = useProjectStore.getState();
-        const selClips = allTracks.flatMap((t) => t.clips).filter((c) => selectedClipIds.includes(c.id));
-        const isValid =
-          selClips.length > 0 &&
-          selClips.every((c) => c.sourceId === selClips[0].sourceId) &&
-          selClips.every((c) => c.trackId === selClips[0].trackId) &&
-          mediaPool.some((m) => m.id === selClips[0].sourceId);
-        if (!isValid) return;
         useProjectStore.getState().restoreOriginalClips(selectedClipIds);
         return;
       }
@@ -369,7 +364,7 @@ export function Timeline() {
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <div
           ref={scrollContainerRef}
-          className="flex-1 flex flex-col overflow-x-auto overflow-y-auto min-w-0 relative"
+          className="flex-1 flex flex-col overflow-x-auto overflow-y-auto min-w-0 relative [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           onWheel={onWheel}
           onScroll={onScroll}
           onClick={onTrackAreaClick}

@@ -64,7 +64,8 @@
       "Bash(npm test:*)",
       "Bash(ls -la /d/Projects/Synapse/vitest.config.*)",
       "Bash(git checkout:*)",
-      "Bash(ls lib/utils/coords*.ts)"
+      "Bash(ls lib/utils/coords*.ts)",
+      "Bash(ls:*)"
     ]
   }
 }

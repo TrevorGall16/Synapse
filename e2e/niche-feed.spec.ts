@@ -40,6 +40,14 @@ test.describe("Niche Feed Observer Loading", () => {
       timeout: 15_000,
     });
 
+    // Wait for AUDIT_MODE hooks to be registered by AppBootstrap's useEffect before seeding.
+    // dirty-state-indicator is always rendered (AUDIT_MODE and non), but the hooks themselves
+    // are registered in a separate useEffect — wait until the function is present on window.
+    await page.waitForFunction(
+      () => typeof (window as unknown as Record<string, unknown>)["__auditSeedNichePosts"] === "function",
+      { timeout: 5_000 },
+    );
+
     // Seed 30 posts with a non-empty videoUrl so that IntersectionObserver gating
     // (not an empty URL) is what prevents off-screen video elements from mounting.
     await page.evaluate(() => {

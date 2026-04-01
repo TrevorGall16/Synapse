@@ -48,12 +48,18 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
 
   const isDragging = useRef(false);
   const hardSnapLock = useRef<number | null>(null); // micros of current hard-snap position
-  // Virtual-position anchors — set once at mousedown, NEVER advanced during drag.
-  // virtualTime = dragAnchorTime + (e.clientX - dragAnchorX) / pps * 1e6
-  // This gives the total accumulated displacement, so the hard-wall break correctly
-  // fires after 20px of cumulative leftward movement (not just per-frame delta).
-  const dragAnchorX    = useRef(0);
-  const dragAnchorTime = useRef(0);
+  // Cursor-lock grab anchor — set once at mousedown, NEVER advanced during drag.
+  //
+  // grabOffsetMicros = pointerTimeStart - clip.startTime
+  //   where pointerTimeStart = (clientX + scrollLeft) / pps * 1e6  [rect.left cancels]
+  //
+  // During move:
+  //   proposedStart = (clientX + scrollLeft_now) / pps * 1e6 - grabOffsetMicros
+  //
+  // This keeps the grab point cursor-locked even when scrollLeft changes (auto-scroll).
+  // One coordinate space throughout: micros — no mixed px/micros branches.
+  const grabOffsetMicros = useRef(0);
+  const dragAnchorX    = useRef(0); // clientX at mousedown — used for speed detection only
   const lastClientX    = useRef(0); // used for speed detection (avoids e.movementX unreliability)
   const isEdgeDragging = useRef<"left" | "right" | false>(false);
   const isLevelDragging = useRef(false);
@@ -113,10 +119,12 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       isDragging.current = true;
       accumY.current = 0;
       hardSnapLock.current = null;
-      // Fix the virtual-position anchors at mousedown — never changed during drag
-      dragAnchorX.current    = e.clientX;
-      dragAnchorTime.current = clip.startTime;
-      lastClientX.current    = e.clientX;
+      // Compute grab offset at mousedown in micros — locks cursor to grab point.
+      // scrollLeft included so auto-scroll during drag doesn't break 1:1 tracking.
+      const { scrollLeft } = usePlaybackStore.getState();
+      grabOffsetMicros.current = ((e.clientX + scrollLeft) / pixelsPerSecond) * 1_000_000 - clip.startTime;
+      dragAnchorX.current = e.clientX; // for speed detection
+      lastClientX.current = e.clientX;
     },
     [clip.id, clip.groupId, clip.startTime, trackId, pixelsPerSecond]
   );
@@ -129,14 +137,12 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       const speed = Math.abs(e.clientX - lastClientX.current);
       lastClientX.current = e.clientX;
 
-      // ── Virtual position: total delta from mousedown anchors ──────────────────
-      // This is the key fix for the "kinky/frozen" drag:
-      // Old code used per-frame delta (startPos.x advances every frame), so when snapped,
-      // targetTime was always "snapPos ± 2px" — the 20px wall could never break.
-      // New code uses TOTAL accumulated displacement from the fixed mousedown anchor,
-      // so after dragging 21px left past the snap, virtualTime is 21px past it and the wall breaks.
-      const totalDeltaX = e.clientX - dragAnchorX.current;
-      const virtualTime = Math.max(0, dragAnchorTime.current + Math.round(timelinePxToTimeMicros(totalDeltaX, pixelsPerSecond)));
+      // ── Virtual position: cursor-locked grab-offset approach ────────────────
+      // proposedStart = (clientX + scrollLeft) / pps * 1e6 - grabOffset
+      // Uses current scrollLeft so the position is correct even if the timeline
+      // auto-scrolls during drag. One coordinate space (micros) throughout.
+      const { scrollLeft } = usePlaybackStore.getState();
+      const virtualTime = Math.max(0, Math.round(((e.clientX + scrollLeft) / pixelsPerSecond) * 1_000_000 - grabOffsetMicros.current));
 
       let newStart: number;
 
@@ -177,8 +183,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
 
       if (deltaTime !== 0 || trackJumps !== 0) {
         useProjectStore.getState().moveClip(clip.id, deltaTime, trackJumps);
-        // No startPos update needed — virtualTime uses fixed dragAnchorX/dragAnchorTime,
-        // so deltaTime is always derived from clip.startTime (current store value) correctly.
+        // No anchor update needed — grabOffsetMicros is fixed at mousedown; virtualTime
+        // is always recomputed from (clientX + scrollLeft_now) so deltaTime self-corrects.
         if (trackJumps !== 0) accumY.current -= trackJumps * trackHeight;
       }
     },

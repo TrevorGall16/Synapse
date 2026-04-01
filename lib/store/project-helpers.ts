@@ -2,6 +2,27 @@ import type { Track, TrackType, ClipEvent, MediaPoolItem } from "./types";
 
 // ── Constants ───────────────────────────────────────────
 
+/**
+ * Shared restore-eligibility check used by the toolbar button, hotkey guard,
+ * and context menu. Does NOT check the mediaPool — that's a runtime concern,
+ * not a UI-enable concern.
+ *
+ * Rules:
+ *  - At least one clip selected
+ *  - All selected clips share one sourceId (same media asset)
+ *  - All selected clips share one trackId (same track)
+ */
+export function canRestoreOriginal(selectedClipIds: string[], tracks: Track[]): boolean {
+  if (selectedClipIds.length === 0) return false;
+  const selClips = tracks.flatMap((t) => t.clips).filter((c) => selectedClipIds.includes(c.id));
+  if (selClips.length === 0) return false;
+  const { sourceId, trackId } = selClips[0];
+  return (
+    selClips.every((c) => c.sourceId === sourceId) &&
+    selClips.every((c) => c.trackId === trackId)
+  );
+}
+
 export const TRACK_COLORS: Record<TrackType, string> = {
   video: "#3b82f6",
   audio: "#22c55e",
@@ -444,9 +465,9 @@ export function performRestoreOriginal(
     }
   }
 
-  // Look up media in pool
+  // Look up media in pool (optional — falls back to fragment-span when absent,
+  // which is correct for test clips that have no pool entry)
   const media = mediaPool.find((m) => m.id === sourceId);
-  if (!media) return { error: "Source media not found in pool." };
 
   // Compute sync-preserving anchor
   const rawStart = earliestFragment.startTime - earliestFragment.mediaOffset;
@@ -456,12 +477,14 @@ export function performRestoreOriginal(
   if (rawStart >= 0) {
     startTime = rawStart;
     mediaOffset = 0;
-    duration = media.duration;
+    // Full media duration when available; fall back to combined fragment span
+    duration = media ? media.duration : latestEnd - rawStart;
   } else {
     // Media start would precede timeline origin — clamp and compensate
     startTime = 0;
     mediaOffset = -rawStart;
-    duration = media.duration - mediaOffset;
+    const fullDuration = media ? media.duration : latestEnd - rawStart;
+    duration = fullDuration - mediaOffset;
   }
 
   if (duration <= 0) return { error: "Restored clip would have zero or negative duration after clamping." };

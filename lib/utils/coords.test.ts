@@ -56,3 +56,99 @@ describe("round-trip", () => {
     expect(Math.abs(result - t)).toBeLessThanOrEqual(1);
   });
 });
+
+// ── Clip drag grab-offset invariants ────────────────────────────────────────
+//
+// Drag formula (from clip-event.tsx):
+//   grabOffset = (clientX_down + scrollLeft_down) / pps * 1e6 - clipStart
+//   proposedStart = (clientX_now + scrollLeft_now) / pps * 1e6 - grabOffset
+//
+// This reduces to:
+//   proposedStart = clipStart + (deltaX + deltaScroll) / pps * 1e6
+//
+// rect.left cancels out and is excluded for simplicity.
+//
+function dragGrabOffset(clientXDown: number, scrollLeftDown: number, pps: number, clipStart: number): number {
+  return ((clientXDown + scrollLeftDown) / pps) * 1_000_000 - clipStart;
+}
+
+function dragProposedStart(clientXNow: number, scrollLeftNow: number, pps: number, grabOffset: number): number {
+  return Math.max(0, Math.round(((clientXNow + scrollLeftNow) / pps) * 1_000_000 - grabOffset));
+}
+
+describe("clip drag grab-offset math", () => {
+  describe("zoom 0.1 (pps=10)", () => {
+    const pps = 10;
+
+    it("no movement → proposedStart equals clipStart", () => {
+      const clipStart = 2_000_000;
+      const grabOffset = dragGrabOffset(200, 0, pps, clipStart);
+      expect(dragProposedStart(200, 0, pps, grabOffset)).toBe(clipStart);
+    });
+
+    it("100px right → proposedStart = clipStart + 10_000_000µs (10s)", () => {
+      const clipStart = 0;
+      const grabOffset = dragGrabOffset(0, 0, pps, clipStart);
+      expect(dragProposedStart(100, 0, pps, grabOffset)).toBe(10_000_000);
+    });
+
+    it("scroll changes by 50px during drag → clip moves 5_000_000µs extra", () => {
+      const clipStart = 5_000_000;
+      const grabOffset = dragGrabOffset(100, 0, pps, clipStart);
+      // cursor stays at 100, but scrollLeft increases by 50 (auto-scroll right)
+      expect(dragProposedStart(100, 50, pps, grabOffset)).toBe(clipStart + 5_000_000);
+    });
+  });
+
+  describe("zoom 1.0 (pps=100)", () => {
+    const pps = 100;
+
+    it("no movement → proposedStart equals clipStart", () => {
+      const clipStart = 3_000_000;
+      const grabOffset = dragGrabOffset(300, 500, pps, clipStart);
+      expect(dragProposedStart(300, 500, pps, grabOffset)).toBe(clipStart);
+    });
+
+    it("100px right → proposedStart = clipStart + 1_000_000µs (1s)", () => {
+      const clipStart = 2_000_000;
+      const grabOffset = dragGrabOffset(0, 0, pps, clipStart);
+      expect(dragProposedStart(100, 0, pps, grabOffset)).toBe(clipStart + 1_000_000);
+    });
+
+    it("cursor moves left 50px → proposedStart decreases by 500_000µs (0.5s)", () => {
+      const clipStart = 5_000_000;
+      const grabOffset = dragGrabOffset(200, 0, pps, clipStart);
+      expect(dragProposedStart(150, 0, pps, grabOffset)).toBe(clipStart - 500_000);
+    });
+
+    it("scroll changes by 200px during drag corrects position", () => {
+      const clipStart = 1_000_000;
+      const grabOffset = dragGrabOffset(100, 0, pps, clipStart);
+      // 200px scroll change = 2_000_000µs shift
+      expect(dragProposedStart(100, 200, pps, grabOffset)).toBe(clipStart + 2_000_000);
+    });
+  });
+
+  describe("zoom 3.0 (pps=300)", () => {
+    const pps = 300;
+
+    it("no movement → proposedStart equals clipStart", () => {
+      const clipStart = 1_500_000;
+      const grabOffset = dragGrabOffset(450, 0, pps, clipStart);
+      expect(dragProposedStart(450, 0, pps, grabOffset)).toBe(clipStart);
+    });
+
+    it("300px right → proposedStart = clipStart + 1_000_000µs (1s)", () => {
+      const clipStart = 0;
+      const grabOffset = dragGrabOffset(0, 0, pps, clipStart);
+      expect(dragProposedStart(300, 0, pps, grabOffset)).toBe(1_000_000);
+    });
+
+    it("clamps to 0 when drag would produce negative startTime", () => {
+      const clipStart = 500_000; // 0.5s in
+      const grabOffset = dragGrabOffset(150, 0, pps, clipStart); // grabbed at clip center
+      // drag 150px left of origin → proposedStart would be negative
+      expect(dragProposedStart(0, 0, pps, grabOffset)).toBe(0);
+    });
+  });
+});
