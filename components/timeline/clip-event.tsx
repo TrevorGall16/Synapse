@@ -8,8 +8,8 @@ import { Settings, Crop, Volume2, Layers } from "lucide-react";
 import { ClipFilmstrip } from "./clip-filmstrip";
 import { ClipWaveform } from "./clip-waveform";
 import { ClipContextMenu } from "./clip-context-menu";
-import { snapToNearby } from "@/lib/utils/snap";
-import { timeMicrosToTimelinePx, timelinePxToTimeMicros } from "@/lib/utils/coords";
+import { snapToNearbyPure, snapToNearby } from "@/lib/utils/snap";
+import { timeMicrosToTimelinePx, screenXToTimeMicros } from "@/lib/utils/coords";
 
 const SNAP_BREAK_PX = 20;       // px/pointermove — break out of snap magnets when dragging fast
 const HARD_WALL_LEFT_PX  = 20;  // px to the LEFT of snap before overlap territory opens
@@ -46,18 +46,17 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
 
   const label = isBaked ? "Remix Track" : (media?.name ?? clip.sourceId);
 
+  const clipRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const hardSnapLock = useRef<number | null>(null); // micros of current hard-snap position
+  // Transient drag position — the single source of truth during active drag.
+  // Both clip preview (via direct DOM style) and snap indicator derive from this value.
+  // Committed to the store only at drag end to avoid split-frame desync between
+  // the project store (clip.startTime) and playback store (snapIndicatorMicros).
+  const dragStartMicros = useRef<number | null>(null);
+  // The clip.startTime captured at drag begin — used to compute the store delta at drag end.
+  const dragOriginMicros = useRef(0);
   // Cursor-lock grab anchor — set once at mousedown, NEVER advanced during drag.
-  //
-  // grabOffsetMicros = pointerTimeStart - clip.startTime
-  //   where pointerTimeStart = (clientX + scrollLeft) / pps * 1e6  [rect.left cancels]
-  //
-  // During move:
-  //   proposedStart = (clientX + scrollLeft_now) / pps * 1e6 - grabOffsetMicros
-  //
-  // This keeps the grab point cursor-locked even when scrollLeft changes (auto-scroll).
-  // One coordinate space throughout: micros — no mixed px/micros branches.
   const grabOffsetMicros = useRef(0);
   const dragAnchorX    = useRef(0); // clientX at mousedown — used for speed detection only
   const lastClientX    = useRef(0); // used for speed detection (avoids e.movementX unreliability)
@@ -76,6 +75,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [dropBlockMsg, setDropBlockMsg] = useState<string | null>(null);
   const [isPulsing, setIsPulsing] = useState(false);
+  const [isDraggingState, setIsDraggingState] = useState(false);
 
   const xPx = timeMicrosToTimelinePx(clip.startTime, pixelsPerSecond);
   const wPx = timeMicrosToTimelinePx(clip.duration, pixelsPerSecond);
@@ -111,22 +111,57 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       // Snapshot before drag for undo
       snapshotHistory("Move Clip");
 
-      const rect = e.currentTarget.getBoundingClientRect();
-      const clickTime = clip.startTime + Math.round(timelinePxToTimeMicros(e.clientX - rect.left, pixelsPerSecond));
+      const { scrollLeft: sl, cssZoomScale: zs } = usePlaybackStore.getState();
+      const ctr = e.currentTarget.closest("[data-timeline-scroll-container]");
+      const ctrRect = ctr?.getBoundingClientRect() ?? new DOMRect();
+      const clickTime = Math.round(screenXToTimeMicros(e.clientX, ctrRect, sl, pixelsPerSecond, zs));
       usePlaybackStore.getState().setPlayhead(clickTime);
 
       e.currentTarget.setPointerCapture(e.pointerId);
       isDragging.current = true;
+      setIsDraggingState(true);
       accumY.current = 0;
       hardSnapLock.current = null;
+      dragStartMicros.current = null;
+      dragOriginMicros.current = clip.startTime;
       // Compute grab offset at mousedown in micros — locks cursor to grab point.
-      // scrollLeft included so auto-scroll during drag doesn't break 1:1 tracking.
-      const { scrollLeft } = usePlaybackStore.getState();
-      grabOffsetMicros.current = ((e.clientX + scrollLeft) / pixelsPerSecond) * 1_000_000 - clip.startTime;
+      // Uses the scroll container rect + cssZoomScale so the conversion is correct
+      // even when the zoom slider applies a transient CSS scaleX to the track area.
+      const { scrollLeft, cssZoomScale } = usePlaybackStore.getState();
+      const container = e.currentTarget.closest("[data-timeline-scroll-container]");
+      const containerRect = container?.getBoundingClientRect() ?? new DOMRect();
+      grabOffsetMicros.current = screenXToTimeMicros(e.clientX, containerRect, scrollLeft, pixelsPerSecond, cssZoomScale) - clip.startTime;
       dragAnchorX.current = e.clientX; // for speed detection
       lastClientX.current = e.clientX;
     },
     [clip.id, clip.groupId, clip.startTime, trackId, pixelsPerSecond]
+  );
+
+  // ── Lockstep indicator update ──────────────────────────────────────────────
+  // During drag, update the snap indicator DOM element directly (same frame as
+  // clip DOM) instead of going through the playback store. This prevents the
+  // split-frame desync that occurs when two separate Zustand stores trigger two
+  // independent React renders.
+  const updateIndicatorDOM = useCallback(
+    (snapMicros: number | null, isHard: boolean) => {
+      const el = document.querySelector<HTMLElement>("[data-snap-indicator]");
+      if (!el) return;
+      if (snapMicros === null) {
+        el.style.display = "none";
+        return;
+      }
+      const pps = usePlaybackStore.getState().pixelsPerSecond;
+      const xPx = (snapMicros / 1_000_000) * pps;
+      const color = isHard ? "rgba(255,255,255,0.95)" : "rgba(0,229,255,0.85)";
+      const shadow = isHard
+        ? "0 0 6px 2px rgba(255,255,255,0.6)"
+        : "0 0 6px 1px rgba(0,229,255,0.5)";
+      el.style.display = "block";
+      el.style.left = `${xPx}px`;
+      el.style.background = color;
+      el.style.boxShadow = shadow;
+    },
+    []
   );
 
   const onPointerMove = useCallback(
@@ -138,68 +173,86 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       lastClientX.current = e.clientX;
 
       // ── Virtual position: cursor-locked grab-offset approach ────────────────
-      // proposedStart = (clientX + scrollLeft) / pps * 1e6 - grabOffset
-      // Uses current scrollLeft so the position is correct even if the timeline
-      // auto-scrolls during drag. One coordinate space (micros) throughout.
-      const { scrollLeft } = usePlaybackStore.getState();
-      const virtualTime = Math.max(0, Math.round(((e.clientX + scrollLeft) / pixelsPerSecond) * 1_000_000 - grabOffsetMicros.current));
+      const { scrollLeft, cssZoomScale } = usePlaybackStore.getState();
+      const container = (e.currentTarget as HTMLElement).closest("[data-timeline-scroll-container]");
+      const containerRect = container?.getBoundingClientRect() ?? new DOMRect();
+      const virtualTime = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, containerRect, scrollLeft, pixelsPerSecond, cssZoomScale) - grabOffsetMicros.current));
 
+      // ── Compute snappedStart once ────────────────────────────────────────────
       let newStart: number;
+      let snapPos: number | null = null;
+      let snapIsHard = false;
 
       if (speed > SNAP_BREAK_PX) {
-        // Fast drag: break all magnets, follow mouse immediately
         hardSnapLock.current = null;
         newStart = virtualTime;
-        usePlaybackStore.getState().setSnapIndicator(null);
       } else if (hardSnapLock.current !== null) {
-        // Hard wall active — check if virtualTime has moved outside the protective zone:
-        //   LEFT  (overlap territory): 20px wall — must push 20px past snap to open crossfade
-        //   RIGHT (natural escape):     8px catch — releases cleanly with no lag
         const offsetPx = ((virtualTime - hardSnapLock.current) / 1_000_000) * pixelsPerSecond;
         if (offsetPx < -HARD_WALL_LEFT_PX) {
           hardSnapLock.current = null;
           newStart = virtualTime;
-          usePlaybackStore.getState().setSnapIndicator(null);
         } else if (offsetPx > HARD_WALL_RIGHT_PX) {
           hardSnapLock.current = null;
           newStart = virtualTime;
-          usePlaybackStore.getState().setSnapIndicator(null);
         } else {
-          // In zone: hold clip exactly at snap edge (zero overlap guaranteed)
           newStart = hardSnapLock.current;
-          usePlaybackStore.getState().setSnapIndicator(hardSnapLock.current, true);
+          snapPos = hardSnapLock.current;
+          snapIsHard = true;
         }
       } else {
-        const result = snapToNearby(virtualTime, pixelsPerSecond, clip.id);
+        const result = snapToNearbyPure(virtualTime, pixelsPerSecond, clip.id);
         newStart = result.time;
         if (result.isHard && result.time !== virtualTime) {
           hardSnapLock.current = result.time;
         }
+        // snapToNearby already called setSnapIndicator — but we'll override with DOM below
+        snapPos = result.time !== virtualTime ? result.time : null;
+        snapIsHard = result.isHard;
       }
 
-      const deltaTime = newStart - clip.startTime;
+      // ── Store the transient position ────────────────────────────────────────
+      dragStartMicros.current = newStart;
+
+      // ── Lockstep DOM writes: clip preview + indicator in the SAME frame ─────
+      // 1. Clip position — direct DOM, no store round-trip
+      if (clipRef.current) {
+        const previewPx = timeMicrosToTimelinePx(newStart, pixelsPerSecond);
+        clipRef.current.style.transform = `translate3d(${previewPx}px, 0, 0)`;
+      }
+      // 2. Snap indicator — direct DOM, same frame
+      updateIndicatorDOM(snapPos, snapIsHard);
+
+      // ── Track jumps require store mutation (clip moves between tracks) ──────
       accumY.current += e.movementY;
       const trackJumps = Math.trunc(accumY.current / trackHeight);
-
-      if (deltaTime !== 0 || trackJumps !== 0) {
-        useProjectStore.getState().moveClip(clip.id, deltaTime, trackJumps);
-        // No anchor update needed — grabOffsetMicros is fixed at mousedown; virtualTime
-        // is always recomputed from (clientX + scrollLeft_now) so deltaTime self-corrects.
-        if (trackJumps !== 0) accumY.current -= trackJumps * trackHeight;
+      if (trackJumps !== 0) {
+        useProjectStore.getState().moveClip(clip.id, 0, trackJumps);
+        accumY.current -= trackJumps * trackHeight;
       }
     },
-    [clip.id, clip.startTime, pixelsPerSecond, trackHeight]
+    [clip.id, pixelsPerSecond, trackHeight, updateIndicatorDOM]
   );
 
   const onPointerUp = useCallback(
     (e: React.PointerEvent) => {
+      // ── Commit transient drag position to the store ──────────────────────────
+      if (dragStartMicros.current !== null) {
+        const deltaTime = dragStartMicros.current - dragOriginMicros.current;
+        if (deltaTime !== 0) {
+          useProjectStore.getState().moveClip(clip.id, deltaTime, 0);
+        }
+      }
+      dragStartMicros.current = null;
       isDragging.current = false;
+      setIsDraggingState(false);
       hardSnapLock.current = null;
       accumY.current = 0;
       e.currentTarget.releasePointerCapture(e.pointerId);
+      // Clear indicator via store for React reconciliation
       usePlaybackStore.getState().setSnapIndicator(null);
+      updateIndicatorDOM(null, false);
     },
-    []
+    [clip.id, updateIndicatorDOM]
   );
 
   // ── Edge trim handlers ──────────────────────────────────
@@ -218,7 +271,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       if (!isEdgeDragging.current) return;
       const deltaX = e.clientX - edgeStartX.current;
-      const rawDelta = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
+      const { cssZoomScale } = usePlaybackStore.getState();
+      const rawDelta = Math.round((deltaX / (pixelsPerSecond * cssZoomScale)) * 1_000_000);
       const edge = isEdgeDragging.current === "left"
         ? clip.startTime + rawDelta
         : clip.startTime + clip.duration + rawDelta;
@@ -291,7 +345,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       if (!isFadeDragging.current) return;
       const deltaX = e.clientX - fadeStartX.current;
-      const deltaMicros = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
+      const { cssZoomScale: fadeZs } = usePlaybackStore.getState();
+      const deltaMicros = Math.round((deltaX / (pixelsPerSecond * fadeZs)) * 1_000_000);
       const store = useProjectStore.getState();
       if (isFadeDragging.current === "in") {
         store.setClipFade(clip.id, "in", Math.max(0, (clip.fadeInDuration ?? 0) + deltaMicros));
@@ -328,7 +383,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       if (!isStretchDragging.current) return;
       const deltaX = e.clientX - edgeStartX.current;
-      const deltaMicros = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
+      const { cssZoomScale: stretchZs } = usePlaybackStore.getState();
+      const deltaMicros = Math.round((deltaX / (pixelsPerSecond * stretchZs)) * 1_000_000);
       useProjectStore.getState().timeStretchClip(clip.id, edgeOrigDuration.current + deltaMicros);
     },
     [clip.id, pixelsPerSecond]
@@ -397,7 +453,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
 
   return (
     <div
-      className={`absolute top-0 flex h-full cursor-grab select-none items-center overflow-hidden transition-transform active:cursor-grabbing ${
+      ref={clipRef}
+      className={`absolute top-0 flex h-full cursor-grab select-none items-center overflow-hidden ${isDraggingState ? "" : "transition-transform"} active:cursor-grabbing ${
         isSelected ? "ring-2 ring-white" : isDropTarget ? "ring-2 ring-purple-400" : isPulsing ? "ring-2 ring-purple-300" : ""
       } ${hasLeftNeighbor ? "rounded-r" : hasRightNeighbor ? "rounded-l" : "rounded"}`}
       style={{
