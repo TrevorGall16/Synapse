@@ -2,25 +2,73 @@ import type { Track, TrackType, ClipEvent, MediaPoolItem } from "./types";
 
 // ── Constants ───────────────────────────────────────────
 
+// ── Restore validation reason codes (dev diagnostics) ─────────────────────────
+
+export type RestoreInvalidReason =
+  | "no_selection"
+  | "missing_clip"
+  | "mixed_source"
+  | "mixed_track";
+
+export interface RestoreValidation {
+  valid: boolean;
+  reason?: RestoreInvalidReason;
+}
+
 /**
- * Shared restore-eligibility check used by the toolbar button, hotkey guard,
- * and context menu. Does NOT check the mediaPool — that's a runtime concern,
- * not a UI-enable concern.
+ * Shared restore-eligibility check used by the toolbar button disabled state,
+ * context menu visibility, and action guard. Single source of truth.
+ *
+ * Operates on resolved clip entities — not stale IDs.
  *
  * Rules:
  *  - At least one clip selected
- *  - All selected clips share one sourceId (same media asset)
- *  - All selected clips share one trackId (same track)
+ *  - ALL selected IDs resolve to existing clips (no stale refs)
+ *  - All resolved clips share one sourceId (same media asset)
+ *  - All resolved clips live on the same parent track
+ */
+export function validateRestore(selectedClipIds: string[], tracks: Track[]): RestoreValidation {
+  if (selectedClipIds.length === 0) return { valid: false, reason: "no_selection" };
+
+  // Resolve clips from their parent tracks — derives trackId from physical location,
+  // not from the clip's embedded field (which could be stale after cross-track moves).
+  const resolved: { clip: ClipEvent; parentTrackId: string }[] = [];
+  for (const id of selectedClipIds) {
+    let found = false;
+    for (const t of tracks) {
+      const c = t.clips.find((c) => c.id === id);
+      if (c) {
+        resolved.push({ clip: c, parentTrackId: t.id });
+        found = true;
+        break;
+      }
+    }
+    if (!found) return { valid: false, reason: "missing_clip" };
+  }
+
+  const { sourceId } = resolved[0].clip;
+  if (!resolved.every((r) => r.clip.sourceId === sourceId)) {
+    return { valid: false, reason: "mixed_source" };
+  }
+
+  const { parentTrackId } = resolved[0];
+  if (!resolved.every((r) => r.parentTrackId === parentTrackId)) {
+    return { valid: false, reason: "mixed_track" };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Boolean convenience wrapper around validateRestore.
+ * In dev mode, logs structured reason codes to aid debugging.
  */
 export function canRestoreOriginal(selectedClipIds: string[], tracks: Track[]): boolean {
-  if (selectedClipIds.length === 0) return false;
-  const selClips = tracks.flatMap((t) => t.clips).filter((c) => selectedClipIds.includes(c.id));
-  if (selClips.length === 0) return false;
-  const { sourceId, trackId } = selClips[0];
-  return (
-    selClips.every((c) => c.sourceId === sourceId) &&
-    selClips.every((c) => c.trackId === trackId)
-  );
+  const result = validateRestore(selectedClipIds, tracks);
+  if (!result.valid && process.env.NODE_ENV === "development" && result.reason) {
+    console.debug("[canRestoreOriginal] invalid:", result.reason, { selectedClipIds });
+  }
+  return result.valid;
 }
 
 export const TRACK_COLORS: Record<TrackType, string> = {
@@ -429,22 +477,25 @@ export function performRestoreOriginal(
 ): Track[] | { error: string } {
   if (selectedClipIds.length === 0) return { error: "No clips selected." };
 
-  // Collect selected clips across all tracks
-  const selected: ClipEvent[] = [];
+  // Collect selected clips with their resolved parent track ID —
+  // derives trackId from physical location, not from the clip's embedded field.
+  const resolved: { clip: ClipEvent; parentTrackId: string }[] = [];
   for (const t of tracks) {
     for (const c of t.clips) {
-      if (selectedClipIds.includes(c.id)) selected.push(c);
+      if (selectedClipIds.includes(c.id)) resolved.push({ clip: c, parentTrackId: t.id });
     }
   }
-  if (selected.length === 0) return { error: "Selected clips not found." };
+  if (resolved.length === 0) return { error: "Selected clips not found." };
 
-  // Validate: all share one sourceId and one trackId
-  const sourceId = selected[0].sourceId;
-  const trackId = selected[0].trackId;
-  if (!selected.every((c) => c.sourceId === sourceId))
+  // Validate: all share one sourceId and one parent track
+  const sourceId = resolved[0].clip.sourceId;
+  const trackId = resolved[0].parentTrackId;
+  if (!resolved.every((r) => r.clip.sourceId === sourceId))
     return { error: "Selected clips must share the same source." };
-  if (!selected.every((c) => c.trackId === trackId))
+  if (!resolved.every((r) => r.parentTrackId === trackId))
     return { error: "Selected clips must be on the same track." };
+
+  const selected = resolved.map((r) => r.clip);
 
   // Sync anchor: fragment with the earliest startTime
   const earliestFragment = selected.reduce((a, b) => (a.startTime <= b.startTime ? a : b));
