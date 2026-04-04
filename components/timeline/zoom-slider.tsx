@@ -45,6 +45,7 @@ export function ZoomSlider({ scrollContainerRef, trackAreaRef }: ZoomSliderProps
         const committedZoom = usePlaybackStore.getState().zoomLevel;
         const scale = sliderToZoom(newSlider) / committedZoom;
         trackAreaRef.current.style.transform = `scaleX(${scale})`;
+        usePlaybackStore.getState().setCssZoomScale(scale);
       }
     },
     [trackAreaRef]
@@ -58,6 +59,7 @@ export function ZoomSlider({ scrollContainerRef, trackAreaRef }: ZoomSliderProps
     if (trackAreaRef.current) {
       trackAreaRef.current.style.transform = "";
     }
+    usePlaybackStore.getState().setCssZoomScale(1);
 
     const container = scrollContainerRef.current;
     if (container) {

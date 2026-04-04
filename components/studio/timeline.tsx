@@ -19,7 +19,6 @@ import { requestAudioPeaks } from "@/lib/utils/media-extractor";
 import type { TrackType } from "@/lib/store/types";
 import { screenXToTimeMicros, screenPxToTimelinePx } from "@/lib/utils/coords";
 import { ScrollNavigator } from "@/components/timeline/scroll-navigator";
-import { canRestoreOriginal } from "@/lib/store/project-helpers";
 
 const COLLAPSED_HEIGHT = 24;
 
@@ -41,8 +40,8 @@ function NewTrackDropZone() {
 
     useProjectStore.getState().snapshotHistory("Add Track");
 
-    const pixelsPerSecond = usePlaybackStore.getState().pixelsPerSecond;
-    const startTime = Math.max(0, Math.round((e.nativeEvent.offsetX / pixelsPerSecond) * 1_000_000));
+    const { pixelsPerSecond, cssZoomScale } = usePlaybackStore.getState();
+    const startTime = Math.max(0, Math.round((e.nativeEvent.offsetX / (pixelsPerSecond * cssZoomScale)) * 1_000_000));
 
     if (media.type === "video") {
       // Create a paired Video + Audio track so the linked clips are always together
@@ -114,7 +113,8 @@ export function Timeline() {
     const container = scrollContainerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
-    const clickedMicros = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, rect, container.scrollLeft, pixelsPerSecond)));
+    const { cssZoomScale } = usePlaybackStore.getState();
+    const clickedMicros = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, rect, container.scrollLeft, pixelsPerSecond, cssZoomScale)));
     const { selectionStart, setSelection } = usePlaybackStore.getState();
     const anchor = selectionStart ?? clickedMicros;
     setSelection(Math.min(anchor, clickedMicros), Math.max(anchor, clickedMicros));
@@ -132,9 +132,9 @@ export function Timeline() {
       const container = scrollContainerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      const { zoomLevel, pixelsPerSecond: oldPPS } = usePlaybackStore.getState();
+      const { zoomLevel, pixelsPerSecond: oldPPS, cssZoomScale } = usePlaybackStore.getState();
       const mouseX = e.clientX - rect.left;
-      const timeAtMouse = screenPxToTimelinePx(e.clientX, rect, container.scrollLeft) / oldPPS;
+      const timeAtMouse = screenPxToTimelinePx(e.clientX, rect, container.scrollLeft, cssZoomScale) / oldPPS;
       const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
       const newZoom = Math.max(0.001, Math.min(3, zoomLevel * factor));
       container.scrollLeft = timeAtMouse * (100 * newZoom) - mouseX;
@@ -278,15 +278,6 @@ export function Timeline() {
         return;
       }
 
-      // Ctrl+Shift+R / Cmd+Shift+R — Restore Original (silent no-op if selection is invalid)
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "R") {
-        const { tracks: allTracks } = useProjectStore.getState();
-        if (!canRestoreOriginal(selectedClipIds, allTracks)) return;
-        e.preventDefault();
-        useProjectStore.getState().restoreOriginalClips(selectedClipIds);
-        return;
-      }
-
       if (e.key === "ArrowUp" || e.key === "ArrowDown") {
         e.preventDefault();
         const { masterVolume, setMasterVolume } = usePlaybackStore.getState();
@@ -303,7 +294,7 @@ export function Timeline() {
   return (
     <section className="flex h-full w-full flex-col overflow-hidden min-w-0 min-h-0 border-t border-white/20 bg-[#1a1a1a]">
       {/* Toolbar */}
-      <div className="flex h-7 shrink-0 items-center justify-between border-b border-white/10">
+      <div className="flex h-8 shrink-0 items-center justify-between border-b border-white/10">
         <div className="flex w-48 shrink-0 items-center border-r border-white/10">
           <select
             defaultValue=""
@@ -364,6 +355,7 @@ export function Timeline() {
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <div
           ref={scrollContainerRef}
+          data-timeline-scroll-container
           className="flex-1 flex flex-col overflow-x-auto overflow-y-auto min-w-0 relative [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           onWheel={onWheel}
           onScroll={onScroll}

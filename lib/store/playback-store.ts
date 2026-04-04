@@ -22,6 +22,9 @@ export interface PlaybackState {
   snapIndicatorMicros: number | null;
   /** true when the active snap is a "Perfect Cut" (end-to-start, 0 overlap) — renders white line */
   snapIsHardCut: boolean;
+  /** CSS scaleX applied to the track area during zoom slider drag. 1.0 when no transform is active. */
+  cssZoomScale: number;
+  setCssZoomScale: (scale: number) => void;
   setPlayhead: (time: number) => void;
   togglePlayback: () => void;
   setZoom: (zoom: number) => void;
@@ -78,6 +81,8 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
   selectionEnd: null,
   snapIndicatorMicros: null,
   snapIsHardCut: false,
+  cssZoomScale: 1,
+  setCssZoomScale: (scale) => set({ cssZoomScale: scale }),
 
   setPlayhead: (time) =>
     set(() => {

@@ -29,4 +29,9 @@ interface Window {
    * All fixture helpers filter to entries with epochStartTime / ts >= this value.
    */
   __auditStartTs?: number;
+  /**
+   * Set to true by AppBootstrap after all audit hooks are mounted.
+   * Tests should wait for this flag before calling any __audit* helpers.
+   */
+  __synapseAuditReady?: boolean;
 }

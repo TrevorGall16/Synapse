@@ -9,11 +9,7 @@ test.describe("Navigation Durability", () => {
     auditPage,
   }) => {
     await page.goto("/studio");
-    // Wait for AppBootstrap (and AUDIT_MODE hooks) to mount
-    await page.waitForSelector('[data-testid="dirty-state-indicator"]', {
-      state: "attached",
-      timeout: 15_000,
-    });
+    await auditPage.waitForReady();
 
     await auditPage.resetAuditBuffers();
 
@@ -56,11 +52,7 @@ test.describe("Navigation Durability", () => {
     auditPage,
   }) => {
     await page.goto("/studio");
-    // Wait for AppBootstrap (and AUDIT_MODE hooks) to mount
-    await page.waitForSelector('[data-testid="dirty-state-indicator"]', {
-      state: "attached",
-      timeout: 15_000,
-    });
+    await auditPage.waitForReady();
 
     await auditPage.resetAuditBuffers();
 

@@ -1,13 +1,18 @@
 /**
  * Convert pointer clientX to timeline-local pixels.
- * Accounts for container origin (rect.left) and horizontal scroll offset.
+ * Accounts for container origin (rect.left), horizontal scroll offset,
+ * and an optional CSS zoomScale (scaleX applied to the track area during
+ * zoom-slider drag). When no CSS transform is active, zoomScale = 1.
+ *
+ * Formula: (clientX - rect.left) / zoomScale + scrollLeft
  */
 export function screenPxToTimelinePx(
   clientX: number,
   rect: DOMRect,
-  scrollLeft: number
+  scrollLeft: number,
+  zoomScale: number = 1,
 ): number {
-  return clientX - rect.left + scrollLeft;
+  return (clientX - rect.left) / zoomScale + scrollLeft;
 }
 
 /**
@@ -38,10 +43,11 @@ export function screenXToTimeMicros(
   clientX: number,
   rect: DOMRect,
   scrollLeft: number,
-  pixelsPerSecond: number
+  pixelsPerSecond: number,
+  zoomScale: number = 1,
 ): number {
   return timelinePxToTimeMicros(
-    screenPxToTimelinePx(clientX, rect, scrollLeft),
+    screenPxToTimelinePx(clientX, rect, scrollLeft, zoomScale),
     pixelsPerSecond
   );
 }

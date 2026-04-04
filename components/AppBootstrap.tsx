@@ -123,6 +123,10 @@ export function AppBootstrap() {
         }
       };
 
+      // Signal that all audit hooks are mounted and ready for test consumption.
+      // Tests wait for this flag instead of polling individual hook functions.
+      (window as unknown as Record<string, unknown>)["__synapseAuditReady"] = true;
+
       // PerformanceObserver: capture long tasks in Date.now() epoch domain
       if (typeof PerformanceObserver !== "undefined") {
         obs = new PerformanceObserver((list) => {

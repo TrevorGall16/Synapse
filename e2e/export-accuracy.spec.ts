@@ -6,7 +6,7 @@ import { test, expect } from "./fixtures/audit-page";
 test.describe("Export Accuracy", () => {
   test("export produces PASS A/V sync status within tolerance", async ({ page, auditPage }) => {
     await page.goto("/studio");
-    await page.waitForSelector('[data-testid="dirty-state-indicator"]', { state: "attached", timeout: 15_000 });
+    await auditPage.waitForReady();
 
     // If the studio splash is showing, create a new project to get the toolbar
     const createBtn = page.locator('[data-testid="studio-create-project"]');

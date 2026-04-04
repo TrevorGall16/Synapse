@@ -6,8 +6,9 @@ import { test, expect } from "./fixtures/audit-page";
 const MAX_LONG_TASK_MS = 50;
 
 test.describe("Long-Task Budget", () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, auditPage }) => {
     await page.goto("/studio");
+    await auditPage.waitForReady();
   });
 
   test("scrub playhead stays under 50ms long-task budget", async ({ page, auditPage }) => {
@@ -68,7 +69,16 @@ test.describe("Long-Task Budget", () => {
       const fn = (window as unknown as Record<string, unknown>)["__auditAddTestClip"];
       if (typeof fn === "function") fn();
     });
-    await page.waitForTimeout(100);
+
+    // Deterministic wait: confirm the clip is present before proceeding
+    await page.waitForFunction(
+      () => {
+        const getTracks = (window as unknown as Record<string, unknown>)["__auditGetTracks"] as (() => { type: string; clips: { sourceId: string }[] }[]) | undefined;
+        if (!getTracks) return false;
+        return getTracks().some((t) => t.type === "video" && t.clips.some((c) => c.sourceId === "audit-source-1"));
+      },
+      { timeout: 5_000 },
+    );
 
     // Position playhead at midpoint (5s)
     await page.evaluate(() => {

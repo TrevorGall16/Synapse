@@ -5,6 +5,7 @@ import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import type { ClipEvent, TrackType, MediaPoolItem } from "@/lib/store/types";
 import { ClipEventBlock } from "./clip-event";
+import { screenXToTimeMicros } from "@/lib/utils/coords";
 import { requestAudioPeaks } from "@/lib/utils/media-extractor";
 
 const TYPE_BG: Record<TrackType, string> = {
@@ -102,9 +103,12 @@ function CrossfadeOverlay({ overlap, pixelsPerSecond }: CrossfadeOverlayProps) {
     (side: "left" | "right", e: React.PointerEvent) => {
       const maxOverlapMicros = Math.min(overlap.outgoingDuration, overlap.incomingDuration);
 
+      const { cssZoomScale } = usePlaybackStore.getState();
+      const effectivePps = pixelsPerSecond * cssZoomScale;
+
       if (side === "left" && leftActive.current) {
         const deltaX = e.clientX - leftStartX.current;
-        let deltaMicros = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
+        let deltaMicros = Math.round((deltaX / effectivePps) * 1_000_000);
         const newOverlap = overlap.currentOverlapMicros - deltaMicros;
         // Overlap cap (clip duration limit)
         if (newOverlap > maxOverlapMicros) deltaMicros = overlap.currentOverlapMicros - maxOverlapMicros;
@@ -117,7 +121,7 @@ function CrossfadeOverlay({ overlap, pixelsPerSecond }: CrossfadeOverlayProps) {
       }
       if (side === "right" && rightActive.current) {
         const deltaX = e.clientX - rightStartX.current;
-        let deltaMicros = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
+        let deltaMicros = Math.round((deltaX / effectivePps) * 1_000_000);
         const newOverlap = overlap.currentOverlapMicros + deltaMicros;
         // Overlap cap (clip duration limit)
         if (newOverlap > maxOverlapMicros) deltaMicros = maxOverlapMicros - overlap.currentOverlapMicros;
@@ -215,8 +219,11 @@ export function TrackLane({ trackId, trackHeight: trackHeightProp }: TrackLanePr
     (clientX: number) => {
       const el = laneRef.current;
       if (!el) return;
-      const rect = el.getBoundingClientRect();
-      setPlayhead(Math.round(((clientX - rect.left) / pixelsPerSecond) * 1_000_000));
+      const container = el.closest("[data-timeline-scroll-container]");
+      const containerRect = container?.getBoundingClientRect() ?? el.getBoundingClientRect();
+      const sl = container instanceof HTMLElement ? container.scrollLeft : 0;
+      const { cssZoomScale } = usePlaybackStore.getState();
+      setPlayhead(Math.round(screenXToTimeMicros(clientX, containerRect, sl, pixelsPerSecond, cssZoomScale)));
     },
     [pixelsPerSecond, setPlayhead]
   );
@@ -264,8 +271,9 @@ export function TrackLane({ trackId, trackHeight: trackHeightProp }: TrackLanePr
       if (media.type === "video" && currentTrack.type !== "video") return;
       if (media.type === "audio" && currentTrack.type !== "audio") return;
 
+      const { cssZoomScale } = usePlaybackStore.getState();
       const rawX = e.nativeEvent.offsetX;
-      const startTime = Math.max(0, Math.round((rawX / pixelsPerSecond) * 1_000_000));
+      const startTime = Math.max(0, Math.round((rawX / (pixelsPerSecond * cssZoomScale)) * 1_000_000));
 
       if (media.type === "video" && currentTrack.type === "video") {
         const groupId = crypto.randomUUID();

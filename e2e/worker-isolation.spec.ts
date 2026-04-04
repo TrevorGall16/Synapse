@@ -8,12 +8,9 @@ import { test, expect } from "./fixtures/audit-page";
 const FIXTURE_VIDEO = path.resolve(__dirname, "fixtures/test-proxy.mp4");
 
 test.describe("Worker Isolation", () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, auditPage }) => {
     await page.goto("/studio");
-    await page.waitForSelector('[data-testid="dirty-state-indicator"]', {
-      state: "attached",
-      timeout: 15_000,
-    });
+    await auditPage.waitForReady();
 
     // Create project if splash is showing
     const createBtn = page.locator('[data-testid="studio-create-project"]');

@@ -44,6 +44,26 @@ interface WaitForWorkerEventOptions {
 export class AuditPage {
   constructor(public readonly page: Page) {}
 
+  // ── Readiness ────────────────────────────────────────────────────────────────
+
+  /**
+   * Wait for the audit infrastructure to be fully mounted:
+   * 1. dirty-state-indicator in DOM (always rendered by AppBootstrap)
+   * 2. __synapseAuditReady flag set (all hooks registered)
+   *
+   * Call this after page.goto() and before invoking any __audit* helpers.
+   */
+  async waitForReady(timeoutMs: number = 30_000): Promise<void> {
+    await this.page.waitForSelector('[data-testid="dirty-state-indicator"]', {
+      state: "attached",
+      timeout: timeoutMs,
+    });
+    await this.page.waitForFunction(
+      () => (window as unknown as Record<string, unknown>)["__synapseAuditReady"] === true,
+      { timeout: timeoutMs },
+    );
+  }
+
   // ── Buffer management ────────────────────────────────────────────────────────
 
   /** Record Date.now() as the start of an audited flow. */

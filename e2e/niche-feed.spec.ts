@@ -15,7 +15,7 @@ test.describe("Niche Feed Observer Loading", () => {
     // for the content area to be present)
     await page.waitForSelector("div.flex-1.overflow-y-auto", {
       state: "attached",
-      timeout: 10_000,
+      timeout: 15_000,
     });
 
     // With no posts, there should be zero niche-card elements
@@ -27,26 +27,15 @@ test.describe("Niche Feed Observer Loading", () => {
     expect(videoCount).toBe(0);
   });
 
-  test("videos are not all mounted simultaneously when many cards exist", async ({ page }) => {
+  test("videos are not all mounted simultaneously when many cards exist", async ({ page, auditPage }) => {
     // Use a small viewport so only the first few cards fit above the fold
     await page.setViewportSize({ width: 1024, height: 600 });
 
     // Navigate to cinematic niche first so the page is ready
     await page.goto("/niche/cinematic");
 
-    // Wait for AppBootstrap to mount (confirms AUDIT_MODE hooks are available)
-    await page.waitForSelector('[data-testid="dirty-state-indicator"]', {
-      state: "attached",
-      timeout: 15_000,
-    });
-
-    // Wait for AUDIT_MODE hooks to be registered by AppBootstrap's useEffect before seeding.
-    // dirty-state-indicator is always rendered (AUDIT_MODE and non), but the hooks themselves
-    // are registered in a separate useEffect — wait until the function is present on window.
-    await page.waitForFunction(
-      () => typeof (window as unknown as Record<string, unknown>)["__auditSeedNichePosts"] === "function",
-      { timeout: 5_000 },
-    );
+    // Wait for all AUDIT_MODE hooks to be mounted via deterministic readiness flag
+    await auditPage.waitForReady();
 
     // Seed 30 posts with a non-empty videoUrl so that IntersectionObserver gating
     // (not an empty URL) is what prevents off-screen video elements from mounting.
