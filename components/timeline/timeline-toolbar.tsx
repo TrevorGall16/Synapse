@@ -1,17 +1,14 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine, ArrowRightLeft, Music, Settings, Download, X, Globe, FolderX, RotateCcw } from "lucide-react";
+import { Scissors, Unlink, Link, Trash2, Type, Sparkles, Combine, ArrowRightLeft, Music, Settings, Download, X, Globe, FolderX } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { removeMediaFromDB } from "@/lib/store/media-pool-db";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import type { ClipEvent } from "@/lib/store/types";
-import { canRestoreOriginal } from "@/lib/store/project-helpers";
 import { ExportModal } from "@/components/studio/export-modal";
 import { ProjectSettingsModal } from "@/components/studio/project-settings-modal";
 import { PublishModal } from "@/components/studio/publish-modal";
-import { RestoreConfirmDialog } from "@/components/timeline/restore-confirm-dialog";
-
 
 export function TimelineToolbar() {
   const selectedClipIds = useProjectStore((s) => s.selectedClipIds);
@@ -29,7 +26,6 @@ export function TimelineToolbar() {
   const [showExport, setShowExport]     = useState(false);
   const [showPublish, setShowPublish]   = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   const handleDeleteProject = () => {
@@ -63,13 +59,6 @@ export function TimelineToolbar() {
   const onHeal = () => {
     const { selectedClipIds: ids, joinClips } = useProjectStore.getState();
     if (ids.length > 1) joinClips(ids);
-  };
-
-  const isRestoreValid = canRestoreOriginal(selectedClipIds, tracks);
-
-  const onRestoreOriginal = () => {
-    if (!isRestoreValid) return;
-    setShowRestoreConfirm(true);
   };
 
   const onAddText = () => {
@@ -116,7 +105,6 @@ export function TimelineToolbar() {
         <Btn icon={<Link size={16} />} label="Regroup (G)" disabled={selectedClipIds.length < 2} onClick={onRegroup} />
         <Btn icon={<Trash2 size={16} />} label="Delete (Del)" disabled={!hasSelection} onClick={onDelete} />
         <Btn icon={<Combine size={16} />} label="Heal (H)" disabled={selectedClipIds.length < 2} onClick={onHeal} />
-        <Btn icon={<RotateCcw size={16} />} label="Restore Original" disabled={!isRestoreValid} onClick={onRestoreOriginal} />
 
         <div className="mx-1 h-4 w-px bg-white/10" />
 
@@ -179,7 +167,6 @@ export function TimelineToolbar() {
       {showSettings && <ProjectSettingsModal onClose={() => setShowSettings(false)} />}
       {showExport   && <ExportModal   onClose={() => setShowExport(false)} />}
       {showPublish  && <PublishModal  onClose={() => setShowPublish(false)} />}
-      {showRestoreConfirm && <RestoreConfirmDialog onClose={() => setShowRestoreConfirm(false)} />}
     </>
   );
 }
