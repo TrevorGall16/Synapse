@@ -58,6 +58,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const dragOriginMicros = useRef(0);
   // Cursor-lock grab anchor — set once at mousedown, NEVER advanced during drag.
   const grabOffsetMicros = useRef(0);
+  /** Cached DOM refs of grouped sibling clips — resolved once at drag start, cleared at drag end. */
+  const groupedElsRef = useRef<HTMLElement[]>([]);
   const dragAnchorX    = useRef(0); // clientX at mousedown — used for speed detection only
   const lastClientX    = useRef(0); // used for speed detection (avoids e.movementX unreliability)
   const isEdgeDragging = useRef<"left" | "right" | false>(false);
@@ -133,6 +135,14 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       grabOffsetMicros.current = screenXToTimeMicros(e.clientX, containerRect, scrollLeft, pixelsPerSecond, cssZoomScale) - clip.startTime;
       dragAnchorX.current = e.clientX; // for speed detection
       lastClientX.current = e.clientX;
+      // Cache grouped sibling DOM elements for lockstep drag rendering.
+      // Queried once here — zero DOM queries during the move loop.
+      if (clip.groupId) {
+        const all = document.querySelectorAll<HTMLElement>(`[data-group-id="${clip.groupId}"]`);
+        groupedElsRef.current = Array.from(all).filter((el) => el !== clipRef.current);
+      } else {
+        groupedElsRef.current = [];
+      }
     },
     [clip.id, clip.groupId, clip.startTime, trackId, pixelsPerSecond]
   );
@@ -214,10 +224,14 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       dragStartMicros.current = newStart;
 
       // ── Lockstep DOM writes: clip preview + indicator in the SAME frame ─────
+      const previewPx = timeMicrosToTimelinePx(newStart, pixelsPerSecond);
       // 1. Clip position — direct DOM, no store round-trip
       if (clipRef.current) {
-        const previewPx = timeMicrosToTimelinePx(newStart, pixelsPerSecond);
         clipRef.current.style.transform = `translate3d(${previewPx}px, 0, 0)`;
+      }
+      // 1b. Grouped siblings — same transform, same frame
+      for (const el of groupedElsRef.current) {
+        el.style.transform = `translate3d(${previewPx}px, 0, 0)`;
       }
       // 2. Snap indicator — direct DOM, same frame
       updateIndicatorDOM(snapPos, snapIsHard);
@@ -251,6 +265,14 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       // Clear indicator via store for React reconciliation
       usePlaybackStore.getState().setSnapIndicator(null);
       updateIndicatorDOM(null, false);
+      // Clear inline transforms so React can reconcile from store state
+      if (clipRef.current) {
+        clipRef.current.style.transform = "";
+      }
+      for (const el of groupedElsRef.current) {
+        el.style.transform = "";
+      }
+      groupedElsRef.current = [];
     },
     [clip.id, updateIndicatorDOM]
   );
@@ -471,6 +493,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
+      data-clip-id={clip.id}
+      data-group-id={clip.groupId ?? undefined}
     >
       {/* Preset drop highlight */}
       {isDropTarget && (
