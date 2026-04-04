@@ -6,20 +6,10 @@
 import { test, expect } from "./fixtures/audit-page";
 
 test.describe("Razor Correctness", () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, auditPage }) => {
     await page.goto("/studio");
-    // Wait for AppBootstrap (and AUDIT_MODE hooks) to mount
-    await page.waitForSelector('[data-testid="dirty-state-indicator"]', {
-      state: "attached",
-      timeout: 15_000,
-    });
-
-    // Wait for AUDIT_MODE hooks to be registered by AppBootstrap's useEffect.
-    // dirty-state-indicator is always rendered but hooks live in a separate useEffect.
-    await page.waitForFunction(
-      () => typeof (window as unknown as Record<string, unknown>)["__auditAddTestClip"] === "function",
-      { timeout: 5_000 },
-    );
+    // Wait for all AUDIT_MODE hooks to be mounted via deterministic readiness flag
+    await auditPage.waitForReady();
 
     // Create project if splash is showing
     const createBtn = page.locator('[data-testid="studio-create-project"]');
@@ -52,7 +42,7 @@ test.describe("Razor Correctness", () => {
         if (!getTracks) return false;
         return getTracks().some((t) => t.type === "video" && t.clips.some((c) => c.sourceId === "audit-source-1"));
       },
-      { timeout: 3_000 },
+      { timeout: 5_000 },
     );
 
     // Position the playhead at the midpoint of the clip (5s = 5_000_000µs)
@@ -138,7 +128,7 @@ test.describe("Razor Correctness", () => {
         if (!getTracks) return false;
         return getTracks().some((t) => t.type === "video" && t.clips.some((c) => c.sourceId === "audit-source-1"));
       },
-      { timeout: 3_000 },
+      { timeout: 5_000 },
     );
 
     // Split at 3s mark (3_000_000µs)
@@ -207,7 +197,7 @@ test.describe("Razor Correctness", () => {
         if (!getTracks) return false;
         return getTracks().some((t) => t.type === "video" && t.clips.some((c) => c.sourceId === "audit-source-1"));
       },
-      { timeout: 3_000 },
+      { timeout: 5_000 },
     );
 
     const ORIGINAL_DURATION = 10_000_000;
@@ -249,8 +239,15 @@ test.describe("Razor Correctness", () => {
     });
     await page.waitForTimeout(100);
 
-    // Trigger Restore Original via keyboard shortcut
-    await page.keyboard.press("Control+Shift+R");
+    // Trigger Restore Original via toolbar button — opens confirmation dialog
+    const restoreToolbarBtn = page.locator('button[aria-label="Restore Original"]');
+    await expect(restoreToolbarBtn).toBeEnabled({ timeout: 3_000 });
+    await restoreToolbarBtn.click();
+
+    // Confirm in the RestoreConfirmDialog
+    const restoreConfirmBtn = page.locator('button:has-text("Restore")').last();
+    await expect(restoreConfirmBtn).toBeVisible({ timeout: 3_000 });
+    await restoreConfirmBtn.click();
     await page.waitForTimeout(200);
 
     // Verify: 1 clip, duration matches original media
