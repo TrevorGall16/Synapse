@@ -6,13 +6,11 @@ export interface SnapResult {
   isHard: boolean;
 }
 
-/** Priority-based snap:
- *  #0 — end-to-start Perfect Cut (10px) → white indicator, hard snap lock
- *  #1 — user markers (12px)
- *  #2 — BPM beats, playhead, clip starts/ends (8px)
- *
- *  Returns { time, isHard } and updates the snap indicator in the playback store. */
-export function snapToNearby(micros: number, pps: number, excludeClipId: string): SnapResult {
+/**
+ * Pure snap calculation — returns { time, isHard } with NO store side effects.
+ * Use this in drag loops where the caller manages indicator updates directly.
+ */
+export function snapToNearbyPure(micros: number, pps: number, excludeClipId: string): SnapResult {
   const hardThreshold  = Math.round((10 / pps) * 1_000_000);
   const markerThreshold = Math.round((12 / pps) * 1_000_000);
   const softThreshold  = Math.round((8  / pps) * 1_000_000);
@@ -25,9 +23,7 @@ export function snapToNearby(micros: number, pps: number, excludeClipId: string)
     for (const c of t.clips) {
       if (c.id === excludeClipId) continue;
       const clipEnd = c.startTime + c.duration;
-      // dragging clip's start snaps to another clip's end
       if (Math.abs(micros - clipEnd) < hardThreshold) {
-        usePlaybackStore.getState().setSnapIndicator(clipEnd, true);
         return { time: clipEnd, isHard: true };
       }
     }
@@ -36,7 +32,6 @@ export function snapToNearby(micros: number, pps: number, excludeClipId: string)
   // ── Priority #1: User markers (stronger threshold) ──
   for (const marker of markers) {
     if (Math.abs(micros - marker.time) < markerThreshold) {
-      usePlaybackStore.getState().setSnapIndicator(marker.time, false);
       return { time: marker.time, isHard: false };
     }
   }
@@ -65,7 +60,15 @@ export function snapToNearby(micros: number, pps: number, excludeClipId: string)
     }
   }
 
-  const didSnap = snapped !== micros;
-  usePlaybackStore.getState().setSnapIndicator(didSnap ? snapped : null, false);
-  return { time: Math.round(snapped), isHard: false };
+  return { time: Math.round(snapped), isHard: snapped !== micros };
+}
+
+/** Priority-based snap with store side-effect (updates snap indicator).
+ *  Use this for non-drag contexts (edge trim, etc.) where store-driven
+ *  rendering is acceptable. */
+export function snapToNearby(micros: number, pps: number, excludeClipId: string): SnapResult {
+  const result = snapToNearbyPure(micros, pps, excludeClipId);
+  const didSnap = result.time !== micros;
+  usePlaybackStore.getState().setSnapIndicator(didSnap ? result.time : null, result.isHard);
+  return result;
 }
