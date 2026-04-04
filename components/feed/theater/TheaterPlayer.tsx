@@ -349,24 +349,45 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    setProgress(ratio * 100);
+
     if (clipsRef.current.length > 0) {
-      phRef.current = ratio * totalDurRef.current;
-      loadedClipRef.current = null; loadedClipUrlRef.current = null;
-      syncClip(phRef.current);
+      // Snapshot post: seek within the demo window
+      const startUs = post.demoStartTime ?? 0;
+      const demoDurUs = post.demoDuration ?? totalDurRef.current;
+      const targetUs = startUs + ratio * demoDurUs;
+      phRef.current = targetUs;
+      setProgress(ratio * 100);
+
+      // Only invalidate loaded clip if the target falls outside the current clip's range
+      const currentClip = clipsRef.current.find((c) => c.id === loadedClipRef.current);
+      if (!currentClip || targetUs < currentClip.startTime || targetUs >= currentClip.startTime + currentClip.duration) {
+        loadedClipRef.current = null;
+        loadedClipUrlRef.current = null;
+      }
+
+      // Seek the video element to the correct media offset within the target clip
+      const targetClip = clipsRef.current.find((c) => targetUs >= c.startTime && targetUs < c.startTime + c.duration);
+      if (targetClip && videoRef.current) {
+        const mediaTime = (targetUs - targetClip.startTime + (targetClip.mediaOffset ?? 0)) / 1_000_000;
+        videoRef.current.currentTime = mediaTime;
+      }
+
+      syncClip(targetUs);
     } else {
+      // Simple video post
       const v = videoRef.current;
       if (v?.duration) {
         if (post.projectSnapshot) {
           const demoStartS = (post.demoStartTime ?? 0) / 1_000_000;
-          const demoDurS   = (post.demoDuration  ?? 0) / 1_000_000 || v.duration;
+          const demoDurS = (post.demoDuration ?? 0) / 1_000_000 || v.duration;
           v.currentTime = demoStartS + ratio * demoDurS;
         } else {
           v.currentTime = ratio * v.duration;
         }
+        setProgress(ratio * 100);
       }
     }
-  }, [syncClip]);
+  }, [syncClip, post.demoStartTime, post.demoDuration]);
 
   // ── Boot: load first clip or simple videoUrl ───────────────────────────────
 
