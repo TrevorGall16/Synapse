@@ -10,6 +10,7 @@ import { canRestoreOriginal } from "@/lib/store/project-helpers";
 import { ExportModal } from "@/components/studio/export-modal";
 import { ProjectSettingsModal } from "@/components/studio/project-settings-modal";
 import { PublishModal } from "@/components/studio/publish-modal";
+import { RestoreConfirmDialog } from "@/components/timeline/restore-confirm-dialog";
 
 
 export function TimelineToolbar() {
@@ -28,6 +29,7 @@ export function TimelineToolbar() {
   const [showExport, setShowExport]     = useState(false);
   const [showPublish, setShowPublish]   = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   const handleDeleteProject = () => {
@@ -67,7 +69,7 @@ export function TimelineToolbar() {
 
   const onRestoreOriginal = () => {
     if (!isRestoreValid) return;
-    useProjectStore.getState().restoreOriginalClips(selectedClipIds);
+    setShowRestoreConfirm(true);
   };
 
   const onAddText = () => {
@@ -98,37 +100,37 @@ export function TimelineToolbar() {
           <button onClick={() => setConfirmDelete(false)} className="rounded border border-white/15 px-2.5 py-1 text-[10px] text-white/50 hover:bg-white/8">Cancel</button>
         </div>
       )}
-      <div className="flex items-center gap-0.5 px-2">
+      <div className="flex items-center gap-1.5 px-2">
         {/* Project name input */}
         <input ref={nameRef} type="text" value={projectName} onChange={(e) => setName(e.target.value)}
           onPointerDown={(e) => e.stopPropagation()} placeholder="Untitled Project"
           className="mr-1 w-32 truncate rounded bg-transparent px-1.5 py-0.5 text-[11px] font-semibold text-white/70 outline-none ring-1 ring-transparent transition-all hover:ring-white/15 focus:bg-white/5 focus:ring-white/25 focus:text-white"
         />
         <button onClick={() => setConfirmDelete(true)} title="Delete Project" aria-label="Delete Project"
-          className="mr-1 rounded p-1 text-white/30 transition-colors hover:bg-red-500/15 hover:text-red-400">
-          <FolderX size={12} />
+          className="mr-1 rounded p-1.5 text-white/30 transition-colors hover:bg-red-500/15 hover:text-red-400 focus-visible:ring-1 focus-visible:ring-white/40 focus-visible:outline-none">
+          <FolderX size={14} />
         </button>
         <div className="mx-0.5 h-4 w-px bg-white/10" />
-        <Btn icon={<Scissors size={12} />} label="Split (S)" disabled={!hasSelection} onClick={onSplit} />
-        <Btn icon={<Unlink size={12} />} label="Ungroup (U)" disabled={!hasSelection} onClick={onUngroup} />
-        <Btn icon={<Link size={12} />} label="Regroup (G)" disabled={selectedClipIds.length < 2} onClick={onRegroup} />
-        <Btn icon={<Trash2 size={12} />} label="Delete (Del)" disabled={!hasSelection} onClick={onDelete} />
-        <Btn icon={<Combine size={12} />} label="Heal (H)" disabled={selectedClipIds.length < 2} onClick={onHeal} />
-        <Btn icon={<RotateCcw size={12} />} label="Restore Original (Ctrl+Shift+R)" disabled={!isRestoreValid} onClick={onRestoreOriginal} />
+        <Btn icon={<Scissors size={16} />} label="Split (S)" disabled={!hasSelection} onClick={onSplit} />
+        <Btn icon={<Unlink size={16} />} label="Ungroup (U)" disabled={!hasSelection} onClick={onUngroup} />
+        <Btn icon={<Link size={16} />} label="Regroup (G)" disabled={selectedClipIds.length < 2} onClick={onRegroup} />
+        <Btn icon={<Trash2 size={16} />} label="Delete (Del)" disabled={!hasSelection} onClick={onDelete} />
+        <Btn icon={<Combine size={16} />} label="Heal (H)" disabled={selectedClipIds.length < 2} onClick={onHeal} />
+        <Btn icon={<RotateCcw size={16} />} label="Restore Original" disabled={!isRestoreValid} onClick={onRestoreOriginal} />
 
         <div className="mx-1 h-4 w-px bg-white/10" />
 
-        <Btn icon={<Type size={12} />} label="Add Text" onClick={onAddText} />
-        <Btn icon={<Sparkles size={12} />} label="Add FX" onClick={onAddFx} />
+        <Btn icon={<Type size={16} />} label="Add Text" onClick={onAddText} />
+        <Btn icon={<Sparkles size={16} />} label="Add FX" onClick={onAddFx} />
 
         <div className="mx-1 h-4 w-px bg-white/10" />
 
         <button
           onClick={() => usePlaybackStore.getState().toggleRippleMode()}
           title={`Ripple Edit ${rippleMode ? "(On)" : "(Off)"}`} aria-label="Ripple Edit"
-          className={`rounded p-1 transition-colors ${rippleMode ? "bg-orange-500/20 text-orange-400" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
+          className={`rounded p-1.5 transition-colors focus-visible:ring-1 focus-visible:ring-white/40 focus-visible:outline-none ${rippleMode ? "bg-orange-500/20 text-orange-400" : "text-white/50 hover:bg-white/10 hover:text-white active:bg-white/15"}`}
         >
-          <ArrowRightLeft size={12} />
+          <ArrowRightLeft size={14} />
         </button>
 
         <div className="mx-1 h-4 w-px bg-white/10" />
@@ -145,15 +147,15 @@ export function TimelineToolbar() {
 
         {/* Project Settings gear — opens full modal */}
         <button onClick={() => setShowSettings(true)} title="Project Settings" aria-label="Project Settings"
-          className="ml-1 rounded p-1 text-white/50 transition-colors hover:bg-white/10 hover:text-white">
-          <Settings size={12} />
+          className="ml-1 rounded p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-1 focus-visible:ring-white/40 focus-visible:outline-none">
+          <Settings size={14} />
         </button>
 
         {/* Clear selection */}
         {selectionStart != null && (
           <button onClick={clearSelection} title="Clear Selection" aria-label="Clear Selection"
-            className="ml-1 rounded p-1 text-blue-400/70 transition-colors hover:bg-white/10 hover:text-blue-400">
-            <X size={12} />
+            className="ml-1 rounded p-1.5 text-blue-400/70 transition-colors hover:bg-white/10 hover:text-blue-400 focus-visible:ring-1 focus-visible:ring-white/40 focus-visible:outline-none">
+            <X size={14} />
           </button>
         )}
 
@@ -169,14 +171,15 @@ export function TimelineToolbar() {
 
         {/* Export */}
         <button data-testid="export-btn" onClick={() => setShowExport(true)} title="Export Project" aria-label="Export Project"
-          className="rounded p-1 text-white/50 transition-colors hover:bg-white/10 hover:text-white">
-          <Download size={12} />
+          className="rounded p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white focus-visible:ring-1 focus-visible:ring-white/40 focus-visible:outline-none">
+          <Download size={14} />
         </button>
       </div>
 
       {showSettings && <ProjectSettingsModal onClose={() => setShowSettings(false)} />}
       {showExport   && <ExportModal   onClose={() => setShowExport(false)} />}
       {showPublish  && <PublishModal  onClose={() => setShowPublish(false)} />}
+      {showRestoreConfirm && <RestoreConfirmDialog onClose={() => setShowRestoreConfirm(false)} />}
     </>
   );
 }
@@ -184,7 +187,7 @@ export function TimelineToolbar() {
 function Btn({ icon, label, disabled = false, onClick }: { icon: React.ReactNode; label: string; disabled?: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} disabled={disabled} aria-label={label} title={label}
-      className={`rounded p-1 transition-colors ${disabled ? "cursor-not-allowed text-white/20" : "text-white/50 hover:bg-white/10 hover:text-white"}`}>
+      className={`rounded-md p-2 transition-colors focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:outline-none ${disabled ? "cursor-not-allowed text-white/20" : "text-white/50 hover:bg-white/10 hover:text-white active:bg-white/20"}`}>
       {icon}
     </button>
   );
