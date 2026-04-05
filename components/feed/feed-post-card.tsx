@@ -91,10 +91,12 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   }, [firstClipSrc, firstClipOffset]);
 
   const handleShare = () => {
+    if (!post.id) { setToast("Cannot share — post has no ID"); setTimeout(() => setToast(null), 2000); return; }
     const shareUrl = `${window.location.origin}/video/${post.id}`;
-    navigator.clipboard.writeText(shareUrl).catch(() => {});
-    setToast("Link copied to clipboard");
-    setTimeout(() => setToast(null), 2000);
+    navigator.clipboard.writeText(shareUrl).then(
+      () => { setToast("Link copied"); setTimeout(() => setToast(null), 2000); },
+      () => { setToast("Failed to copy link"); setTimeout(() => setToast(null), 2000); },
+    );
   };
 
   const handleComment = () => {

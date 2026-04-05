@@ -91,9 +91,10 @@ export function TheaterUI({
   };
 
   const handleShare = () => {
+    if (!post.id) { showToast("Cannot share — post has no ID"); return; }
     const shareUrl = `${window.location.origin}/video/${post.id}`;
     navigator.clipboard.writeText(shareUrl).then(
-      () => showToast("Link copied to clipboard"),
+      () => showToast("Link copied"),
       () => showToast("Failed to copy link"),
     );
   };
