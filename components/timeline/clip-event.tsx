@@ -59,7 +59,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   // Cursor-lock grab anchor — set once at mousedown, NEVER advanced during drag.
   const grabOffsetMicros = useRef(0);
   /** Cached DOM refs of grouped sibling clips — resolved once at drag start, cleared at drag end. */
-  const groupedElsRef = useRef<{ el: HTMLElement; originMicros: number }[]>([]);
+  const groupedElsRef = useRef<{ el: HTMLElement; originMicros: number; prevTransition: string }[]>([]);
   /** Latched true once pointer moves past the 2px deadzone — prevents click-to-teleport. */
   const hasDraggedRef = useRef(false);
   const dragAnchorX    = useRef(0); // clientX at mousedown — used for speed detection + deadzone
@@ -138,6 +138,10 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       grabOffsetMicros.current = screenXToTimeMicros(e.clientX, rect, scrollLeft, pixelsPerSecond, 1) - clip.startTime;
       dragAnchorX.current = e.clientX; // for speed detection
       lastClientX.current = e.clientX;
+      // Disable transition on dragged clip for the entire drag duration
+      if (clipRef.current) {
+        clipRef.current.style.transition = "none";
+      }
       // Cache grouped sibling DOM elements + their origin startTimes for lockstep drag.
       // Queried once here — zero DOM queries during the move loop.
       if (clip.groupId) {
@@ -151,7 +155,19 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
         });
         groupedElsRef.current = groupClips
           .filter((c) => elMap.has(c.id))
-          .map((c) => ({ el: elMap.get(c.id)!, originMicros: c.startTime }));
+          .map((c) => {
+            const el = elMap.get(c.id)!;
+            const prevTransition = el.style.transition;
+            el.style.transition = "none";
+            return { el, originMicros: c.startTime, prevTransition };
+          });
+        // Dev warning for missing grouped elements
+        if (process.env.NODE_ENV === "development") {
+          const missing = groupClips.filter((c) => !elMap.has(c.id));
+          if (missing.length > 0) {
+            console.warn(`[clip-event] Grouped clips missing DOM elements:`, missing.map((c) => c.id));
+          }
+        }
       } else {
         groupedElsRef.current = [];
       }
@@ -279,11 +295,39 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
 
   const onPointerUp = useCallback(
     (e: React.PointerEvent) => {
+      // ── If user never actually dragged past the deadzone, skip commit entirely ──
+      if (!hasDraggedRef.current) {
+        dragStartMicros.current = null;
+        isDragging.current = false;
+        hasDraggedRef.current = false;
+        setIsDraggingState(false);
+        hardSnapLock.current = null;
+        accumY.current = 0;
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        // Restore transitions on grouped siblings
+        for (const m of groupedElsRef.current) {
+          m.el.style.transition = m.prevTransition ?? "";
+        }
+        groupedElsRef.current = [];
+        return;
+      }
+
       // ── Commit transient drag position to the store ──────────────────────────
       if (dragStartMicros.current !== null) {
         const deltaTime = dragStartMicros.current - dragOriginMicros.current;
         if (deltaTime !== 0) {
           useProjectStore.getState().moveClip(clip.id, deltaTime, 0);
+        }
+        // Set explicit final transform from computed position so no frame renders at x=0.
+        // React will overwrite this when it reconciles with the new store state.
+        const finalPx = timeMicrosToTimelinePx(dragStartMicros.current, pixelsPerSecond);
+        if (clipRef.current) {
+          clipRef.current.style.transform = `translate3d(${finalPx}px, 0, 0)`;
+        }
+        const deltaMicros = dragStartMicros.current - dragOriginMicros.current;
+        for (const m of groupedElsRef.current) {
+          const sibPx = timeMicrosToTimelinePx(m.originMicros + deltaMicros, pixelsPerSecond);
+          m.el.style.transform = `translate3d(${sibPx}px, 0, 0)`;
         }
       }
       dragStartMicros.current = null;
@@ -296,16 +340,45 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       // Clear indicator via store for React reconciliation
       usePlaybackStore.getState().setSnapIndicator(null);
       updateIndicatorDOM(null, false);
-      // Clear inline transforms so React can reconcile from store state
+      // Restore transitions on all drag elements
       if (clipRef.current) {
-        clipRef.current.style.transform = "";
+        clipRef.current.style.transition = "";
       }
       for (const m of groupedElsRef.current) {
-        m.el.style.transform = "";
+        m.el.style.transition = m.prevTransition ?? "";
       }
       groupedElsRef.current = [];
     },
-    [clip.id, updateIndicatorDOM]
+    [clip.id, pixelsPerSecond, updateIndicatorDOM]
+  );
+
+  // ── Pointer cancel safety — same cleanup as pointerUp without commit ────
+  const onPointerCancel = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isDragging.current) return;
+      // Revert to original position — no store mutation
+      const originPx = timeMicrosToTimelinePx(dragOriginMicros.current, pixelsPerSecond);
+      if (clipRef.current) {
+        clipRef.current.style.transform = `translate3d(${originPx}px, 0, 0)`;
+        clipRef.current.style.transition = "";
+      }
+      for (const m of groupedElsRef.current) {
+        const sibPx = timeMicrosToTimelinePx(m.originMicros, pixelsPerSecond);
+        m.el.style.transform = `translate3d(${sibPx}px, 0, 0)`;
+        m.el.style.transition = m.prevTransition ?? "";
+      }
+      dragStartMicros.current = null;
+      isDragging.current = false;
+      hasDraggedRef.current = false;
+      setIsDraggingState(false);
+      hardSnapLock.current = null;
+      accumY.current = 0;
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      usePlaybackStore.getState().setSnapIndicator(null);
+      updateIndicatorDOM(null, false);
+      groupedElsRef.current = [];
+    },
+    [pixelsPerSecond, updateIndicatorDOM]
   );
 
   // ── Edge trim handlers ──────────────────────────────────
@@ -507,7 +580,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   return (
     <div
       ref={clipRef}
-      className={`absolute top-0 flex h-full cursor-grab select-none items-center overflow-hidden ${isDraggingState ? "" : "transition-transform"} active:cursor-grabbing ${
+      className={`absolute top-0 flex h-full cursor-grab select-none items-center overflow-hidden transition-transform active:cursor-grabbing ${
         isSelected ? "ring-2 ring-white" : isDropTarget ? "ring-2 ring-purple-400" : isPulsing ? "ring-2 ring-purple-300" : ""
       } ${hasLeftNeighbor ? "rounded-r" : hasRightNeighbor ? "rounded-l" : "rounded"}`}
       style={{
@@ -520,6 +593,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}
