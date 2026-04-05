@@ -58,6 +58,8 @@ export interface TheaterUIProps {
   onCreator: () => void;
   onHashtagClick: (tag: string) => void;
   blurSrc?: string;
+  isCommentsOpen: boolean;
+  onToggleComments: () => void;
 }
 
 // ── TheaterUI ─────────────────────────────────────────────────────────────────
@@ -89,6 +91,8 @@ export function TheaterUI({
   onCreator,
   onHashtagClick,
   blurSrc,
+  isCommentsOpen,
+  onToggleComments,
 }: TheaterUIProps) {
   const [toast, setToast] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -143,10 +147,6 @@ export function TheaterUI({
     );
     setShareOpen(false);
   }, [post.id, post.title]);
-
-  const handleComment = () => {
-    showToast("Comments coming soon");
-  };
 
   return (
     <>
@@ -314,9 +314,13 @@ export function TheaterUI({
           <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.likes + (liked ? 1 : 0))}</span>
         </button>
         {/* Comment */}
-        <button onClick={handleComment} className="flex flex-col items-center gap-1">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/12">
-            <MessageCircle size={20} className="text-white" />
+        <button onClick={onToggleComments} className="flex flex-col items-center gap-1">
+          <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${
+            isCommentsOpen
+              ? "border-purple-400/40 bg-purple-500/25"
+              : "border-white/15 bg-black/40 hover:bg-white/12"
+          }`}>
+            <MessageCircle size={20} className={isCommentsOpen ? "text-purple-300" : "text-white"} />
           </div>
           <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.comments)}</span>
         </button>

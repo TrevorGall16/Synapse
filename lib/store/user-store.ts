@@ -49,6 +49,8 @@ interface UserState {
   rankName: string;
   /** Days in a row the user has published/remixed — placeholder for future streak logic */
   streak: number;
+  /** Stable UUID for comment authorship — persisted across reloads */
+  commentUserId: string;
   setProfile: (patch: Partial<UserProfile>) => void;
   addXp: (amount: number) => void;
 }
@@ -62,6 +64,7 @@ export const useUserStore = create<UserState>()(
       level: 0,
       rankName: "Novice",
       streak: 0,
+      commentUserId: crypto.randomUUID(),
       setProfile: (patch) =>
         set((s) => ({ profile: { ...(s.profile ?? DEFAULT_PROFILE), ...patch } })),
       addXp: (amount) =>
@@ -104,6 +107,7 @@ export const useUserStore = create<UserState>()(
             level:    (s?.level    as number) ?? 0,
             rankName: (s?.rankName as string) ?? "Novice",
             streak:   (s?.streak   as number) ?? 0,
+            commentUserId: (s?.commentUserId as string) || crypto.randomUUID(),
           });
         });
       },

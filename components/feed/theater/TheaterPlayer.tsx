@@ -46,9 +46,11 @@ export interface CellProps {
   onHashtagClick: (tag: string) => void;
   globalMuted: boolean;
   isActive: boolean;
+  isCommentsOpen: boolean;
+  onToggleComments: () => void;
 }
 
-export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, globalMuted, isActive }: CellProps) {
+export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick, globalMuted, isActive, isCommentsOpen, onToggleComments }: CellProps) {
   const videoRef          = useRef<HTMLVideoElement>(null);
   const mountedRef        = useRef(true);
   // GlobalTicker callback IDs (replaces independent requestAnimationFrame chains)
@@ -596,6 +598,8 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           onCreator={onCreator}
           onHashtagClick={onHashtagClick}
           blurSrc={blurSrc}
+          isCommentsOpen={isCommentsOpen}
+          onToggleComments={onToggleComments}
         />
       </div>
     </div>

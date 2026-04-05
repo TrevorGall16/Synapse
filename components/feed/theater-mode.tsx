@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { X, Volume2, VolumeX, History, GitBranch } from "lucide-react";
+import { X, Volume2, VolumeX, History, GitBranch, MessageCircle } from "lucide-react";
 import type { FeedPost } from "@/lib/store/feed-store";
 import { TheaterCell } from "./theater-cell";
+import { CommentsDrawer } from "./theater/comments-drawer";
 // Re-exported for backward compatibility — callers import primeTheaterGesture from this module.
 export { primeTheaterGesture } from "./theater-gesture";
 
@@ -34,6 +35,8 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
   const [muted, setMuted]             = useState(true);
   const [activePostId, setActivePostId] = useState(post.id);
   const [showVersions, setShowVersions] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const toggleComments = useCallback(() => setCommentsOpen((v) => !v), []);
   const scrollRef               = useRef<HTMLDivElement>(null);
   const cellRefs                = useRef<Map<string, HTMLDivElement>>(new Map());
   const elementToPid            = useRef<WeakMap<HTMLDivElement, string>>(new WeakMap());
@@ -238,25 +241,47 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
         </div>
       )}
 
-      {/* Vertical snap-scroll feed — deduplicate at render time as a final safety net */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="h-screen overflow-y-scroll snap-y snap-mandatory"
-        style={{ scrollbarWidth: "none" }}
-      >
-        {Array.from(new Map(queue.map((p) => [p.id, p])).values()).map((p) => (
-          <TheaterCell
-            key={p.id}
-            post={p}
-            isActive={activePostId === p.id}
-            cellRef={setCellRef(p.id)}
-            onRemix={onRemix}
-            onCreator={onCreator}
-            onHashtagClick={onHashtagClick ?? (() => {})}
-            globalMuted={muted}
-          />
-        ))}
+      {/* Split-view container */}
+      <div className="relative h-full w-full overflow-hidden">
+        {/* Video pane — CSS transform shrink (no reflow, video stays mounted).
+            scale(0.65) visually shrinks to 65%. translateX(-27%) shifts left
+            to align the shrunken pane's left edge near the viewport left. */}
+        <div
+          className="absolute inset-0 transition-transform duration-300 ease-out will-change-transform"
+          style={{
+            transformOrigin: "center center",
+            transform: commentsOpen ? "translateX(-27%) scale(0.65)" : "translateX(0) scale(1)",
+          }}
+        >
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="h-screen overflow-y-scroll snap-y snap-mandatory"
+            style={{ scrollbarWidth: "none" }}
+          >
+            {Array.from(new Map(queue.map((p) => [p.id, p])).values()).map((p) => (
+              <TheaterCell
+                key={p.id}
+                post={p}
+                isActive={activePostId === p.id}
+                cellRef={setCellRef(p.id)}
+                onRemix={onRemix}
+                onCreator={onCreator}
+                onHashtagClick={onHashtagClick ?? (() => {})}
+                globalMuted={muted}
+                isCommentsOpen={commentsOpen}
+                onToggleComments={toggleComments}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Comments drawer — slides from right, occupies the right 35% */}
+        <CommentsDrawer
+          postId={activePostId}
+          isOpen={commentsOpen}
+          onClose={toggleComments}
+        />
       </div>
     </div>
   );
