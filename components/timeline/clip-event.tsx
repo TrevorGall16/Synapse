@@ -60,7 +60,9 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   const grabOffsetMicros = useRef(0);
   /** Cached DOM refs of grouped sibling clips — resolved once at drag start, cleared at drag end. */
   const groupedElsRef = useRef<{ el: HTMLElement; originMicros: number }[]>([]);
-  const dragAnchorX    = useRef(0); // clientX at mousedown — used for speed detection only
+  /** Latched true once pointer moves past the 2px deadzone — prevents click-to-teleport. */
+  const hasDraggedRef = useRef(false);
+  const dragAnchorX    = useRef(0); // clientX at mousedown — used for speed detection + deadzone
   const lastClientX    = useRef(0); // used for speed detection (avoids e.movementX unreliability)
   const isEdgeDragging = useRef<"left" | "right" | false>(false);
   const isLevelDragging = useRef(false);
@@ -113,12 +115,13 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       // Snapshot before drag for undo
       snapshotHistory("Move Clip");
 
-      const { scrollLeft: sl } = usePlaybackStore.getState();
-      const ctr = e.currentTarget.closest("[data-timeline-scroll-container]");
-      const ctrRect = ctr?.getBoundingClientRect() ?? new DOMRect();
+      // Read scrollLeft from live DOM — store value can be frame-stale and corrupt drag math.
+      const container = e.currentTarget.closest("[data-timeline-scroll-container]") as HTMLElement | null;
+      const rect = container?.getBoundingClientRect() ?? new DOMRect();
+      const scrollLeft = container?.scrollLeft ?? 0;
       // Pointer math uses committed pixelsPerSecond only — transient cssZoomScale
       // is excluded to prevent stale CSS scaleX from corrupting drag coordinates.
-      const clickTime = Math.round(screenXToTimeMicros(e.clientX, ctrRect, sl, pixelsPerSecond, 1));
+      const clickTime = Math.round(screenXToTimeMicros(e.clientX, rect, scrollLeft, pixelsPerSecond, 1));
       usePlaybackStore.getState().setPlayhead(clickTime);
 
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -126,17 +129,13 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       setIsDraggingState(true);
       accumY.current = 0;
       hardSnapLock.current = null;
-      dragStartMicros.current = null;
+      // Initialize to current position — prevents null→0 teleport if released without moving.
+      dragStartMicros.current = clip.startTime;
       dragOriginMicros.current = clip.startTime;
-      // Compute grab offset at mousedown in micros — locks cursor to grab point.
-      // Uses the scroll container rect + cssZoomScale so the conversion is correct
-      // even when the zoom slider applies a transient CSS scaleX to the track area.
-      const { scrollLeft } = usePlaybackStore.getState();
-      const container = e.currentTarget.closest("[data-timeline-scroll-container]");
-      const containerRect = container?.getBoundingClientRect() ?? new DOMRect();
-      // Grab offset uses committed scale only — excludes transient cssZoomScale
-      // to prevent stale CSS scaleX from corrupting the drag anchor.
-      grabOffsetMicros.current = screenXToTimeMicros(e.clientX, containerRect, scrollLeft, pixelsPerSecond, 1) - clip.startTime;
+      hasDraggedRef.current = false;
+      // Grab offset uses live DOM scrollLeft and committed scale only — excludes
+      // transient cssZoomScale to prevent stale CSS scaleX from corrupting the drag anchor.
+      grabOffsetMicros.current = screenXToTimeMicros(e.clientX, rect, scrollLeft, pixelsPerSecond, 1) - clip.startTime;
       dragAnchorX.current = e.clientX; // for speed detection
       lastClientX.current = e.clientX;
       // Cache grouped sibling DOM elements + their origin startTimes for lockstep drag.
@@ -191,17 +190,29 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       if (!isDragging.current) return;
 
+      // ── Drag deadzone: suppress micro-jitter until pointer exceeds 2px from anchor ──
+      if (!hasDraggedRef.current) {
+        const movedPx = Math.abs(e.clientX - dragAnchorX.current);
+        if (movedPx < 2) {
+          // Update lastClientX to prevent a speed spike when drag finally starts.
+          lastClientX.current = e.clientX;
+          return;
+        }
+        hasDraggedRef.current = true;
+      }
+
       // ── Speed detection via stable manual delta (e.movementX is unreliable during snaps) ──
       const speed = Math.abs(e.clientX - lastClientX.current);
       lastClientX.current = e.clientX;
 
-      // ── Virtual position: cursor-locked grab-offset approach ────────────────
-      const { scrollLeft } = usePlaybackStore.getState();
-      const container = (e.currentTarget as HTMLElement).closest("[data-timeline-scroll-container]");
-      const containerRect = container?.getBoundingClientRect() ?? new DOMRect();
+      // ── Virtual position: cursor-locked grab-offset approach ──────────��─────
+      // Read scrollLeft from live DOM — store value can be frame-stale and corrupt drag math.
+      const container = (e.currentTarget as HTMLElement).closest("[data-timeline-scroll-container]") as HTMLElement | null;
+      const rect = container?.getBoundingClientRect() ?? new DOMRect();
+      const scrollLeft = container?.scrollLeft ?? 0;
       // Pointer math uses committed pixelsPerSecond only — transient cssZoomScale
       // is excluded to prevent stale CSS scaleX from corrupting drag position.
-      const virtualTime = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, containerRect, scrollLeft, pixelsPerSecond, 1) - grabOffsetMicros.current));
+      const virtualTime = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, rect, scrollLeft, pixelsPerSecond, 1) - grabOffsetMicros.current));
 
       // ── Compute snappedStart once ────────────────────────────────────────────
       let newStart: number;
@@ -277,6 +288,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       }
       dragStartMicros.current = null;
       isDragging.current = false;
+      hasDraggedRef.current = false;
       setIsDraggingState(false);
       hardSnapLock.current = null;
       accumY.current = 0;
