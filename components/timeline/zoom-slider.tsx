@@ -35,6 +35,17 @@ export function ZoomSlider({ scrollContainerRef, trackAreaRef }: ZoomSliderProps
     setLocalSlider(zoomToSlider(zoomLevel));
   }, [zoomLevel]);
 
+  // Ensure cssZoomScale resets on unmount — prevents stale scale if component
+  // is removed mid-drag (e.g., route change, panel collapse).
+  useEffect(() => {
+    return () => {
+      usePlaybackStore.getState().setCssZoomScale(1);
+      if (trackAreaRef.current) {
+        trackAreaRef.current.style.transform = "";
+      }
+    };
+  }, [trackAreaRef]);
+
   // During drag: update local state only + apply CSS scaleX for instant visual feedback
   const onZoomChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,6 +89,15 @@ export function ZoomSlider({ scrollContainerRef, trackAreaRef }: ZoomSliderProps
     }
   }, [localSlider, setZoom, scrollContainerRef, trackAreaRef]);
 
+  // Guard: reset transient CSS zoom on pointer cancel, blur, or unmount
+  // to prevent stale cssZoomScale from corrupting future pointer math.
+  const resetZoom = useCallback(() => {
+    if (trackAreaRef.current) {
+      trackAreaRef.current.style.transform = "";
+    }
+    usePlaybackStore.getState().setCssZoomScale(1);
+  }, [trackAreaRef]);
+
   const displayZoom = sliderToZoom(localSlider);
 
   return (
@@ -92,6 +112,8 @@ export function ZoomSlider({ scrollContainerRef, trackAreaRef }: ZoomSliderProps
         onChange={onZoomChange}
         onPointerDown={(e) => (e.target as HTMLInputElement).setPointerCapture(e.pointerId)}
         onPointerUp={onPointerUp}
+        onPointerCancel={resetZoom}
+        onBlur={resetZoom}
         className="h-1 w-24 cursor-pointer"
         aria-label="Timeline zoom"
         style={{ accentColor: "#3b82f6" }}

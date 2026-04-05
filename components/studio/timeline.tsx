@@ -40,8 +40,9 @@ function NewTrackDropZone() {
 
     useProjectStore.getState().snapshotHistory("Add Track");
 
-    const { pixelsPerSecond, cssZoomScale } = usePlaybackStore.getState();
-    const startTime = Math.max(0, Math.round((e.nativeEvent.offsetX / (pixelsPerSecond * cssZoomScale)) * 1_000_000));
+    // Drop positioning uses committed pixelsPerSecond only — transient cssZoomScale excluded.
+    const { pixelsPerSecond } = usePlaybackStore.getState();
+    const startTime = Math.max(0, Math.round((e.nativeEvent.offsetX / pixelsPerSecond) * 1_000_000));
 
     if (media.type === "video") {
       // Create a paired Video + Audio track so the linked clips are always together
@@ -113,8 +114,8 @@ export function Timeline() {
     const container = scrollContainerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
-    const { cssZoomScale } = usePlaybackStore.getState();
-    const clickedMicros = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, rect, container.scrollLeft, pixelsPerSecond, cssZoomScale)));
+    // Selection click uses committed pixelsPerSecond only — transient cssZoomScale excluded.
+    const clickedMicros = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, rect, container.scrollLeft, pixelsPerSecond, 1)));
     const { selectionStart, setSelection } = usePlaybackStore.getState();
     const anchor = selectionStart ?? clickedMicros;
     setSelection(Math.min(anchor, clickedMicros), Math.max(anchor, clickedMicros));

@@ -91,8 +91,9 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   }, [firstClipSrc, firstClipOffset]);
 
   const handleShare = () => {
+    const shareUrl = `${window.location.origin}/video/${post.id}`;
+    navigator.clipboard.writeText(shareUrl).catch(() => {});
     setToast("Link copied to clipboard");
-    navigator.clipboard.writeText(window.location.href).catch(() => {});
     setTimeout(() => setToast(null), 2000);
   };
 

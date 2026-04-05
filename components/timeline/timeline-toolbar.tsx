@@ -26,6 +26,7 @@ export function TimelineToolbar() {
   const [showExport, setShowExport]     = useState(false);
   const [showPublish, setShowPublish]   = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmHeal, setConfirmHeal] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   const handleDeleteProject = () => {
@@ -57,8 +58,13 @@ export function TimelineToolbar() {
   };
 
   const onHeal = () => {
+    if (selectedClipIds.length > 1) setConfirmHeal(true);
+  };
+
+  const onHealConfirmed = () => {
     const { selectedClipIds: ids, joinClips } = useProjectStore.getState();
     if (ids.length > 1) joinClips(ids);
+    setConfirmHeal(false);
   };
 
   const onAddText = () => {
@@ -87,6 +93,14 @@ export function TimelineToolbar() {
           <span className="text-[11px] font-semibold text-red-300">Delete project and all media from disk?</span>
           <button onClick={handleDeleteProject} className="rounded bg-red-500/30 px-2.5 py-1 text-[10px] font-bold text-red-300 hover:bg-red-500/50">Delete</button>
           <button onClick={() => setConfirmDelete(false)} className="rounded border border-white/15 px-2.5 py-1 text-[10px] text-white/50 hover:bg-white/8">Cancel</button>
+        </div>
+      )}
+      {/* Heal confirmation banner */}
+      {confirmHeal && (
+        <div className="absolute inset-x-0 top-0 z-50 flex items-center justify-center gap-3 border-b border-amber-500/30 bg-amber-950/80 px-4 py-2 backdrop-blur-sm">
+          <span className="text-[11px] font-semibold text-amber-300">Heal selected clips into one? This cannot be undone.</span>
+          <button onClick={onHealConfirmed} className="rounded bg-amber-500/30 px-2.5 py-1 text-[10px] font-bold text-amber-300 hover:bg-amber-500/50">Heal</button>
+          <button onClick={() => setConfirmHeal(false)} className="rounded border border-white/15 px-2.5 py-1 text-[10px] text-white/50 hover:bg-white/8">Cancel</button>
         </div>
       )}
       <div className="flex items-center gap-1.5 px-2">

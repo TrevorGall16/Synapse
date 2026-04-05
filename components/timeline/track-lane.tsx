@@ -222,8 +222,8 @@ export function TrackLane({ trackId, trackHeight: trackHeightProp }: TrackLanePr
       const container = el.closest("[data-timeline-scroll-container]");
       const containerRect = container?.getBoundingClientRect() ?? el.getBoundingClientRect();
       const sl = container instanceof HTMLElement ? container.scrollLeft : 0;
-      const { cssZoomScale } = usePlaybackStore.getState();
-      setPlayhead(Math.round(screenXToTimeMicros(clientX, containerRect, sl, pixelsPerSecond, cssZoomScale)));
+      // Playhead positioning uses committed pixelsPerSecond only — transient cssZoomScale excluded.
+      setPlayhead(Math.round(screenXToTimeMicros(clientX, containerRect, sl, pixelsPerSecond, 1)));
     },
     [pixelsPerSecond, setPlayhead]
   );
@@ -271,9 +271,9 @@ export function TrackLane({ trackId, trackHeight: trackHeightProp }: TrackLanePr
       if (media.type === "video" && currentTrack.type !== "video") return;
       if (media.type === "audio" && currentTrack.type !== "audio") return;
 
-      const { cssZoomScale } = usePlaybackStore.getState();
+      // Drop positioning uses committed pixelsPerSecond only — transient cssZoomScale excluded.
       const rawX = e.nativeEvent.offsetX;
-      const startTime = Math.max(0, Math.round((rawX / (pixelsPerSecond * cssZoomScale)) * 1_000_000));
+      const startTime = Math.max(0, Math.round((rawX / pixelsPerSecond) * 1_000_000));
 
       if (media.type === "video" && currentTrack.type === "video") {
         const groupId = crypto.randomUUID();

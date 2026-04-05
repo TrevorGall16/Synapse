@@ -225,3 +225,73 @@ describe("clip drag grab-offset math", () => {
     });
   });
 });
+
+// ── Regression: drag/split must use zoomScale=1, not transient cssZoomScale ──
+//
+// The committed pixelsPerSecond already encodes the zoom level.
+// Passing cssZoomScale into screenXToTimeMicros during drag/split DOUBLES
+// the zoom correction, throwing clips to 0:00.
+// These tests verify the invariant: drag math must always pass zoomScale=1.
+
+describe("drag/split must use zoomScale=1 (regression guard)", () => {
+  it("at zoom 0.1 (pps=10): passing zoomScale=1 preserves correct position", () => {
+    const pps = 10;
+    const clipStart = 5_000_000;
+    const rect = mockRect(0);
+    // Simulate: grab at clientX=50 (which is 5s at pps=10)
+    const grabOffset = screenXToTimeMicros(50, rect, 0, pps, 1) - clipStart;
+    // Move to clientX=150 (which is 15s at pps=10) → proposed = 15s - grabOffset
+    const proposed = Math.max(0, Math.round(screenXToTimeMicros(150, rect, 0, pps, 1) - grabOffset));
+    expect(proposed).toBe(15_000_000); // moved 10s right
+  });
+
+  it("at zoom 0.1 (pps=10): passing cssZoomScale corrupts position (demonstration)", () => {
+    const pps = 10;
+    const clipStart = 5_000_000;
+    const rect = mockRect(0);
+    const badZoomScale = 0.1; // stale cssZoomScale from zoom slider
+    // With bad zoom scale: grab offset is wildly different
+    const grabOffset = screenXToTimeMicros(50, rect, 0, pps, badZoomScale) - clipStart;
+    const proposed = Math.max(0, Math.round(screenXToTimeMicros(150, rect, 0, pps, badZoomScale) - grabOffset));
+    // This SHOULD be 15_000_000 but the bad zoom scale corrupts it
+    expect(proposed).not.toBe(15_000_000);
+  });
+
+  it("at zoom 1.0 (pps=100): zoomScale=1 preserves drag identity", () => {
+    const pps = 100;
+    const clipStart = 2_000_000;
+    const rect = mockRect(0);
+    const grabOffset = screenXToTimeMicros(200, rect, 0, pps, 1) - clipStart;
+    // No movement → should equal clipStart
+    expect(Math.round(screenXToTimeMicros(200, rect, 0, pps, 1) - grabOffset)).toBe(clipStart);
+  });
+
+  it("at zoom 3.0 (pps=300): zoomScale=1 preserves drag identity", () => {
+    const pps = 300;
+    const clipStart = 1_000_000;
+    const rect = mockRect(0);
+    const grabOffset = screenXToTimeMicros(300, rect, 0, pps, 1) - clipStart;
+    // No movement → should equal clipStart
+    expect(Math.round(screenXToTimeMicros(300, rect, 0, pps, 1) - grabOffset)).toBe(clipStart);
+  });
+
+  it("split position at pps=100 with zoomScale=1 matches cursor", () => {
+    const pps = 100;
+    const rect = mockRect(0);
+    const scrollLeft = 0;
+    // Click at clientX=350 → should be 3.5s = 3_500_000µs
+    const splitTime = Math.round(screenXToTimeMicros(350, rect, scrollLeft, pps, 1));
+    expect(splitTime).toBe(3_500_000);
+  });
+
+  it("split position with stale cssZoomScale=2 is WRONG (regression proof)", () => {
+    const pps = 100;
+    const rect = mockRect(0);
+    const scrollLeft = 0;
+    const badZoomScale = 2;
+    // With bad zoom scale, 350px → 350/2=175 timeline px → 1.75s = 1_750_000µs (WRONG)
+    const splitTime = Math.round(screenXToTimeMicros(350, rect, scrollLeft, pps, badZoomScale));
+    expect(splitTime).toBe(1_750_000); // proves bad scale corrupts
+    expect(splitTime).not.toBe(3_500_000); // NOT the correct value
+  });
+});

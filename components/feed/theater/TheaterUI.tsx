@@ -91,7 +91,8 @@ export function TheaterUI({
   };
 
   const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href).then(
+    const shareUrl = `${window.location.origin}/video/${post.id}`;
+    navigator.clipboard.writeText(shareUrl).then(
       () => showToast("Link copied to clipboard"),
       () => showToast("Failed to copy link"),
     );

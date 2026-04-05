@@ -59,7 +59,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
   // Cursor-lock grab anchor — set once at mousedown, NEVER advanced during drag.
   const grabOffsetMicros = useRef(0);
   /** Cached DOM refs of grouped sibling clips — resolved once at drag start, cleared at drag end. */
-  const groupedElsRef = useRef<HTMLElement[]>([]);
+  const groupedElsRef = useRef<{ el: HTMLElement; originMicros: number }[]>([]);
   const dragAnchorX    = useRef(0); // clientX at mousedown — used for speed detection only
   const lastClientX    = useRef(0); // used for speed detection (avoids e.movementX unreliability)
   const isEdgeDragging = useRef<"left" | "right" | false>(false);
@@ -113,10 +113,12 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       // Snapshot before drag for undo
       snapshotHistory("Move Clip");
 
-      const { scrollLeft: sl, cssZoomScale: zs } = usePlaybackStore.getState();
+      const { scrollLeft: sl } = usePlaybackStore.getState();
       const ctr = e.currentTarget.closest("[data-timeline-scroll-container]");
       const ctrRect = ctr?.getBoundingClientRect() ?? new DOMRect();
-      const clickTime = Math.round(screenXToTimeMicros(e.clientX, ctrRect, sl, pixelsPerSecond, zs));
+      // Pointer math uses committed pixelsPerSecond only — transient cssZoomScale
+      // is excluded to prevent stale CSS scaleX from corrupting drag coordinates.
+      const clickTime = Math.round(screenXToTimeMicros(e.clientX, ctrRect, sl, pixelsPerSecond, 1));
       usePlaybackStore.getState().setPlayhead(clickTime);
 
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -129,17 +131,28 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       // Compute grab offset at mousedown in micros — locks cursor to grab point.
       // Uses the scroll container rect + cssZoomScale so the conversion is correct
       // even when the zoom slider applies a transient CSS scaleX to the track area.
-      const { scrollLeft, cssZoomScale } = usePlaybackStore.getState();
+      const { scrollLeft } = usePlaybackStore.getState();
       const container = e.currentTarget.closest("[data-timeline-scroll-container]");
       const containerRect = container?.getBoundingClientRect() ?? new DOMRect();
-      grabOffsetMicros.current = screenXToTimeMicros(e.clientX, containerRect, scrollLeft, pixelsPerSecond, cssZoomScale) - clip.startTime;
+      // Grab offset uses committed scale only — excludes transient cssZoomScale
+      // to prevent stale CSS scaleX from corrupting the drag anchor.
+      grabOffsetMicros.current = screenXToTimeMicros(e.clientX, containerRect, scrollLeft, pixelsPerSecond, 1) - clip.startTime;
       dragAnchorX.current = e.clientX; // for speed detection
       lastClientX.current = e.clientX;
-      // Cache grouped sibling DOM elements for lockstep drag rendering.
+      // Cache grouped sibling DOM elements + their origin startTimes for lockstep drag.
       // Queried once here — zero DOM queries during the move loop.
       if (clip.groupId) {
-        const all = document.querySelectorAll<HTMLElement>(`[data-group-id="${clip.groupId}"]`);
-        groupedElsRef.current = Array.from(all).filter((el) => el !== clipRef.current);
+        const { tracks: allTracks } = useProjectStore.getState();
+        const groupClips = allTracks.flatMap((t) => t.clips).filter((c) => c.groupId === clip.groupId && c.id !== clip.id);
+        const allEls = document.querySelectorAll<HTMLElement>(`[data-group-id="${clip.groupId}"]`);
+        const elMap = new Map<string, HTMLElement>();
+        allEls.forEach((el) => {
+          const cid = el.getAttribute("data-clip-id");
+          if (cid && el !== clipRef.current) elMap.set(cid, el);
+        });
+        groupedElsRef.current = groupClips
+          .filter((c) => elMap.has(c.id))
+          .map((c) => ({ el: elMap.get(c.id)!, originMicros: c.startTime }));
       } else {
         groupedElsRef.current = [];
       }
@@ -183,10 +196,12 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       lastClientX.current = e.clientX;
 
       // ── Virtual position: cursor-locked grab-offset approach ────────────────
-      const { scrollLeft, cssZoomScale } = usePlaybackStore.getState();
+      const { scrollLeft } = usePlaybackStore.getState();
       const container = (e.currentTarget as HTMLElement).closest("[data-timeline-scroll-container]");
       const containerRect = container?.getBoundingClientRect() ?? new DOMRect();
-      const virtualTime = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, containerRect, scrollLeft, pixelsPerSecond, cssZoomScale) - grabOffsetMicros.current));
+      // Pointer math uses committed pixelsPerSecond only — transient cssZoomScale
+      // is excluded to prevent stale CSS scaleX from corrupting drag position.
+      const virtualTime = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, containerRect, scrollLeft, pixelsPerSecond, 1) - grabOffsetMicros.current));
 
       // ── Compute snappedStart once ────────────────────────────────────────────
       let newStart: number;
@@ -229,9 +244,13 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       if (clipRef.current) {
         clipRef.current.style.transform = `translate3d(${previewPx}px, 0, 0)`;
       }
-      // 1b. Grouped siblings — same transform, same frame
-      for (const el of groupedElsRef.current) {
-        el.style.transform = `translate3d(${previewPx}px, 0, 0)`;
+      // 1b. Grouped siblings — relative offset from their own origin, same frame.
+      // deltaMicros = how far the dragged clip moved from its original start.
+      // Each sibling applies that same delta relative to its own startTime.
+      const deltaMicros = newStart - dragOriginMicros.current;
+      for (const m of groupedElsRef.current) {
+        const siblingPx = timeMicrosToTimelinePx(m.originMicros + deltaMicros, pixelsPerSecond);
+        m.el.style.transform = `translate3d(${siblingPx}px, 0, 0)`;
       }
       // 2. Snap indicator — direct DOM, same frame
       updateIndicatorDOM(snapPos, snapIsHard);
@@ -269,8 +288,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       if (clipRef.current) {
         clipRef.current.style.transform = "";
       }
-      for (const el of groupedElsRef.current) {
-        el.style.transform = "";
+      for (const m of groupedElsRef.current) {
+        m.el.style.transform = "";
       }
       groupedElsRef.current = [];
     },
@@ -293,8 +312,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       if (!isEdgeDragging.current) return;
       const deltaX = e.clientX - edgeStartX.current;
-      const { cssZoomScale } = usePlaybackStore.getState();
-      const rawDelta = Math.round((deltaX / (pixelsPerSecond * cssZoomScale)) * 1_000_000);
+      // Edge trim uses committed pixelsPerSecond only — transient cssZoomScale excluded.
+      const rawDelta = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
       const edge = isEdgeDragging.current === "left"
         ? clip.startTime + rawDelta
         : clip.startTime + clip.duration + rawDelta;
@@ -367,8 +386,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       if (!isFadeDragging.current) return;
       const deltaX = e.clientX - fadeStartX.current;
-      const { cssZoomScale: fadeZs } = usePlaybackStore.getState();
-      const deltaMicros = Math.round((deltaX / (pixelsPerSecond * fadeZs)) * 1_000_000);
+      // Fade drag uses committed pixelsPerSecond only — transient cssZoomScale excluded.
+      const deltaMicros = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
       const store = useProjectStore.getState();
       if (isFadeDragging.current === "in") {
         store.setClipFade(clip.id, "in", Math.max(0, (clip.fadeInDuration ?? 0) + deltaMicros));
@@ -405,8 +424,8 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
     (e: React.PointerEvent) => {
       if (!isStretchDragging.current) return;
       const deltaX = e.clientX - edgeStartX.current;
-      const { cssZoomScale: stretchZs } = usePlaybackStore.getState();
-      const deltaMicros = Math.round((deltaX / (pixelsPerSecond * stretchZs)) * 1_000_000);
+      // Stretch uses committed pixelsPerSecond only — transient cssZoomScale excluded.
+      const deltaMicros = Math.round((deltaX / pixelsPerSecond) * 1_000_000);
       useProjectStore.getState().timeStretchClip(clip.id, edgeOrigDuration.current + deltaMicros);
     },
     [clip.id, pixelsPerSecond]
