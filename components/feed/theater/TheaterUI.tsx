@@ -10,7 +10,7 @@
  * no refs, no playback logic. Pure rendering layer.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import {
   Zap, Heart, Share2, Play, Pause,
   MessageCircle, Users, GitBranch, WifiOff, Pencil,
@@ -83,6 +83,24 @@ export function TheaterUI({
   onHashtagClick,
   blurSrc,
 }: TheaterUIProps) {
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2000);
+  };
+
+  const handleShare = () => {
+    navigator.clipboard.writeText(window.location.href).then(
+      () => showToast("Link copied to clipboard"),
+      () => showToast("Failed to copy link"),
+    );
+  };
+
+  const handleComment = () => {
+    showToast("Comments coming soon");
+  };
+
   return (
     <>
       {/* Black cover during initial load — sits below video (z-[2] vs video z-[10]) */}
@@ -249,14 +267,14 @@ export function TheaterUI({
           <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.likes + (liked ? 1 : 0))}</span>
         </button>
         {/* Comment */}
-        <button className="flex flex-col items-center gap-1">
+        <button onClick={handleComment} className="flex flex-col items-center gap-1">
           <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/12">
             <MessageCircle size={20} className="text-white" />
           </div>
           <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.comments)}</span>
         </button>
         {/* Share */}
-        <button className="flex flex-col items-center gap-1">
+        <button onClick={handleShare} className="flex flex-col items-center gap-1">
           <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/12">
             <Share2 size={20} className="text-white" />
           </div>
@@ -296,6 +314,13 @@ export function TheaterUI({
       >
         <div className="h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: post.accent }} />
       </div>
+
+      {/* Action toast */}
+      {toast && (
+        <div className="pointer-events-none absolute left-1/2 bottom-14 z-[60] -translate-x-1/2 rounded-full bg-black/80 px-4 py-1.5 text-[11px] font-semibold text-white/90 backdrop-blur-sm">
+          {toast}
+        </div>
+      )}
 
       {/* Mirror blur — fixed behind the entire cell */}
       {blurSrc && (

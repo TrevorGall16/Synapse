@@ -32,6 +32,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Gate client-only renders to prevent SSR/hydration mismatch from Math.sin() bar heights
   const [mounted, setMounted] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const isBlob = isBlobUrl(post.videoUrl);
 
   // First clip's source URL + seek offset — handles gaps at project start
@@ -88,6 +89,17 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     v.addEventListener("loadedmetadata", onMeta);
     return () => v.removeEventListener("loadedmetadata", onMeta);
   }, [firstClipSrc, firstClipOffset]);
+
+  const handleShare = () => {
+    setToast("Link copied to clipboard");
+    navigator.clipboard.writeText(window.location.href).catch(() => {});
+    setTimeout(() => setToast(null), 2000);
+  };
+
+  const handleComment = () => {
+    setToast("Comments coming soon");
+    setTimeout(() => setToast(null), 2000);
+  };
 
   const handleMouseEnter = () => {
     setHovered(true);
@@ -201,10 +213,10 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
               <button onClick={(e) => { e.stopPropagation(); toggleLike(post.id); }} className="flex items-center gap-0.5 text-[10px] text-white/60 transition-colors hover:text-red-400">
                 <Heart size={11} className={liked ? "fill-red-400 text-red-400" : ""} /><span>{fmtK(post.likes + (liked ? 1 : 0))}</span>
               </button>
-              <button onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 text-[10px] text-white/60 hover:text-white/90">
+              <button onClick={(e) => { e.stopPropagation(); handleComment(); }} className="flex items-center gap-0.5 text-[10px] text-white/60 hover:text-white/90">
                 <MessageCircle size={11} /><span>{fmtK(post.comments)}</span>
               </button>
-              <button onClick={(e) => e.stopPropagation()} className="text-white/60 hover:text-white/90"><Share2 size={11} /></button>
+              <button onClick={(e) => { e.stopPropagation(); handleShare(); }} className="text-white/60 hover:text-white/90"><Share2 size={11} /></button>
               {onDelete && showDelete && (
                 <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
                   className="flex items-center gap-0.5 text-[10px] text-white/40 transition-colors hover:text-red-400">
@@ -228,6 +240,11 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
             </div>
           </div>
         </div>
+        {toast && (
+          <div className="pointer-events-none absolute left-1/2 bottom-4 z-30 -translate-x-1/2 rounded-full bg-black/80 px-3 py-1 text-[9px] font-semibold text-white/90 backdrop-blur-sm">
+            {toast}
+          </div>
+        )}
       </div>
     </article>
   );
