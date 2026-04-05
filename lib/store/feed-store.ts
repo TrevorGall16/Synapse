@@ -58,6 +58,8 @@ export interface FeedPost {
   demoDuration?: number;
   /** Content category — used for feed filtering */
   category?: "high-sensation" | "aesthetic" | "cinematic" | "glitch" | "slow-mo";
+  /** Creator toggle — when false, comments are disabled on this post */
+  comments_enabled?: boolean;
 }
 
 interface FeedState {

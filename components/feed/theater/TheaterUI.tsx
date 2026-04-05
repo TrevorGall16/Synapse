@@ -60,6 +60,8 @@ export interface TheaterUIProps {
   blurSrc?: string;
   isCommentsOpen: boolean;
   onToggleComments: () => void;
+  /** Whether the main video is vertical (aspect < 1) — used to skip blur rendering */
+  isVerticalVideo?: boolean;
 }
 
 // ── TheaterUI ─────────────────────────────────────────────────────────────────
@@ -93,6 +95,7 @@ export function TheaterUI({
   blurSrc,
   isCommentsOpen,
   onToggleComments,
+  isVerticalVideo,
 }: TheaterUIProps) {
   const [toast, setToast] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -101,15 +104,22 @@ export function TheaterUI({
   const blurRef = useRef<HTMLVideoElement>(null);
 
   // Sync blur video play/pause with main video state
+  // Skip entirely for vertical video — blur is invisible behind black bars
   useEffect(() => {
     const blur = blurRef.current;
     if (!blur) return;
+    if (isVerticalVideo) {
+      blur.pause();
+      blur.removeAttribute("src");
+      blur.load();
+      return;
+    }
     if (isPlaying) {
       blur.play().catch(() => {});
     } else {
       blur.pause();
     }
-  }, [isPlaying]);
+  }, [isPlaying, isVerticalVideo]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -264,22 +274,22 @@ export function TheaterUI({
 
       {/* Info overlay — bottom-left */}
       <div className="absolute bottom-8 left-4 right-20 z-[40] pr-2">
-        {/* Author row — div+role avoids nested-button hydration error */}
+        {/* Author row — avatar & name are clickable */}
         <div
           role="button"
           tabIndex={0}
-          onClick={onCreator}
-          onKeyDown={(e) => e.key === "Enter" && onCreator()}
+          onClick={() => { onCreator(); showToast("Profile view coming soon"); }}
+          onKeyDown={(e) => { if (e.key === "Enter") { onCreator(); showToast("Profile view coming soon"); } }}
           className="mb-2 flex cursor-pointer items-center gap-2.5"
         >
           <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white/25"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white/25 transition-transform hover:scale-105 active:scale-95"
             style={{ background: `hsl(${post.user.hue} 55% 28%)` }}
           >
             {post.user.initial}
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-lg font-bold text-white" style={TX}>@{post.user.handle}</span>
+            <span className="text-lg font-bold text-white hover:underline" style={TX}>@{post.user.handle}</span>
             {!isOwn && (
               <button
                 onClick={(e) => { e.stopPropagation(); onFollowToggle(); }}
@@ -325,17 +335,19 @@ export function TheaterUI({
           </div>
           <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.likes + (liked ? 1 : 0))}</span>
         </button>
-        {/* Comment */}
-        <button onClick={onToggleComments} className="flex flex-col items-center gap-1">
-          <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${
-            isCommentsOpen
-              ? "border-purple-400/40 bg-purple-500/25"
-              : "border-white/15 bg-black/40 hover:bg-white/12"
-          }`}>
-            <MessageCircle size={20} className={isCommentsOpen ? "text-purple-300" : "text-white"} />
-          </div>
-          <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.comments)}</span>
-        </button>
+        {/* Comment — hidden when creator disables comments */}
+        {post.comments_enabled !== false && (
+          <button onClick={onToggleComments} className="flex flex-col items-center gap-1">
+            <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${
+              isCommentsOpen
+                ? "border-purple-400/40 bg-purple-500/25"
+                : "border-white/15 bg-black/40 hover:bg-white/12"
+            }`}>
+              <MessageCircle size={20} className={isCommentsOpen ? "text-purple-300" : "text-white"} />
+            </div>
+            <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.comments)}</span>
+          </button>
+        )}
         {/* Share */}
         <div className="relative" ref={sharePopRef}>
           <button onClick={() => setShareOpen((v) => !v)} className="flex flex-col items-center gap-1">
@@ -415,8 +427,9 @@ export function TheaterUI({
         </div>
       )}
 
-      {/* Mirror blur — fixed behind the entire cell, synced to main video */}
-      {blurSrc && (
+      {/* Mirror blur — fixed behind the entire cell, synced to main video.
+          Vertical videos (aspect < 1) skip rendering entirely for zero CPU hit. */}
+      {blurSrc && !isVerticalVideo && (
         <video
           ref={blurRef}
           src={blurSrc}

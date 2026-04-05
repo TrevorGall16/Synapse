@@ -281,6 +281,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
           postId={activePostId}
           isOpen={commentsOpen}
           onClose={toggleComments}
+          commentsEnabled={activePost?.comments_enabled !== false}
         />
       </div>
     </div>

@@ -81,6 +81,7 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   const [showUnmuteToast, setShowUnmuteToast] = useState(false);
   const [isIdle, setIsIdle]                   = useState(false);
   const [hydratedPool, setHydratedPool]       = useState<MediaPoolItem[] | null>(null);
+  const [isVerticalVideo, setIsVerticalVideo] = useState(false);
 
   const isHydrated       = useHydrationStore((s) => s.isHydrated);
   const currentUsername  = useUserStore((s) => s.profile?.username);
@@ -539,6 +540,12 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onError={() => setMediaError(true)}
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v.videoWidth > 0 && v.videoHeight > 0) {
+              setIsVerticalVideo(v.videoWidth / v.videoHeight < 1);
+            }
+          }}
           onLoadedData={() => {
             const v = videoRef.current;
             if (!v || isPlayingRef.current || post.projectSnapshot) return;
@@ -600,6 +607,7 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           blurSrc={blurSrc}
           isCommentsOpen={isCommentsOpen}
           onToggleComments={onToggleComments}
+          isVerticalVideo={isVerticalVideo}
         />
       </div>
     </div>
