@@ -261,14 +261,18 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
               <div className="relative" ref={sharePopRef}>
                 <button onClick={(e) => { e.stopPropagation(); setShareOpen((v) => !v); }} className="text-white/60 hover:text-white/90"><Share2 size={11} /></button>
                 {shareOpen && (
-                  <div className="absolute left-1/2 bottom-full mb-1.5 z-[60] min-w-[140px] -translate-x-1/2 rounded-lg border border-white/15 bg-[#1a1a1a] py-1 shadow-xl backdrop-blur-md" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={handleCopyLink} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-white/80 hover:bg-white/10">
-                      {copied ? "✓ Copied!" : "Copy Link"}
+                  <div
+                    className="absolute left-1/2 bottom-full mb-1.5 z-[60] min-w-[150px] -translate-x-1/2 rounded-xl border border-white/20 py-1.5 shadow-2xl"
+                    style={{ background: "rgba(30,30,30,0.75)", backdropFilter: "blur(16px) saturate(180%)", WebkitBackdropFilter: "blur(16px) saturate(180%)" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button onClick={handleCopyLink} className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10">
+                      {copied ? <span className="text-emerald-400">✓ Copied!</span> : "Copy Link"}
                     </button>
-                    <button onClick={handleShareTwitter} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-white/80 hover:bg-white/10">
-                      Share to X / Twitter
+                    <button onClick={handleShareTwitter} className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10">
+                      Share to X
                     </button>
-                    <button onClick={handleShareReddit} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-white/80 hover:bg-white/10">
+                    <button onClick={handleShareReddit} className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10">
                       Share to Reddit
                     </button>
                   </div>

@@ -49,6 +49,34 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
+  // URL masking via History API — push /video/:id on open, restore on close/back
+  const originalUrlRef = useRef(window.location.href);
+  const hasPushedRef = useRef(false);
+
+  useEffect(() => {
+    if (!post.id) return;
+    const targetPath = `/video/${post.id}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({ synapse_theater: true }, "", targetPath);
+      hasPushedRef.current = true;
+    }
+    const onPopState = () => {
+      // User hit browser Back — close the overlay instead of navigating.
+      // Mark that Back already restored the URL so the cleanup doesn't double-navigate.
+      hasPushedRef.current = false;
+      onClose();
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      // Restore original URL when Theater unmounts via normal close (not back-button)
+      if (hasPushedRef.current) {
+        window.history.replaceState(null, "", originalUrlRef.current);
+        hasPushedRef.current = false;
+      }
+    };
+  }, [post.id, onClose]);
+
   // Lock body scroll
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -106,6 +134,15 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
       // WeakMap self-cleans when el is GC'd — no delete needed
     }
   }, []);
+
+  // Update masked URL when active post changes (scroll between videos)
+  useEffect(() => {
+    if (!activePostId || !hasPushedRef.current) return;
+    const targetPath = `/video/${activePostId}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.replaceState({ synapse_theater: true }, "", targetPath);
+    }
+  }, [activePostId]);
 
   const activePost = useMemo(() => queue.find((p) => p.id === activePostId) ?? queue[0], [queue, activePostId]);
   const versionSiblings = useMemo(() => {

@@ -67,6 +67,7 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   /** Set to true by the gesture useLayoutEffect so the boot useEffect skips its reset */
   const gesturePlayedRef  = useRef(false);
   const isScrubbingRef    = useRef(false);
+  const wasPlayingBeforeScrubRef = useRef(false);
   const idleTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [progress, setProgress]               = useState(0);
@@ -384,7 +385,12 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   }, [post.demoStartTime, post.demoDuration, syncClip]);
 
   const onSeekPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const v = videoRef.current;
+    wasPlayingBeforeScrubRef.current = isPlayingRef.current || !!(v && !v.paused && !v.ended);
     isScrubbingRef.current = true;
+    // Pause video + ticker so the frame stays still under the user's thumb
+    if (v && !v.paused) v.pause();
+    setIsPlaying(false);
     e.currentTarget.setPointerCapture(e.pointerId);
     seekFromPointer(e.clientX, e.currentTarget);
   }, [seekFromPointer]);
@@ -398,11 +404,24 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
     if (isScrubbingRef.current) seekFromPointer(e.clientX, e.currentTarget);
     isScrubbingRef.current = false;
     e.currentTarget.releasePointerCapture(e.pointerId);
+    // Resume playback only if it was playing before the scrub began
+    if (wasPlayingBeforeScrubRef.current) {
+      const v = videoRef.current;
+      if (v) v.play().catch(() => {});
+      setIsPlaying(true);
+    }
+    wasPlayingBeforeScrubRef.current = false;
   }, [seekFromPointer]);
 
   const onSeekPointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     isScrubbingRef.current = false;
     e.currentTarget.releasePointerCapture(e.pointerId);
+    if (wasPlayingBeforeScrubRef.current) {
+      const v = videoRef.current;
+      if (v) v.play().catch(() => {});
+      setIsPlaying(true);
+    }
+    wasPlayingBeforeScrubRef.current = false;
   }, []);
 
   // ── Boot: load first clip or simple videoUrl ───────────────────────────────
