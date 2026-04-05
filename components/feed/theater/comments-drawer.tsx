@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Send, ChevronUp, ChevronDown, CornerDownRight, Trash2, X, AlertCircle } from "lucide-react";
+import { Send, ChevronUp, ChevronDown, CornerDownRight, Trash2, X, AlertCircle, ArrowUp } from "lucide-react";
 import { useCommentStore, type Comment } from "@/lib/store/comment-store";
 import { useUserStore } from "@/lib/store/user-store";
 
@@ -28,13 +28,13 @@ interface CommentNodeProps {
   postId: string;
   userId: string;
   onReply: (parentId: string) => void;
+  isReplyTarget?: boolean;
 }
 
-function CommentNode({ comment, postId, userId, onReply }: CommentNodeProps) {
+function CommentNode({ comment, postId, userId, onReply, isReplyTarget }: CommentNodeProps) {
   const getScore = useCommentStore((s) => s.getScore);
   const getUserVote = useCommentStore((s) => s.getUserVote);
-  const vote = useCommentStore((s) => s.vote);
-  const unvote = useCommentStore((s) => s.unvote);
+  const handleVote = useCommentStore((s) => s.handleVote);
   const deleteComment = useCommentStore((s) => s.deleteComment);
   const dismissFailedComment = useCommentStore((s) => s.dismissFailedComment);
   const getAuthor = useCommentStore((s) => s.getAuthor);
@@ -46,11 +46,6 @@ function CommentNode({ comment, postId, userId, onReply }: CommentNodeProps) {
   const isPending = comment._status === "pending";
   const isFailed = comment._status === "failed";
   const indent = Math.min(comment.depth, MAX_INDENT_DEPTH);
-
-  const handleVote = (value: -1 | 1) => {
-    if (userVote === value) unvote(comment.id, userId);
-    else vote(comment.id, userId, value);
-  };
 
   // Author display — use local profile for own comments
   const profile = useUserStore((s) => s.profile);
@@ -72,7 +67,8 @@ function CommentNode({ comment, postId, userId, onReply }: CommentNodeProps) {
 
   return (
     <div
-      className={`group relative py-2 transition-opacity ${isPending ? "opacity-60" : isFailed ? "opacity-40" : ""}`}
+      data-comment-id={comment.id}
+      className={`group relative py-2 transition-opacity ${isPending ? "opacity-60" : isFailed ? "opacity-40" : ""} ${isReplyTarget ? "ring-1 ring-purple-400/50 bg-purple-500/10 rounded" : ""}`}
       style={{ paddingLeft: `${indent * 16 + 12}px`, paddingRight: 12 }}
     >
       {/* Thread line */}
@@ -112,7 +108,7 @@ function CommentNode({ comment, postId, userId, onReply }: CommentNodeProps) {
         {/* Votes */}
         <div className="flex items-center gap-0.5">
           <button
-            onClick={() => handleVote(1)}
+            onClick={() => handleVote(comment.id, userId, 1)}
             className={`rounded p-0.5 transition-colors ${userVote === 1 ? "text-emerald-400" : "text-white/30 hover:text-white/60"}`}
           >
             <ChevronUp size={12} />
@@ -121,7 +117,7 @@ function CommentNode({ comment, postId, userId, onReply }: CommentNodeProps) {
             {score}
           </span>
           <button
-            onClick={() => handleVote(-1)}
+            onClick={() => handleVote(comment.id, userId, -1)}
             className={`rounded p-0.5 transition-colors ${userVote === -1 ? "text-red-400" : "text-white/30 hover:text-white/60"}`}
           >
             <ChevronDown size={12} />
@@ -215,17 +211,15 @@ export function CommentsDrawer({ postId, isOpen, onClose }: CommentsDrawerProps)
 
   return (
     <div
-      className={`absolute right-0 top-0 z-[45] flex h-full flex-col border-l border-white/10 transition-transform duration-300 ease-out ${
-        isOpen ? "translate-x-0" : "translate-x-full"
-      }`}
+      className={`flex h-full flex-col transition-all duration-300 ease-out overflow-hidden
+        ${isOpen
+          ? "border-l border-white/10 opacity-100 max-md:fixed max-md:inset-0 max-md:z-[60] max-md:w-full max-md:border-l-0 md:w-[350px]"
+          : "w-0 opacity-0 pointer-events-none border-l-0"
+        }`}
       style={{
-        width: "35%",
-        minWidth: 320,
-        maxWidth: 480,
-        background: "rgba(18,18,18,0.95)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        pointerEvents: isOpen ? "auto" : "none",
+        background: isOpen ? "rgba(18,18,18,0.95)" : "transparent",
+        backdropFilter: isOpen ? "blur(12px)" : "none",
+        WebkitBackdropFilter: isOpen ? "blur(12px)" : "none",
       }}
     >
       {/* Header */}
@@ -263,6 +257,7 @@ export function CommentsDrawer({ postId, isOpen, onClose }: CommentsDrawerProps)
                 postId={postId}
                 userId={userId ?? ""}
                 onReply={setReplyTo}
+                isReplyTarget={replyTo === c.id}
               />
             ))}
             {hasMore[postId] && (
@@ -277,19 +272,36 @@ export function CommentsDrawer({ postId, isOpen, onClose }: CommentsDrawerProps)
         )}
       </div>
 
-      {/* Reply indicator */}
-      {replyTo && replyTarget && (
-        <div className="flex items-center gap-2 border-t border-white/5 bg-white/5 px-4 py-1.5">
-          <CornerDownRight size={10} className="shrink-0 text-white/30" />
-          <span className="truncate text-[10px] text-white/40">
-            Replying to {replyTarget.body.slice(0, 50)}
-            {replyTarget.body.length > 50 ? "..." : ""}
-          </span>
-          <button onClick={() => setReplyTo(null)} className="shrink-0 text-white/30 hover:text-white/60">
-            <X size={10} />
-          </button>
-        </div>
-      )}
+      {/* Reply context banner */}
+      {replyTo && replyTarget && (() => {
+        const replyAuthor = useCommentStore.getState().getAuthor(replyTarget.author_id);
+        const authorName = replyAuthor?.username ?? replyAuthor?.displayName ?? "unknown";
+        return (
+          <div className="flex items-center gap-2 border-t border-purple-400/20 bg-purple-500/10 px-4 py-1.5">
+            <CornerDownRight size={10} className="shrink-0 text-purple-400/60" />
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-semibold text-purple-300">Replying to @{authorName}</span>
+              <p className="truncate text-[10px] text-white/40">
+                {replyTarget.body.slice(0, 60)}
+                {replyTarget.body.length > 60 ? "..." : ""}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                const el = scrollRef.current?.querySelector(`[data-comment-id="${replyTo}"]`);
+                el?.scrollIntoView({ behavior: "smooth", block: "center" });
+              }}
+              title="Jump to comment"
+              className="shrink-0 rounded p-0.5 text-purple-400/60 transition-colors hover:text-purple-300"
+            >
+              <ArrowUp size={12} />
+            </button>
+            <button onClick={() => setReplyTo(null)} className="shrink-0 text-white/30 hover:text-white/60">
+              <X size={10} />
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Input area */}
       <div className="shrink-0 border-t border-white/10 px-3 py-2.5">

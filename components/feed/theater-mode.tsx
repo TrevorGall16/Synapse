@@ -8,6 +8,9 @@ import { CommentsDrawer } from "./theater/comments-drawer";
 // Re-exported for backward compatibility — callers import primeTheaterGesture from this module.
 export { primeTheaterGesture } from "./theater-gesture";
 
+/** Width of the comments panel when open (desktop only) */
+const COMMENTS_W = "350px";
+
 /** Build a strictly deduplicated queue: seed first, then same-author posts, then tag-matched, then rest */
 function buildQueue(seed: FeedPost, all: FeedPost[]): FeedPost[] {
   const seen = new Set<string>([seed.id]);
@@ -160,37 +163,6 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
 
   return (
     <div className="fixed inset-0 z-50 bg-black">
-      {/* Top-right controls: Versions | Mute | Close */}
-      <div className="fixed right-4 top-4 z-[100] flex items-center gap-2">
-        {versionSiblings.length > 0 && (
-          <button
-            onClick={() => setShowVersions((v) => !v)}
-            title="Versions"
-            className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-[11px] font-semibold backdrop-blur-sm transition-colors ${
-              showVersions
-                ? "border-purple-400/50 bg-purple-500/25 text-purple-200"
-                : "border-white/20 bg-black/60 text-white/70 hover:bg-white/15 hover:text-white"
-            }`}
-          >
-            <History size={13} />
-            {versionSiblings.length}
-          </button>
-        )}
-        <button
-          onClick={() => setMuted((v) => !v)}
-          title={muted ? "Unmute" : "Mute"}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/80 text-white drop-shadow-lg backdrop-blur-sm transition-colors hover:bg-black/90"
-        >
-          {muted ? <VolumeX size={16} className="text-white" /> : <Volume2 size={16} className="text-white" />}
-        </button>
-        <button
-          onClick={onClose}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/80 text-white/90 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
-        >
-          <X size={15} />
-        </button>
-      </div>
-
       {/* Versions drawer */}
       {showVersions && (
         <div className="fixed right-0 top-0 z-[55] flex h-full w-64 flex-col border-l border-white/10 bg-black/90 backdrop-blur-md">
@@ -242,17 +214,45 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
       )}
 
       {/* Split-view container */}
-      <div className="relative h-full w-full overflow-hidden">
-        {/* Video pane — CSS transform shrink (no reflow, video stays mounted).
-            scale(0.65) visually shrinks to 65%. translateX(-27%) shifts left
-            to align the shrunken pane's left edge near the viewport left. */}
+      <div className="relative flex h-full w-full overflow-hidden">
+        {/* Main content wrapper — video + overlays + top-right controls */}
         <div
-          className="absolute inset-0 transition-transform duration-300 ease-out will-change-transform"
+          className="relative h-full w-full transition-[width] duration-300 ease-out"
           style={{
-            transformOrigin: "center center",
-            transform: commentsOpen ? "translateX(-27%) scale(0.65)" : "translateX(0) scale(1)",
+            width: commentsOpen ? `calc(100% - ${COMMENTS_W})` : "100%",
           }}
         >
+          {/* Top-right controls: Versions | Mute | Close — absolute within wrapper */}
+          <div className="absolute right-4 top-4 z-[100] flex items-center gap-2">
+            {versionSiblings.length > 0 && (
+              <button
+                onClick={() => setShowVersions((v) => !v)}
+                title="Versions"
+                className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-[11px] font-semibold backdrop-blur-sm transition-colors ${
+                  showVersions
+                    ? "border-purple-400/50 bg-purple-500/25 text-purple-200"
+                    : "border-white/20 bg-black/60 text-white/70 hover:bg-white/15 hover:text-white"
+                }`}
+              >
+                <History size={13} />
+                {versionSiblings.length}
+              </button>
+            )}
+            <button
+              onClick={() => setMuted((v) => !v)}
+              title={muted ? "Unmute" : "Mute"}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/80 text-white drop-shadow-lg backdrop-blur-sm transition-colors hover:bg-black/90"
+            >
+              {muted ? <VolumeX size={16} className="text-white" /> : <Volume2 size={16} className="text-white" />}
+            </button>
+            <button
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/80 text-white/90 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
           <div
             ref={scrollRef}
             onScroll={handleScroll}
@@ -276,7 +276,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
           </div>
         </div>
 
-        {/* Comments drawer — slides from right, occupies the right 35% */}
+        {/* Comments drawer — slides from right, zero width when closed */}
         <CommentsDrawer
           postId={activePostId}
           isOpen={commentsOpen}

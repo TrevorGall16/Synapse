@@ -98,6 +98,18 @@ export function TheaterUI({
   const [shareOpen, setShareOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const sharePopRef = useRef<HTMLDivElement>(null);
+  const blurRef = useRef<HTMLVideoElement>(null);
+
+  // Sync blur video play/pause with main video state
+  useEffect(() => {
+    const blur = blurRef.current;
+    if (!blur) return;
+    if (isPlaying) {
+      blur.play().catch(() => {});
+    } else {
+      blur.pause();
+    }
+  }, [isPlaying]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -403,15 +415,14 @@ export function TheaterUI({
         </div>
       )}
 
-      {/* Mirror blur — fixed behind the entire cell */}
+      {/* Mirror blur — fixed behind the entire cell, synced to main video */}
       {blurSrc && (
         <video
+          ref={blurRef}
           src={blurSrc}
           className="fixed inset-0 w-full h-full object-cover blur-3xl opacity-60 scale-110 -z-[1] pointer-events-none"
           muted
           playsInline
-          autoPlay
-          loop
         />
       )}
     </>

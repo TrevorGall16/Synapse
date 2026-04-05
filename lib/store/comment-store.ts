@@ -135,10 +135,8 @@ interface CommentState {
   dismissFailedComment: (postId: string, tempId: string) => void;
   /** Soft-delete a comment */
   deleteComment: (postId: string, commentId: string) => void;
-  /** Vote on a comment */
-  vote: (commentId: string, userId: string, value: -1 | 1) => void;
-  /** Remove a vote */
-  unvote: (commentId: string, userId: string) => void;
+  /** Atomic vote toggle: same value removes, different value flips */
+  handleVote: (commentId: string, userId: string, newValue: -1 | 1) => void;
   /** Get net score for a comment */
   getScore: (commentId: string) => number;
   /** Get user's vote on a comment */
@@ -284,19 +282,21 @@ export const useCommentStore = create<CommentState>()((set, get) => ({
     }));
   },
 
-  vote: (commentId, userId, value) => {
+  handleVote: (commentId, userId, newValue) => {
     const key = `${commentId}:${userId}`;
-    set((s) => ({
-      votes: { ...s.votes, [key]: { comment_id: commentId, user_id: userId, value } },
-    }));
-  },
-
-  unvote: (commentId, userId) => {
-    const key = `${commentId}:${userId}`;
-    set((s) => {
-      const { [key]: _, ...rest } = s.votes;
-      return { votes: rest };
-    });
+    const current = get().votes[key]?.value ?? 0;
+    if (current === newValue) {
+      // Same vote → remove (un-toggle)
+      set((s) => {
+        const { [key]: _, ...rest } = s.votes;
+        return { votes: rest };
+      });
+    } else {
+      // Different or no vote → set new value
+      set((s) => ({
+        votes: { ...s.votes, [key]: { comment_id: commentId, user_id: userId, value: newValue } },
+      }));
+    }
   },
 
   getScore: (commentId) => {
