@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState, useMemo, useEffect } from "react";
+import { useRef, useState, useMemo, useEffect, useCallback } from "react";
 import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch, Download } from "lucide-react";
 import { type FeedPost, isBlobUrl, useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { canRemix } from "@/lib/policy";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { buildTextStyle } from "@/lib/utils/preview-helpers";
+import { buildPostShareUrl } from "@/lib/utils/share";
 
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
 
@@ -33,6 +34,9 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   // Gate client-only renders to prevent SSR/hydration mismatch from Math.sin() bar heights
   const [mounted, setMounted] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const sharePopRef = useRef<HTMLDivElement>(null);
   const isBlob = isBlobUrl(post.videoUrl);
 
   // First clip's source URL + seek offset — handles gaps at project start
@@ -90,14 +94,49 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     return () => v.removeEventListener("loadedmetadata", onMeta);
   }, [firstClipSrc, firstClipOffset]);
 
-  const handleShare = () => {
-    if (!post.id) { setToast("Cannot share — post has no ID"); setTimeout(() => setToast(null), 2000); return; }
-    const shareUrl = `${window.location.origin}/video/${post.id}`;
-    navigator.clipboard.writeText(shareUrl).then(
-      () => { setToast("Link copied"); setTimeout(() => setToast(null), 2000); },
+  useEffect(() => {
+    if (!shareOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (sharePopRef.current && !sharePopRef.current.contains(e.target as Node)) {
+        setShareOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onClickOutside);
+    return () => document.removeEventListener("pointerdown", onClickOutside);
+  }, [shareOpen]);
+
+  const handleCopyLink = useCallback(() => {
+    if (!post.id) { setToast("Cannot share — post has no ID"); setTimeout(() => setToast(null), 2000); setShareOpen(false); return; }
+    const url = buildPostShareUrl(post.id);
+    navigator.clipboard.writeText(url).then(
+      () => { setCopied(true); setTimeout(() => setCopied(false), 1500); },
       () => { setToast("Failed to copy link"); setTimeout(() => setToast(null), 2000); },
     );
-  };
+    setTimeout(() => setShareOpen(false), 800);
+  }, [post.id]);
+
+  const handleShareTwitter = useCallback(() => {
+    if (!post.id) { setToast("Cannot share — post has no ID"); setTimeout(() => setToast(null), 2000); setShareOpen(false); return; }
+    const url = buildPostShareUrl(post.id);
+    const text = `Check out "${post.title}" on Synapse`;
+    window.open(
+      `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+    setShareOpen(false);
+  }, [post.id, post.title]);
+
+  const handleShareReddit = useCallback(() => {
+    if (!post.id) { setToast("Cannot share — post has no ID"); setTimeout(() => setToast(null), 2000); setShareOpen(false); return; }
+    const url = buildPostShareUrl(post.id);
+    window.open(
+      `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(post.title)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+    setShareOpen(false);
+  }, [post.id, post.title]);
 
   const handleComment = () => {
     setToast("Comments coming soon");
@@ -219,7 +258,22 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
               <button onClick={(e) => { e.stopPropagation(); handleComment(); }} className="flex items-center gap-0.5 text-[10px] text-white/60 hover:text-white/90">
                 <MessageCircle size={11} /><span>{fmtK(post.comments)}</span>
               </button>
-              <button onClick={(e) => { e.stopPropagation(); handleShare(); }} className="text-white/60 hover:text-white/90"><Share2 size={11} /></button>
+              <div className="relative" ref={sharePopRef}>
+                <button onClick={(e) => { e.stopPropagation(); setShareOpen((v) => !v); }} className="text-white/60 hover:text-white/90"><Share2 size={11} /></button>
+                {shareOpen && (
+                  <div className="absolute left-1/2 bottom-full mb-1.5 z-[60] min-w-[140px] -translate-x-1/2 rounded-lg border border-white/15 bg-[#1a1a1a] py-1 shadow-xl backdrop-blur-md" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={handleCopyLink} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-white/80 hover:bg-white/10">
+                      {copied ? "✓ Copied!" : "Copy Link"}
+                    </button>
+                    <button onClick={handleShareTwitter} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-white/80 hover:bg-white/10">
+                      Share to X / Twitter
+                    </button>
+                    <button onClick={handleShareReddit} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-white/80 hover:bg-white/10">
+                      Share to Reddit
+                    </button>
+                  </div>
+                )}
+              </div>
               {onDelete && showDelete && (
                 <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
                   className="flex items-center gap-0.5 text-[10px] text-white/40 transition-colors hover:text-red-400">

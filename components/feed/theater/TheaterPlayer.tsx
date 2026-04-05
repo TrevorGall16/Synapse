@@ -66,6 +66,7 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   const activeAnimRef     = useRef<string | null>(null);
   /** Set to true by the gesture useLayoutEffect so the boot useEffect skips its reset */
   const gesturePlayedRef  = useRef(false);
+  const isScrubbingRef    = useRef(false);
   const idleTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [progress, setProgress]               = useState(0);
@@ -335,6 +336,7 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const togglePlay = useCallback(() => {
+    if (isScrubbingRef.current) return;
     if (clipsRef.current.length === 0) {
       const v = videoRef.current; if (!v) return;
       if (isPlayingRef.current) { v.pause(); }
@@ -346,48 +348,62 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
     } else { setIsPlaying((p) => !p); }
   }, []);
 
-  const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const seekFromPointer = useCallback((clientX: number, el: HTMLDivElement) => {
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+
+    const x = Math.min(rect.width, Math.max(0, clientX - rect.left));
+    const ratio = x / rect.width;
+
+    const v = videoRef.current;
+    if (!v) return;
 
     if (clipsRef.current.length > 0) {
-      // Snapshot post: seek within the demo window
       const startUs = post.demoStartTime ?? 0;
       const demoDurUs = post.demoDuration ?? totalDurRef.current;
-      const targetUs = startUs + ratio * demoDurUs;
+      const targetUs = Math.round(startUs + ratio * demoDurUs);
+
       phRef.current = targetUs;
       setProgress(ratio * 100);
 
-      // Only invalidate loaded clip if the target falls outside the current clip's range
-      const currentClip = clipsRef.current.find((c) => c.id === loadedClipRef.current);
-      if (!currentClip || targetUs < currentClip.startTime || targetUs >= currentClip.startTime + currentClip.duration) {
-        loadedClipRef.current = null;
-        loadedClipUrlRef.current = null;
-      }
+      const targetClip = clipsRef.current.find(
+        (c) => targetUs >= c.startTime && targetUs < c.startTime + c.duration
+      );
 
-      // Seek the video element to the correct media offset within the target clip
-      const targetClip = clipsRef.current.find((c) => targetUs >= c.startTime && targetUs < c.startTime + c.duration);
-      if (targetClip && videoRef.current) {
-        const mediaTime = (targetUs - targetClip.startTime + (targetClip.mediaOffset ?? 0)) / 1_000_000;
-        videoRef.current.currentTime = mediaTime;
+      if (targetClip) {
+        const mediaSec = (targetUs - targetClip.startTime + (targetClip.mediaOffset ?? 0)) / 1_000_000;
+        v.currentTime = mediaSec;
       }
-
       syncClip(targetUs);
     } else {
-      // Simple video post
-      const v = videoRef.current;
-      if (v?.duration) {
-        if (post.projectSnapshot) {
-          const demoStartS = (post.demoStartTime ?? 0) / 1_000_000;
-          const demoDurS = (post.demoDuration ?? 0) / 1_000_000 || v.duration;
-          v.currentTime = demoStartS + ratio * demoDurS;
-        } else {
-          v.currentTime = ratio * v.duration;
-        }
-        setProgress(ratio * 100);
-      }
+      const dur = Number.isFinite(v.duration) ? v.duration : 0;
+      if (dur <= 0) return;
+      v.currentTime = ratio * dur;
+      setProgress(ratio * 100);
     }
-  }, [syncClip, post.demoStartTime, post.demoDuration]);
+  }, [post.demoStartTime, post.demoDuration, syncClip]);
+
+  const onSeekPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    isScrubbingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    seekFromPointer(e.clientX, e.currentTarget);
+  }, [seekFromPointer]);
+
+  const onSeekPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isScrubbingRef.current) return;
+    seekFromPointer(e.clientX, e.currentTarget);
+  }, [seekFromPointer]);
+
+  const onSeekPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (isScrubbingRef.current) seekFromPointer(e.clientX, e.currentTarget);
+    isScrubbingRef.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }, [seekFromPointer]);
+
+  const onSeekPointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    isScrubbingRef.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }, []);
 
   // ── Boot: load first clip or simple videoUrl ───────────────────────────────
 
@@ -550,7 +566,10 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           remixAllowed={!!remixAllowed}
           isBlobPost={!!isBlobPost}
           onTogglePlay={togglePlay}
-          onSeek={handleSeek}
+          onSeekPointerDown={onSeekPointerDown}
+          onSeekPointerMove={onSeekPointerMove}
+          onSeekPointerUp={onSeekPointerUp}
+          onSeekPointerCancel={onSeekPointerCancel}
           onFollowToggle={handleFollowToggle}
           onToggleLike={() => toggleLike(post.id)}
           onPlayBlocked={() => { markInteracted(); togglePlay(); }}

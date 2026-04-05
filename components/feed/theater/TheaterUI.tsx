@@ -10,7 +10,7 @@
  * no refs, no playback logic. Pure rendering layer.
  */
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Zap, Heart, Share2, Play, Pause,
   MessageCircle, Users, GitBranch, WifiOff, Pencil,
@@ -18,6 +18,7 @@ import {
 import type { FeedPost } from "@/lib/store/feed-store";
 import type { MediaPoolItem } from "@/lib/store/types";
 import { parseHashtags } from "@/lib/utils/hashtags";
+import { buildPostShareUrl } from "@/lib/utils/share";
 
 // ── Shared render helpers (duplicated from TheaterPlayer to avoid circular import) ──
 const fmtKLocal = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
@@ -45,7 +46,10 @@ export interface TheaterUIProps {
   remixAllowed: boolean;
   isBlobPost: boolean;
   onTogglePlay: () => void;
-  onSeek: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onSeekPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onSeekPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onSeekPointerUp: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onSeekPointerCancel: (e: React.PointerEvent<HTMLDivElement>) => void;
   onFollowToggle: () => void;
   onToggleLike: () => void;
   /** Called when the "tap to play" blocked overlay is tapped — marks interaction + toggles play */
@@ -74,7 +78,10 @@ export function TheaterUI({
   remixAllowed,
   isBlobPost,
   onTogglePlay,
-  onSeek,
+  onSeekPointerDown,
+  onSeekPointerMove,
+  onSeekPointerUp,
+  onSeekPointerCancel,
   onFollowToggle,
   onToggleLike,
   onPlayBlocked,
@@ -84,20 +91,58 @@ export function TheaterUI({
   blurSrc,
 }: TheaterUIProps) {
   const [toast, setToast] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const sharePopRef = useRef<HTMLDivElement>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2000);
   };
 
-  const handleShare = () => {
-    if (!post.id) { showToast("Cannot share — post has no ID"); return; }
-    const shareUrl = `${window.location.origin}/video/${post.id}`;
-    navigator.clipboard.writeText(shareUrl).then(
-      () => showToast("Link copied"),
+  useEffect(() => {
+    if (!shareOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (sharePopRef.current && !sharePopRef.current.contains(e.target as Node)) {
+        setShareOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onClickOutside);
+    return () => document.removeEventListener("pointerdown", onClickOutside);
+  }, [shareOpen]);
+
+  const handleCopyLink = useCallback(() => {
+    if (!post.id) { showToast("Cannot share — post has no ID"); setShareOpen(false); return; }
+    const url = buildPostShareUrl(post.id);
+    navigator.clipboard.writeText(url).then(
+      () => { setCopied(true); setTimeout(() => setCopied(false), 1500); },
       () => showToast("Failed to copy link"),
     );
-  };
+    setTimeout(() => setShareOpen(false), 800);
+  }, [post.id]);
+
+  const handleShareTwitter = useCallback(() => {
+    if (!post.id) { showToast("Cannot share — post has no ID"); setShareOpen(false); return; }
+    const url = buildPostShareUrl(post.id);
+    const text = `Check out "${post.title}" on Synapse`;
+    window.open(
+      `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+    setShareOpen(false);
+  }, [post.id, post.title]);
+
+  const handleShareReddit = useCallback(() => {
+    if (!post.id) { showToast("Cannot share — post has no ID"); setShareOpen(false); return; }
+    const url = buildPostShareUrl(post.id);
+    window.open(
+      `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(post.title)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+    setShareOpen(false);
+  }, [post.id, post.title]);
 
   const handleComment = () => {
     showToast("Comments coming soon");
@@ -276,12 +321,36 @@ export function TheaterUI({
           <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.comments)}</span>
         </button>
         {/* Share */}
-        <button onClick={handleShare} className="flex flex-col items-center gap-1">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/12">
-            <Share2 size={20} className="text-white" />
-          </div>
-          <span className="text-[9px] font-semibold text-white" style={TX}>Share</span>
-        </button>
+        <div className="relative" ref={sharePopRef}>
+          <button onClick={() => setShareOpen((v) => !v)} className="flex flex-col items-center gap-1">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/12">
+              <Share2 size={20} className="text-white" />
+            </div>
+            <span className="text-[9px] font-semibold text-white" style={TX}>Share</span>
+          </button>
+          {shareOpen && (
+            <div className="absolute right-full mr-2 bottom-0 z-[60] min-w-[140px] rounded-lg border border-white/15 bg-[#1a1a1a] py-1 shadow-xl backdrop-blur-md">
+              <button
+                onClick={handleCopyLink}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-white/80 hover:bg-white/10"
+              >
+                {copied ? "✓ Copied!" : "Copy Link"}
+              </button>
+              <button
+                onClick={handleShareTwitter}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-white/80 hover:bg-white/10"
+              >
+                Share to X / Twitter
+              </button>
+              <button
+                onClick={handleShareReddit}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-white/80 hover:bg-white/10"
+              >
+                Share to Reddit
+              </button>
+            </div>
+          )}
+        </div>
         {/* Edit (own posts) */}
         {isOwn && (
           <button onClick={() => onRemix(post)} className="flex flex-col items-center gap-1">
@@ -309,12 +378,15 @@ export function TheaterUI({
         </button>
       </div>
 
-      {/* Scrubber — ghosts with idle state */}
+      {/* Scrubber — pointer-captured for smooth drag-scrub */}
       <div
-        onClick={onSeek}
-        className={`absolute bottom-0 left-0 right-0 z-[50] h-2 cursor-pointer bg-white/15 hover:h-3 transition-all duration-300 ${isIdle && isPlaying ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"}`}
+        onPointerDown={(e) => { e.stopPropagation(); onSeekPointerDown(e); }}
+        onPointerMove={(e) => { e.stopPropagation(); onSeekPointerMove(e); }}
+        onPointerUp={(e) => { e.stopPropagation(); onSeekPointerUp(e); }}
+        onPointerCancel={(e) => { e.stopPropagation(); onSeekPointerCancel(e); }}
+        className={`absolute bottom-0 left-0 right-0 z-[50] h-2 cursor-pointer touch-none bg-white/15 hover:h-3 transition-all duration-300 ${isIdle && isPlaying ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"}`}
       >
-        <div className="h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: post.accent }} />
+        <div className="pointer-events-none h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: post.accent }} />
       </div>
 
       {/* Action toast */}
