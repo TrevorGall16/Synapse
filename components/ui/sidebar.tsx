@@ -3,21 +3,31 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const NAV_ITEMS = [
+/** Brand-tokenised items get accent icon colour even when inactive. */
+interface NavItem {
+  href: string;
+  label: string;
+  icon: string;
+  /** If true, icon always uses brand-accent colour. */
+  branded?: boolean;
+}
+
+const NAV_ITEMS: NavItem[] = [
   { href: "/",         label: "Home",     icon: "⌂" },
-  { href: "/explore",  label: "Explore",  icon: "◎" },
+  { href: "/explore",  label: "Explore",  icon: "◎", branded: true },
   { href: "/upload",   label: "Upload",   icon: "⬆" },
-  { href: "/projects", label: "Projects", icon: "⬛" },
-  { href: "/studio",   label: "Studio",   icon: "▶" },
-  { href: "/niche",    label: "Niche",    icon: "◈" },
+  { href: "/upload",   label: "Studio",   icon: "▶" },
+  { href: "/niche",    label: "Niche",    icon: "◈", branded: true },
   { href: "/profile",  label: "Profile",  icon: "⟐" },
   { href: "/login",    label: "Login",    icon: "⊳" },
 ];
 
 /** True when `pathname` belongs to `item.href` route segment. */
-function isRouteActive(pathname: string, href: string): boolean {
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(href + "/");
+function isRouteActive(pathname: string, item: NavItem): boolean {
+  // Both Upload and Studio point to /upload — always active when on /upload
+  if (item.href === "/upload") return pathname === "/upload" || pathname.startsWith("/upload/");
+  if (item.href === "/") return pathname === "/";
+  return pathname === item.href || pathname.startsWith(item.href + "/");
 }
 
 export function Sidebar() {
@@ -33,10 +43,10 @@ export function Sidebar() {
       </Link>
       <nav className="flex flex-1 flex-col gap-0.5">
         {NAV_ITEMS.map((item) => {
-          const isActive = isRouteActive(pathname, item.href);
+          const isActive = isRouteActive(pathname, item);
           return (
             <Link
-              key={item.href}
+              key={item.label}
               href={item.href}
               data-testid={`sidebar-nav-${item.label.toLowerCase()}`}
               className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
@@ -45,7 +55,9 @@ export function Sidebar() {
                   : "text-white/55 hover:bg-white/6 hover:text-white"
               }`}
             >
-              <span className="text-base leading-none">{item.icon}</span>
+              <span className={`text-base leading-none ${item.branded && !isActive ? "text-brand-accent" : ""}`}>
+                {item.icon}
+              </span>
               {item.label}
             </Link>
           );

@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRef, useState, useCallback, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Upload, X, Film, Image, Check, AlertCircle, ArrowRight,
-  MessageCircle, Star, Zap, Globe,
+  MessageCircle, Star, Zap, Globe, Layers, BarChart3,
 } from "lucide-react";
 import { useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
@@ -12,6 +12,7 @@ import { useProjectStore } from "@/lib/store/project-store";
 import { useCommentStore } from "@/lib/store/comment-store";
 import { saveMediaToDB } from "@/lib/store/media-pool-db";
 import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
+import { ProjectsTab } from "@/components/studio/projects-tab";
 import type { MediaPoolItem } from "@/lib/store/types";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -28,6 +29,8 @@ const CATEGORIES: Array<{ value: string; label: string }> = [
   { value: "high-sensation", label: "High Sensation" },
 ];
 
+const MAX_TAGS = 10;
+
 type UploadStage = "idle" | "preparing" | "uploading" | "finalizing" | "done" | "error";
 
 const STAGE_LABELS: Record<UploadStage, string> = {
@@ -39,10 +42,93 @@ const STAGE_LABELS: Record<UploadStage, string> = {
   error: "Failed",
 };
 
+type StudioTab = "upload" | "projects" | "analytics";
+
+const TABS: Array<{ id: StudioTab; label: string; icon: React.ReactNode }> = [
+  { id: "upload",    label: "Upload",      icon: <Upload size={13} /> },
+  { id: "projects",  label: "My Projects", icon: <Layers size={13} /> },
+  { id: "analytics", label: "Analytics",   icon: <BarChart3 size={13} /> },
+];
+
+// ── Async Thumbnail Generator ────────────────────────────────────────────────
+
+interface ThumbnailResult {
+  url: string;
+  timestamp: number;
+}
+
+function generateThumbnails(
+  videoUrl: string,
+  onComplete: (thumbs: ThumbnailResult[]) => void,
+): () => void {
+  let cancelled = false;
+  const blobUrls: string[] = [];
+
+  const video = document.createElement("video");
+  video.crossOrigin = "anonymous";
+  video.preload = "metadata";
+  video.muted = true;
+  video.playsInline = true;
+  video.src = videoUrl;
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d")!;
+
+  video.addEventListener("loadedmetadata", async () => {
+    if (cancelled) return;
+    const duration = video.duration;
+    if (!duration || !isFinite(duration)) return;
+
+    const positions = [0.10, 0.50, 0.90];
+    const results: ThumbnailResult[] = [];
+
+    for (const pct of positions) {
+      if (cancelled) break;
+      const time = duration * pct;
+      video.currentTime = time;
+
+      await new Promise<void>((resolve) => {
+        const onSeeked = () => {
+          video.removeEventListener("seeked", onSeeked);
+          resolve();
+        };
+        video.addEventListener("seeked", onSeeked);
+      });
+
+      if (cancelled) break;
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg", 0.85),
+      );
+
+      if (blob && !cancelled) {
+        const url = URL.createObjectURL(blob);
+        blobUrls.push(url);
+        results.push({ url, timestamp: time });
+      }
+    }
+
+    if (!cancelled) onComplete(results);
+  });
+
+  return () => {
+    cancelled = true;
+    video.src = "";
+    blobUrls.forEach((u) => URL.revokeObjectURL(u));
+  };
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function UploadPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeTab = (searchParams.get("tab") as StudioTab) || "upload";
+
   const profile = useUserStore((s) => s.profile);
   const addPost = useFeedStore((s) => s.addPost);
   const openProjectInTab = useProjectStore((s) => s.openProjectInTab);
@@ -65,12 +151,38 @@ export default function UploadPage() {
   const [commentsEnabled, setCommentsEnabled] = useState(true);
   const [featured, setFeatured] = useState(false);
 
-  // Thumbnail
+  // Thumbnails — async-generated
+  const [thumbnails, setThumbnails] = useState<ThumbnailResult[]>([]);
   const [thumbnailIdx, setThumbnailIdx] = useState(0);
+  const thumbCleanupRef = useRef<(() => void) | null>(null);
 
   // Upload progress
   const [stage, setStage] = useState<UploadStage>("idle");
   const [stageProgress, setStageProgress] = useState(0);
+
+  // ── Cleanup all blob URLs on unmount ───────────────────────────────────────
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      thumbCleanupRef.current?.();
+      thumbnails.forEach((t) => URL.revokeObjectURL(t.url));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Tab navigation ─────────────────────────────────────────────────────────
+
+  const switchTab = useCallback((tab: StudioTab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === "upload") {
+      params.delete("tab");
+    } else {
+      params.set("tab", tab);
+    }
+    const qs = params.toString();
+    router.replace(`/upload${qs ? `?${qs}` : ""}`, { scroll: false });
+  }, [router, searchParams]);
 
   // ── File handling ──────────────────────────────────────────────────────────
 
@@ -78,8 +190,24 @@ export default function UploadPage() {
     const f = e.target.files?.[0] ?? null;
     setFile(f);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(f ? URL.createObjectURL(f) : null);
-  }, [previewUrl]);
+    // Clean up old thumbnails
+    thumbCleanupRef.current?.();
+    thumbnails.forEach((t) => URL.revokeObjectURL(t.url));
+    setThumbnails([]);
+    setThumbnailIdx(0);
+
+    if (f) {
+      const url = URL.createObjectURL(f);
+      setPreviewUrl(url);
+      // Kick off async thumbnail generation
+      thumbCleanupRef.current = generateThumbnails(url, (results) => {
+        setThumbnails(results);
+        setThumbnailIdx(0);
+      });
+    } else {
+      setPreviewUrl(null);
+    }
+  }, [previewUrl, thumbnails]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -87,26 +215,43 @@ export default function UploadPage() {
     if (f && f.type.startsWith("video/")) {
       setFile(f);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(URL.createObjectURL(f));
+      thumbCleanupRef.current?.();
+      thumbnails.forEach((t) => URL.revokeObjectURL(t.url));
+      setThumbnails([]);
+      setThumbnailIdx(0);
+
+      const url = URL.createObjectURL(f);
+      setPreviewUrl(url);
+      thumbCleanupRef.current = generateThumbnails(url, (results) => {
+        setThumbnails(results);
+        setThumbnailIdx(0);
+      });
     }
-  }, [previewUrl]);
+  }, [previewUrl, thumbnails]);
 
   const clearFile = useCallback(() => {
     setFile(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
+    thumbCleanupRef.current?.();
+    thumbnails.forEach((t) => URL.revokeObjectURL(t.url));
+    setThumbnails([]);
+    setThumbnailIdx(0);
     if (fileRef.current) fileRef.current.value = "";
-  }, [previewUrl]);
+  }, [previewUrl, thumbnails]);
 
   // ── Tag chip helpers ───────────────────────────────────────────────────────
 
+  const tagLimitReached = tags.length >= MAX_TAGS;
+
   const commitTag = useCallback((raw: string) => {
+    if (tagLimitReached) return;
     const t = raw.trim().replace(/[,#]/g, "").trim();
     if (!t) return;
     const tag = `#${t}`;
     if (!tags.includes(tag)) setTags((prev) => [...prev, tag]);
     setTagInput("");
-  }, [tags]);
+  }, [tags, tagLimitReached]);
 
   const removeTag = useCallback((tag: string) => {
     setTags((prev) => prev.filter((t) => t !== tag));
@@ -121,7 +266,6 @@ export default function UploadPage() {
     setStage("preparing");
     setStageProgress(0);
 
-    // Simulate staged progress
     await tick(400);
     setStageProgress(30);
     setStage("uploading");
@@ -153,9 +297,7 @@ export default function UploadPage() {
       comments_enabled: commentsEnabled,
     });
 
-    // Initialize empty comments for this post — prevents mock comment seeding
     useCommentStore.getState().initEmptyPost(postId);
-
     publishedIdRef.current = postId;
     setStageProgress(100);
     setStage("done");
@@ -192,21 +334,137 @@ export default function UploadPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
-      {/* Header */}
-      <div className="z-10 shrink-0 flex items-center justify-between border-b border-white/10 bg-[#141414]/95 px-6 py-3 backdrop-blur-sm">
-        <div className="flex items-center gap-2.5">
-          <Upload size={14} className="text-brand-accent" />
-          <h1 className="text-sm font-bold text-white">Upload Studio</h1>
+      {/* Header + Tab Bar */}
+      <div className="z-10 shrink-0 border-b border-white/10 bg-[#141414]/95 backdrop-blur-sm">
+        <div className="flex items-center justify-between px-6 py-3">
+          <div className="flex items-center gap-2.5">
+            <Upload size={14} className="text-brand-accent" />
+            <h1 className="text-sm font-bold text-white">Studio</h1>
+          </div>
+          {activeTab === "upload" && (
+            <button
+              onClick={() => router.push("/")}
+              className="flex items-center gap-1.5 rounded-lg bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/50 transition-colors hover:bg-white/14 hover:text-white"
+            >
+              <X size={11} /> Cancel
+            </button>
+          )}
         </div>
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center gap-1.5 rounded-lg bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/50 transition-colors hover:bg-white/14 hover:text-white"
-        >
-          <X size={11} /> Cancel
-        </button>
+
+        {/* Tabs */}
+        <div className="flex gap-0 px-6">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => switchTab(tab.id)}
+              className={`flex items-center gap-1.5 border-b-2 px-4 py-2 text-[11px] font-semibold transition-colors ${
+                activeTab === tab.id
+                  ? "border-brand-accent text-brand-text"
+                  : "border-transparent text-white/40 hover:text-white/70"
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Progress bar — visible during upload stages */}
+      {/* Tab Content */}
+      {activeTab === "upload" && (
+        <UploadTabContent
+          file={file}
+          fileRef={fileRef}
+          previewUrl={previewUrl}
+          title={title}
+          setTitle={setTitle}
+          desc={desc}
+          setDesc={setDesc}
+          tags={tags}
+          tagInput={tagInput}
+          setTagInput={setTagInput}
+          tagLimitReached={tagLimitReached}
+          commitTag={commitTag}
+          removeTag={removeTag}
+          setTags={setTags}
+          category={category}
+          setCategory={setCategory}
+          commentsEnabled={commentsEnabled}
+          setCommentsEnabled={setCommentsEnabled}
+          featured={featured}
+          setFeatured={setFeatured}
+          thumbnails={thumbnails}
+          thumbnailIdx={thumbnailIdx}
+          setThumbnailIdx={setThumbnailIdx}
+          stage={stage}
+          isPublishing={isPublishing}
+          canPublish={canPublish}
+          progressPct={progressPct}
+          handleFileChange={handleFileChange}
+          handleDrop={handleDrop}
+          clearFile={clearFile}
+          handlePublish={handlePublish}
+          handleOpenStudio={handleOpenStudio}
+          router={router}
+        />
+      )}
+      {activeTab === "projects" && <ProjectsTab />}
+      {activeTab === "analytics" && <AnalyticsPlaceholder />}
+    </div>
+  );
+}
+
+// ── Upload Tab Content ──────────────────────────────────────────────────────
+
+interface UploadTabProps {
+  file: File | null;
+  fileRef: React.RefObject<HTMLInputElement | null>;
+  previewUrl: string | null;
+  title: string;
+  setTitle: (v: string) => void;
+  desc: string;
+  setDesc: (v: string) => void;
+  tags: string[];
+  tagInput: string;
+  setTagInput: (v: string) => void;
+  tagLimitReached: boolean;
+  commitTag: (raw: string) => void;
+  removeTag: (tag: string) => void;
+  setTags: React.Dispatch<React.SetStateAction<string[]>>;
+  category: string;
+  setCategory: (v: string) => void;
+  commentsEnabled: boolean;
+  setCommentsEnabled: (v: boolean) => void;
+  featured: boolean;
+  setFeatured: (v: boolean) => void;
+  thumbnails: ThumbnailResult[];
+  thumbnailIdx: number;
+  setThumbnailIdx: (v: number) => void;
+  stage: UploadStage;
+  isPublishing: boolean;
+  canPublish: boolean;
+  progressPct: number;
+  handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleDrop: (e: React.DragEvent) => void;
+  clearFile: () => void;
+  handlePublish: () => void;
+  handleOpenStudio: () => void;
+  router: ReturnType<typeof useRouter>;
+}
+
+function UploadTabContent(props: UploadTabProps) {
+  const {
+    file, fileRef, previewUrl, title, setTitle, desc, setDesc,
+    tags, tagInput, setTagInput, tagLimitReached, commitTag, removeTag, setTags,
+    category, setCategory, commentsEnabled, setCommentsEnabled, featured, setFeatured,
+    thumbnails, thumbnailIdx, setThumbnailIdx,
+    stage, isPublishing, canPublish, progressPct,
+    handleFileChange, handleDrop, clearFile, handlePublish, handleOpenStudio, router,
+  } = props;
+
+  return (
+    <>
+      {/* Progress bar */}
       {isPublishing && (
         <div className="shrink-0 border-b border-white/5">
           <div className="flex items-center gap-3 px-6 py-2">
@@ -227,7 +485,7 @@ export default function UploadPage() {
 
       {/* Two-column layout */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ── Left: Drop zone + preview ─────────────────────────────────────── */}
+        {/* Left: Drop zone + preview */}
         <div className="flex w-1/2 flex-col border-r border-white/8 p-6 gap-5">
           <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={handleFileChange} />
 
@@ -273,30 +531,44 @@ export default function UploadPage() {
                 </div>
               </div>
 
-              {/* Thumbnail picker scaffold */}
+              {/* Thumbnail picker — async generated */}
               <div className="shrink-0">
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-white/30">Thumbnail</p>
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-white/30">
+                  Thumbnail {thumbnails.length > 0 ? "— Auto-Generated" : "— Generating..."}
+                </p>
                 <div className="flex gap-2">
-                  {[0, 1, 2].map((i) => (
-                    <button
-                      key={i}
-                      onClick={() => setThumbnailIdx(i)}
-                      className={`relative h-16 w-24 overflow-hidden rounded-lg border-2 transition-colors ${
-                        thumbnailIdx === i
-                          ? "border-brand-accent"
-                          : "border-white/10 hover:border-white/20"
-                      }`}
-                    >
-                      {previewUrl && (
-                        <video src={previewUrl} muted playsInline preload="metadata" className="h-full w-full object-cover pointer-events-none" />
-                      )}
-                      {thumbnailIdx === i && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-brand/20">
-                          <Check size={14} className="text-brand-text" />
+                  {thumbnails.length > 0
+                    ? thumbnails.map((thumb, i) => (
+                        <button
+                          key={thumb.url}
+                          onClick={() => setThumbnailIdx(i)}
+                          className={`relative h-16 w-24 overflow-hidden rounded-lg border-2 transition-colors ${
+                            thumbnailIdx === i
+                              ? "border-brand-accent"
+                              : "border-white/10 hover:border-white/20"
+                          }`}
+                        >
+                          <img
+                            src={thumb.url}
+                            alt={`Thumbnail at ${Math.round(thumb.timestamp)}s`}
+                            className="h-full w-full object-cover"
+                          />
+                          {thumbnailIdx === i && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-brand/20">
+                              <Check size={14} className="text-brand-text" />
+                            </div>
+                          )}
+                        </button>
+                      ))
+                    : [0, 1, 2].map((i) => (
+                        <div
+                          key={i}
+                          className="flex h-16 w-24 items-center justify-center rounded-lg border-2 border-white/10 bg-white/[0.02]"
+                        >
+                          <div className="h-3 w-3 animate-pulse rounded-full bg-white/15" />
                         </div>
-                      )}
-                    </button>
-                  ))}
+                      ))
+                  }
                   <button
                     onClick={() => {}}
                     className="flex h-16 w-24 items-center justify-center rounded-lg border-2 border-dashed border-white/10 text-white/20 transition-colors hover:border-white/20 hover:text-white/40"
@@ -317,7 +589,7 @@ export default function UploadPage() {
           )}
         </div>
 
-        {/* ── Right: Metadata form ──────────────────────────────────────────── */}
+        {/* Right: Metadata form */}
         <div className="flex w-1/2 flex-col overflow-y-auto p-6 gap-5">
           {/* Title */}
           <div>
@@ -346,10 +618,14 @@ export default function UploadPage() {
             <p className="mt-1 text-right text-[9px] tabular-nums text-white/20">{desc.length}/{DESCRIPTION_MAX}</p>
           </div>
 
-          {/* Tags (Chip Engine) */}
+          {/* Tags (Chip Engine) — max 10 */}
           <div>
             <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Tags</label>
-            <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 transition-colors focus-within:border-brand-accent/40 focus-within:bg-white/[0.06]">
+            <div className={`flex flex-wrap items-center gap-1.5 rounded-xl border bg-white/[0.04] px-3 py-2.5 transition-colors focus-within:bg-white/[0.06] ${
+              tagLimitReached
+                ? "border-amber-500/30 focus-within:border-amber-500/40"
+                : "border-white/10 focus-within:border-brand-accent/40"
+            }`}>
               {tags.map((t) => (
                 <span
                   key={t}
@@ -374,10 +650,17 @@ export default function UploadPage() {
                   }
                 }}
                 onBlur={() => commitTag(tagInput)}
-                placeholder={tags.length === 0 ? "Type a tag, press Space or Enter…" : ""}
-                className="min-w-[120px] flex-1 bg-transparent text-sm text-white placeholder-white/20 outline-none"
+                disabled={tagLimitReached}
+                placeholder={tagLimitReached ? "" : tags.length === 0 ? "Type a tag, press Space or Enter..." : ""}
+                className="min-w-[120px] flex-1 bg-transparent text-sm text-white placeholder-white/20 outline-none disabled:cursor-not-allowed disabled:opacity-40"
               />
             </div>
+            {tagLimitReached && (
+              <p className="mt-1.5 text-[10px] font-medium text-amber-400/80">Maximum {MAX_TAGS} tags reached.</p>
+            )}
+            {!tagLimitReached && (
+              <p className="mt-1 text-right text-[9px] tabular-nums text-white/20">{tags.length}/{MAX_TAGS}</p>
+            )}
           </div>
 
           {/* Channel (Category) */}
@@ -415,7 +698,7 @@ export default function UploadPage() {
             />
           </div>
 
-          {/* Divider */}
+          {/* Spacer */}
           <div className="flex-1" />
 
           {/* Actions */}
@@ -458,6 +741,18 @@ export default function UploadPage() {
           )}
         </div>
       </div>
+    </>
+  );
+}
+
+// ── Analytics Placeholder ───────────────────────────────────────────────────
+
+function AnalyticsPlaceholder() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4">
+      <BarChart3 size={36} className="text-white/15" />
+      <p className="text-sm font-semibold text-white/35">Analytics coming soon</p>
+      <p className="text-xs text-white/20">Track views, likes, and engagement across your posts.</p>
     </div>
   );
 }
