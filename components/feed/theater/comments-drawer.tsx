@@ -469,12 +469,14 @@ function CommentNode({
     >
       {/* Glassmorphism bubble */}
       <div
-        className={`relative rounded-2xl border px-3.5 py-3 transition-all duration-300
+        className={`relative rounded-2xl border px-3.5 py-3 transition-all duration-300 drop-shadow-sm
           ${isHighlighted
             ? "border-purple-400/40 bg-purple-500/15 shadow-[0_0_20px_rgba(168,85,247,0.15)]"
             : isReplyTarget
-              ? "border-purple-400/30 bg-purple-500/8 shadow-sm"
-              : "border-white/[0.07] bg-white/[0.04] hover:bg-white/[0.06] shadow-sm"
+              ? "border-purple-400/30 bg-purple-500/8"
+              : isOwn
+                ? "border-purple-400/15 bg-purple-500/[0.06] hover:bg-purple-500/[0.09]"
+                : "border-white/[0.06] bg-white/[0.04] hover:bg-white/[0.06]"
           }
         `}
         style={{
@@ -507,12 +509,13 @@ function CommentNode({
           )}
           {/* Avatar */}
           <div
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white/90"
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white/90 ${isOwn ? "ring-1 ring-purple-400/40" : ""}`}
             style={{ background: `hsl(${hue} 45% 28%)` }}
           >
             {displayName[0]?.toUpperCase()}
           </div>
           <span className="text-xs font-semibold text-white/75">{displayName}</span>
+          {isOwn && <span className="rounded-full bg-purple-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-purple-300/80">You</span>}
           <span className="text-[10px] text-white/25">{timestamp}</span>
           {isCollapsed && hasChildren && (
             <span className="text-[10px] text-white/15">[{childComments.length} hidden]</span>

@@ -278,8 +278,8 @@ export function TheaterUI({
         <div
           role="button"
           tabIndex={0}
-          onClick={() => { onCreator(); showToast("Profile view coming soon"); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { onCreator(); showToast("Profile view coming soon"); } }}
+          onClick={(e) => { e.stopPropagation(); onCreator(); }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onCreator(); } }}
           className="mb-2 flex cursor-pointer items-center gap-2.5"
         >
           <div

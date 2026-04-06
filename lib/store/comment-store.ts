@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { genId, computeHierarchy } from "@/lib/utils/comment-helpers";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -42,19 +43,13 @@ const PAGE_SIZE = 20;
 
 function buildMockComments(postId: string): Comment[] {
   const now = new Date();
-  const authors = [
-    { id: "a1", name: "aurora_vj" },
-    { id: "a2", name: "neon_cut" },
-    { id: "a3", name: "spectral_x" },
-    { id: "a4", name: "deep.freq" },
-  ];
 
   const comments: Comment[] = [];
 
   // Root comment 1
   const c1Id = "c-mock-001";
   comments.push({
-    id: c1Id, post_id: postId, author_id: authors[0].id, parent_id: null,
+    id: c1Id, post_id: postId, author_id: "a1", parent_id: null,
     root_id: c1Id, body: "This edit is insane, the beat sync is perfectly timed", depth: 0, path: c1Id,
     is_deleted: false, created_at: new Date(now.getTime() - 3600_000).toISOString(), updated_at: new Date(now.getTime() - 3600_000).toISOString(),
   });
@@ -62,7 +57,7 @@ function buildMockComments(postId: string): Comment[] {
   // Reply to c1
   const c2Id = "c-mock-002";
   comments.push({
-    id: c2Id, post_id: postId, author_id: authors[1].id, parent_id: c1Id,
+    id: c2Id, post_id: postId, author_id: "a2", parent_id: c1Id,
     root_id: c1Id, body: "Right?? The transition at 0:04 is butter smooth", depth: 1, path: `${c1Id}.${c2Id}`,
     is_deleted: false, created_at: new Date(now.getTime() - 3000_000).toISOString(), updated_at: new Date(now.getTime() - 3000_000).toISOString(),
   });
@@ -70,7 +65,7 @@ function buildMockComments(postId: string): Comment[] {
   // Nested reply
   const c3Id = "c-mock-003";
   comments.push({
-    id: c3Id, post_id: postId, author_id: authors[0].id, parent_id: c2Id,
+    id: c3Id, post_id: postId, author_id: "a1", parent_id: c2Id,
     root_id: c1Id, body: "Thanks! Used the phase-shift preset for that one", depth: 2, path: `${c1Id}.${c2Id}.${c3Id}`,
     is_deleted: false, created_at: new Date(now.getTime() - 2400_000).toISOString(), updated_at: new Date(now.getTime() - 2400_000).toISOString(),
   });
@@ -78,7 +73,7 @@ function buildMockComments(postId: string): Comment[] {
   // Root comment 2
   const c4Id = "c-mock-004";
   comments.push({
-    id: c4Id, post_id: postId, author_id: authors[2].id, parent_id: null,
+    id: c4Id, post_id: postId, author_id: "a3", parent_id: null,
     root_id: c4Id, body: "How did you get that glitch effect? Is that a custom shader?", depth: 0, path: c4Id,
     is_deleted: false, created_at: new Date(now.getTime() - 1800_000).toISOString(), updated_at: new Date(now.getTime() - 1800_000).toISOString(),
   });
@@ -86,7 +81,7 @@ function buildMockComments(postId: string): Comment[] {
   // Reply to c4
   const c5Id = "c-mock-005";
   comments.push({
-    id: c5Id, post_id: postId, author_id: authors[3].id, parent_id: c4Id,
+    id: c5Id, post_id: postId, author_id: "a4", parent_id: c4Id,
     root_id: c4Id, body: "Looks like the RGB Split preset from the community library", depth: 1, path: `${c4Id}.${c5Id}`,
     is_deleted: false, created_at: new Date(now.getTime() - 1200_000).toISOString(), updated_at: new Date(now.getTime() - 1200_000).toISOString(),
   });
@@ -94,7 +89,7 @@ function buildMockComments(postId: string): Comment[] {
   // Root comment 3
   const c6Id = "c-mock-006";
   comments.push({
-    id: c6Id, post_id: postId, author_id: authors[1].id, parent_id: null,
+    id: c6Id, post_id: postId, author_id: "a2", parent_id: null,
     root_id: c6Id, body: "The color grading on this is chef's kiss", depth: 0, path: c6Id,
     is_deleted: false, created_at: new Date(now.getTime() - 600_000).toISOString(), updated_at: new Date(now.getTime() - 600_000).toISOString(),
   });
@@ -120,12 +115,12 @@ interface CommentState {
   authors: Record<string, CommentAuthor>;
   /** Cursor-based pagination: has more pages per post */
   hasMore: Record<string, boolean>;
-  /** Track which posts have been initially loaded */
+  /** Track which posts have been initially loaded (ephemeral, not persisted) */
   loadedPosts: Set<string>;
 
   /** Fetch a page of comments for a post (cursor = last comment's created_at) */
   fetchComments: (postId: string, cursor?: string) => Comment[];
-  /** Add a comment optimistically */
+  /** Add a comment optimistically — auto-upvotes by author */
   addComment: (postId: string, authorId: string, body: string, parentId: string | null) => Comment;
   /** Confirm an optimistic comment (replace temp_id) */
   confirmComment: (postId: string, tempId: string, serverId?: string) => void;
@@ -145,173 +140,205 @@ interface CommentState {
   getAuthor: (authorId: string) => CommentAuthor | undefined;
 }
 
-export const useCommentStore = create<CommentState>()((set, get) => ({
-  commentsByPost: {},
-  votes: {},
-  authors: Object.fromEntries(MOCK_AUTHORS.map((a) => [a.id, a])),
-  hasMore: {},
-  loadedPosts: new Set(),
+export const useCommentStore = create<CommentState>()(
+  persist(
+    (set, get) => ({
+      commentsByPost: {},
+      votes: {},
+      authors: Object.fromEntries(MOCK_AUTHORS.map((a) => [a.id, a])),
+      hasMore: {},
+      loadedPosts: new Set(),
 
-  fetchComments: (postId, cursor) => {
-    const state = get();
+      fetchComments: (postId, cursor) => {
+        const state = get();
 
-    // Initialize with mock data on first load
-    if (!state.loadedPosts.has(postId)) {
-      const mockComments = buildMockComments(postId);
-      set((s) => ({
-        loadedPosts: new Set([...s.loadedPosts, postId]),
-        commentsByPost: { ...s.commentsByPost, [postId]: mockComments },
-        hasMore: { ...s.hasMore, [postId]: false }, // mock data is complete
-      }));
-      return mockComments;
-    }
+        // Initialize with mock data on first load
+        if (!state.loadedPosts.has(postId)) {
+          // Check if persisted data already exists for this post
+          const existing = state.commentsByPost[postId];
+          if (existing && existing.length > 0) {
+            // Mark as loaded without overwriting persisted data
+            set((s) => ({
+              loadedPosts: new Set([...s.loadedPosts, postId]),
+            }));
+            return existing;
+          }
 
-    const all = state.commentsByPost[postId] ?? [];
-    if (!cursor) {
-      // First page: return sorted by path for threaded display
-      const sorted = [...all].sort((a, b) => a.path.localeCompare(b.path));
-      return sorted.slice(0, PAGE_SIZE);
-    }
+          const mockComments = buildMockComments(postId);
+          set((s) => ({
+            loadedPosts: new Set([...s.loadedPosts, postId]),
+            commentsByPost: { ...s.commentsByPost, [postId]: mockComments },
+            hasMore: { ...s.hasMore, [postId]: false },
+          }));
+          return mockComments;
+        }
 
-    // Cursor-based: return comments created after cursor
-    const sorted = [...all]
-      .sort((a, b) => a.path.localeCompare(b.path))
-      .filter((c) => c.created_at > cursor);
-    return sorted.slice(0, PAGE_SIZE);
-  },
+        const all = state.commentsByPost[postId] ?? [];
+        if (!cursor) {
+          const sorted = [...all].sort((a, b) => a.path.localeCompare(b.path));
+          return sorted.slice(0, PAGE_SIZE);
+        }
 
-  addComment: (postId, authorId, body, parentId) => {
-    const state = get();
-    const tempId = `temp-${genId()}`;
-    const now = new Date().toISOString();
-    const allComments = state.commentsByPost[postId] ?? [];
-
-    // Find parent for hierarchy computation
-    const parent = parentId
-      ? allComments.find((c) => c.id === parentId) ?? null
-      : null;
-
-    if (parentId && !parent) {
-      console.warn(`[comment-store] Parent comment ${parentId} not found`);
-    }
-
-    const hierarchy = computeHierarchy(tempId, parent ? {
-      root_id: parent.root_id,
-      depth: parent.depth,
-      path: parent.path,
-    } : null);
-
-    const comment: Comment = {
-      id: tempId,
-      post_id: postId,
-      author_id: authorId,
-      parent_id: parentId,
-      root_id: hierarchy.root_id,
-      body,
-      depth: hierarchy.depth,
-      path: hierarchy.path,
-      is_deleted: false,
-      created_at: now,
-      updated_at: now,
-      _status: "pending",
-      _temp_id: tempId,
-    };
-
-    set((s) => ({
-      commentsByPost: {
-        ...s.commentsByPost,
-        [postId]: [...(s.commentsByPost[postId] ?? []), comment],
+        const sorted = [...all]
+          .sort((a, b) => a.path.localeCompare(b.path))
+          .filter((c) => c.created_at > cursor);
+        return sorted.slice(0, PAGE_SIZE);
       },
-    }));
 
-    // Simulate server confirmation after a short delay
-    setTimeout(() => {
-      get().confirmComment(postId, tempId);
-    }, 300);
+      addComment: (postId, authorId, body, parentId) => {
+        const state = get();
+        const tempId = `temp-${genId()}`;
+        const now = new Date().toISOString();
+        const allComments = state.commentsByPost[postId] ?? [];
 
-    return comment;
-  },
+        const parent = parentId
+          ? allComments.find((c) => c.id === parentId) ?? null
+          : null;
 
-  confirmComment: (postId, tempId, serverId) => {
-    set((s) => {
-      const comments = s.commentsByPost[postId] ?? [];
-      return {
-        commentsByPost: {
-          ...s.commentsByPost,
-          [postId]: comments.map((c) =>
-            c.id === tempId
-              ? { ...c, _status: "confirmed" as const, id: serverId ?? c.id }
-              : c
-          ),
-        },
-      };
-    });
-  },
+        if (parentId && !parent) {
+          console.warn(`[comment-store] Parent comment ${parentId} not found`);
+        }
 
-  failComment: (postId, tempId) => {
-    set((s) => {
-      const comments = s.commentsByPost[postId] ?? [];
-      return {
-        commentsByPost: {
-          ...s.commentsByPost,
-          [postId]: comments.map((c) =>
-            c.id === tempId ? { ...c, _status: "failed" as const } : c
-          ),
-        },
-      };
-    });
-  },
+        const hierarchy = computeHierarchy(tempId, parent ? {
+          root_id: parent.root_id,
+          depth: parent.depth,
+          path: parent.path,
+        } : null);
 
-  dismissFailedComment: (postId, tempId) => {
-    set((s) => ({
-      commentsByPost: {
-        ...s.commentsByPost,
-        [postId]: (s.commentsByPost[postId] ?? []).filter((c) => c.id !== tempId),
+        const comment: Comment = {
+          id: tempId,
+          post_id: postId,
+          author_id: authorId,
+          parent_id: parentId,
+          root_id: hierarchy.root_id,
+          body,
+          depth: hierarchy.depth,
+          path: hierarchy.path,
+          is_deleted: false,
+          created_at: now,
+          updated_at: now,
+          _status: "pending",
+          _temp_id: tempId,
+        };
+
+        // Auto-upvote by author (score starts at 1)
+        const voteKey = `${tempId}:${authorId}`;
+
+        set((s) => ({
+          commentsByPost: {
+            ...s.commentsByPost,
+            [postId]: [...(s.commentsByPost[postId] ?? []), comment],
+          },
+          votes: {
+            ...s.votes,
+            [voteKey]: { comment_id: tempId, user_id: authorId, value: 1 },
+          },
+        }));
+
+        // Simulate server confirmation after a short delay
+        setTimeout(() => {
+          get().confirmComment(postId, tempId);
+        }, 300);
+
+        return comment;
       },
-    }));
-  },
 
-  deleteComment: (postId, commentId) => {
-    set((s) => ({
-      commentsByPost: {
-        ...s.commentsByPost,
-        [postId]: (s.commentsByPost[postId] ?? []).map((c) =>
-          c.id === commentId ? { ...c, is_deleted: true, body: "[deleted]" } : c
-        ),
+      confirmComment: (postId, tempId, serverId) => {
+        set((s) => {
+          const comments = s.commentsByPost[postId] ?? [];
+          return {
+            commentsByPost: {
+              ...s.commentsByPost,
+              [postId]: comments.map((c) =>
+                c.id === tempId
+                  ? { ...c, _status: "confirmed" as const, id: serverId ?? c.id }
+                  : c
+              ),
+            },
+          };
+        });
       },
-    }));
-  },
 
-  handleVote: (commentId, userId, newValue) => {
-    const key = `${commentId}:${userId}`;
-    const current = get().votes[key]?.value ?? 0;
-    if (current === newValue) {
-      // Same vote → remove (un-toggle)
-      set((s) => {
-        const { [key]: _, ...rest } = s.votes;
-        return { votes: rest };
-      });
-    } else {
-      // Different or no vote → set new value
-      set((s) => ({
-        votes: { ...s.votes, [key]: { comment_id: commentId, user_id: userId, value: newValue } },
-      }));
-    }
-  },
+      failComment: (postId, tempId) => {
+        set((s) => {
+          const comments = s.commentsByPost[postId] ?? [];
+          return {
+            commentsByPost: {
+              ...s.commentsByPost,
+              [postId]: comments.map((c) =>
+                c.id === tempId ? { ...c, _status: "failed" as const } : c
+              ),
+            },
+          };
+        });
+      },
 
-  getScore: (commentId) => {
-    const state = get();
-    let score = 0;
-    for (const [key, vote] of Object.entries(state.votes)) {
-      if (key.startsWith(`${commentId}:`)) score += vote.value;
-    }
-    return score;
-  },
+      dismissFailedComment: (postId, tempId) => {
+        set((s) => ({
+          commentsByPost: {
+            ...s.commentsByPost,
+            [postId]: (s.commentsByPost[postId] ?? []).filter((c) => c.id !== tempId),
+          },
+        }));
+      },
 
-  getUserVote: (commentId, userId) => {
-    const key = `${commentId}:${userId}`;
-    return get().votes[key]?.value ?? 0;
-  },
+      deleteComment: (postId, commentId) => {
+        set((s) => ({
+          commentsByPost: {
+            ...s.commentsByPost,
+            [postId]: (s.commentsByPost[postId] ?? []).map((c) =>
+              c.id === commentId ? { ...c, is_deleted: true, body: "[deleted]" } : c
+            ),
+          },
+        }));
+      },
 
-  getAuthor: (authorId) => get().authors[authorId],
-}));
+      handleVote: (commentId, userId, newValue) => {
+        const key = `${commentId}:${userId}`;
+        const current = get().votes[key]?.value ?? 0;
+        if (current === newValue) {
+          // Same vote → remove (un-toggle)
+          set((s) => {
+            const { [key]: _, ...rest } = s.votes;
+            return { votes: rest };
+          });
+        } else {
+          // Different or no vote → set new value
+          set((s) => ({
+            votes: { ...s.votes, [key]: { comment_id: commentId, user_id: userId, value: newValue } },
+          }));
+        }
+      },
+
+      getScore: (commentId) => {
+        const state = get();
+        let score = 0;
+        for (const [key, vote] of Object.entries(state.votes)) {
+          if (key.startsWith(`${commentId}:`)) score += vote.value;
+        }
+        return score;
+      },
+
+      getUserVote: (commentId, userId) => {
+        const key = `${commentId}:${userId}`;
+        return get().votes[key]?.value ?? 0;
+      },
+
+      getAuthor: (authorId) => get().authors[authorId],
+    }),
+    {
+      name: "synapse-comments",
+      version: 1,
+      migrate: (persisted, version) => {
+        // Future schema migrations go here
+        return persisted as CommentState;
+      },
+      partialize: (s) => ({
+        commentsByPost: s.commentsByPost,
+        votes: s.votes,
+        hasMore: s.hasMore,
+        authors: s.authors,
+      }),
+    },
+  ),
+);
