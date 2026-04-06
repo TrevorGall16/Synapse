@@ -7,6 +7,7 @@ import {
   X, AlertCircle, ArrowUp, Minus, Plus, MessageCircleOff,
   Flame, Clock,
 } from "lucide-react";
+import Link from "next/link";
 import { useCommentStore, type Comment } from "@/lib/store/comment-store";
 import { useUserStore } from "@/lib/store/user-store";
 
@@ -261,7 +262,7 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
                 onClick={() => setSortMode("new")}
                 className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition-colors ${
                   sortMode === "new"
-                    ? "bg-white/10 text-purple-400"
+                    ? "bg-white/10 text-brand-accent"
                     : "text-white/30 hover:text-white/50"
                 }`}
                 title="Sort by newest"
@@ -329,10 +330,10 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
         const replyAuthor = useCommentStore.getState().getAuthor(replyTarget.author_id);
         const authorName = replyAuthor?.username ?? replyAuthor?.displayName ?? "unknown";
         return (
-          <div className="flex items-center gap-2 border-t border-purple-400/20 bg-purple-500/10 px-4 py-2">
-            <CornerDownRight size={12} className="shrink-0 text-purple-400/60" />
+          <div className="flex items-center gap-2 border-t border-brand-accent/20 bg-brand/10 px-4 py-2">
+            <CornerDownRight size={12} className="shrink-0 text-brand-accent/60" />
             <div className="min-w-0 flex-1">
-              <span className="text-xs font-semibold text-purple-300">Replying to @{authorName}</span>
+              <span className="text-xs font-semibold text-brand-text">Replying to @{authorName}</span>
               <p className="truncate text-xs text-white/40">
                 {replyTarget.body.slice(0, 60)}
                 {replyTarget.body.length > 60 ? "..." : ""}
@@ -341,7 +342,7 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
             <button
               onClick={() => jumpToComment(replyTo)}
               title="Jump to comment"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-purple-400/60 transition-colors hover:bg-white/10 hover:text-purple-300"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-brand-accent/60 transition-colors hover:bg-white/10 hover:text-brand-text"
             >
               <ArrowUp size={14} />
             </button>
@@ -374,7 +375,7 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
               disabled={!body.trim()}
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-all ${
                 body.trim()
-                  ? "bg-purple-500 text-white hover:bg-purple-400"
+                  ? "bg-brand text-white hover:bg-brand-accent"
                   : "bg-white/10 text-white/20"
               }`}
             >
@@ -471,11 +472,11 @@ function CommentNode({
       <div
         className={`relative rounded-2xl border px-3.5 py-3 transition-all duration-300 drop-shadow-sm
           ${isHighlighted
-            ? "border-purple-400/40 bg-purple-500/15 shadow-[0_0_20px_rgba(168,85,247,0.15)]"
+            ? "border-brand-accent/40 bg-brand/15 shadow-[0_0_20px_color-mix(in_oklch,var(--color-brand)_15%,transparent)]"
             : isReplyTarget
-              ? "border-purple-400/30 bg-purple-500/8"
+              ? "border-brand-accent/30 bg-brand/8"
               : isOwn
-                ? "border-purple-400/15 bg-purple-500/[0.06] hover:bg-purple-500/[0.09]"
+                ? "border-brand-accent/15 bg-brand/[0.06] hover:bg-brand/[0.09]"
                 : "border-white/[0.06] bg-white/[0.04] hover:bg-white/[0.06]"
           }
         `}
@@ -492,7 +493,7 @@ function CommentNode({
             style={{ width: 14, padding: "0 5px" }}
             title={isCollapsed ? "Expand thread" : "Collapse thread"}
           >
-            <div className={`w-[2px] rounded-full transition-colors ${isCollapsed ? "bg-purple-400/60" : "bg-white/10 group-hover/thread:bg-white/30"}`} />
+            <div className={`w-[2px] rounded-full transition-colors ${isCollapsed ? "bg-brand-accent/60" : "bg-white/10 group-hover/thread:bg-white/30"}`} />
           </button>
         )}
 
@@ -507,15 +508,21 @@ function CommentNode({
               {isCollapsed ? <Plus size={11} /> : <Minus size={11} />}
             </button>
           )}
-          {/* Avatar */}
-          <div
-            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white/90 ${isOwn ? "ring-1 ring-purple-400/40" : ""}`}
-            style={{ background: `hsl(${hue} 45% 28%)` }}
+          {/* Avatar + name — link to profile */}
+          <Link
+            href={isOwn ? "/profile/you" : `/profile/${author?.username ?? comment.author_id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-2 cursor-pointer group/author"
           >
-            {displayName[0]?.toUpperCase()}
-          </div>
-          <span className="text-xs font-semibold text-white/75">{displayName}</span>
-          {isOwn && <span className="rounded-full bg-purple-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-purple-300/80">You</span>}
+            <div
+              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white/90 transition-transform group-hover/author:scale-110 ${isOwn ? "ring-1 ring-brand-accent/40" : ""}`}
+              style={{ background: `hsl(${hue} 45% 28%)` }}
+            >
+              {displayName[0]?.toUpperCase()}
+            </div>
+            <span className="text-xs font-semibold text-white/75 group-hover/author:text-white transition-colors">{displayName}</span>
+          </Link>
+          {isOwn && <span className="rounded-full bg-brand/20 px-1.5 py-0.5 text-[9px] font-semibold text-brand-text/80">You</span>}
           <span className="text-[10px] text-white/25">{timestamp}</span>
           {isCollapsed && hasChildren && (
             <span className="text-[10px] text-white/15">[{childComments.length} hidden]</span>

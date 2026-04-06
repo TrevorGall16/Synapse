@@ -246,8 +246,8 @@ export function TheaterUI({
         )}
         {post.remixedFromHandle && (
           <div className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 backdrop-blur-sm">
-            <GitBranch size={8} className="shrink-0 text-purple-400" />
-            <span className="text-[9px] font-semibold text-purple-300">Remix of @{post.remixedFromHandle}</span>
+            <GitBranch size={8} className="shrink-0 text-brand-accent" />
+            <span className="text-[9px] font-semibold text-brand-text">Remix of @{post.remixedFromHandle}</span>
           </div>
         )}
       </div>
@@ -295,7 +295,7 @@ export function TheaterUI({
                 onClick={(e) => { e.stopPropagation(); onFollowToggle(); }}
                 className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold backdrop-blur-sm transition-colors ${
                   following
-                    ? "border-purple-400/40 bg-purple-500/20 text-purple-200"
+                    ? "border-brand-accent/40 bg-brand/20 text-brand-muted"
                     : "border-white/25 bg-black/50 text-white/80 hover:bg-white/10"
                 }`}
               >
@@ -317,7 +317,7 @@ export function TheaterUI({
             <button
               key={t}
               onClick={() => onHashtagClick(t)}
-              className="rounded-full bg-black/50 px-2 py-0.5 text-base font-medium text-white/85 backdrop-blur-sm hover:bg-purple-500/20 hover:text-purple-200 transition-colors"
+              className="rounded-full bg-black/50 px-2 py-0.5 text-base font-medium text-white/85 backdrop-blur-sm hover:bg-brand/20 hover:text-brand-muted transition-colors"
               style={TX}
             >
               {t}
@@ -340,10 +340,10 @@ export function TheaterUI({
           <button onClick={onToggleComments} className="flex flex-col items-center gap-1">
             <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${
               isCommentsOpen
-                ? "border-purple-400/40 bg-purple-500/25"
+                ? "border-brand-accent/40 bg-brand/25"
                 : "border-white/15 bg-black/40 hover:bg-white/12"
             }`}>
-              <MessageCircle size={20} className={isCommentsOpen ? "text-purple-300" : "text-white"} />
+              <MessageCircle size={20} className={isCommentsOpen ? "text-brand-text" : "text-white"} />
             </div>
             <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.comments)}</span>
           </button>

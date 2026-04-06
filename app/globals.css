@@ -10,6 +10,13 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* ── Brand tokens (semantic color system) ──────────────────────────────── */
+  /* Swap these values to re-theme the entire app — no per-component edits. */
+  --color-brand: oklch(0.627 0.265 293.541);         /* primary actions, fills    */
+  --color-brand-accent: oklch(0.714 0.169 293.541);   /* borders, rings, icons     */
+  --color-brand-text: oklch(0.827 0.119 293.541);     /* on-surface text, labels   */
+  --color-brand-muted: oklch(0.885 0.083 293.541);    /* subtle text, hover states */
 }
 
 body {
