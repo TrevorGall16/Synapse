@@ -53,7 +53,7 @@ export default function VideoPage() {
           <p className="mt-1 text-sm text-white/30">ID: {params.id}</p>
           <button
             onClick={() => router.push("/")}
-            className="mt-4 rounded-lg bg-purple-500/20 px-4 py-2 text-sm font-semibold text-purple-300 transition-colors hover:bg-purple-500/30"
+            className="mt-4 rounded-lg bg-brand/20 px-4 py-2 text-sm font-semibold text-brand-text transition-colors hover:bg-brand/30"
           >
             Back to Discovery
           </button>

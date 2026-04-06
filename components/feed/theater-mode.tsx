@@ -75,9 +75,13 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     window.addEventListener("popstate", onPopState);
     return () => {
       window.removeEventListener("popstate", onPopState);
-      // Restore original URL when Theater unmounts via normal close (not back-button)
+      // Restore original URL when Theater unmounts via normal close (not back-button).
+      // Guard: only restore if the browser is still on a /video/ path.  If router.push
+      // already navigated elsewhere (e.g. /profile/…), don't clobber the new URL.
       if (hasPushedRef.current) {
-        window.history.replaceState(null, "", originalUrlRef.current);
+        if (window.location.pathname.startsWith("/video/")) {
+          window.history.replaceState(null, "", originalUrlRef.current);
+        }
         hasPushedRef.current = false;
       }
     };
@@ -202,8 +206,8 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
                   <p className="text-[10px] text-white/40">@{p.user.handle}</p>
                   {p.remixedFromHandle && (
                     <div className="mt-1 flex items-center gap-1">
-                      <GitBranch size={8} className="text-purple-400" />
-                      <span className="text-[9px] text-purple-300">@{p.remixedFromHandle}</span>
+                      <GitBranch size={8} className="text-brand-accent" />
+                      <span className="text-[9px] text-brand-text">@{p.remixedFromHandle}</span>
                     </div>
                   )}
                 </div>
@@ -230,7 +234,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
                 title="Versions"
                 className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-[11px] font-semibold backdrop-blur-sm transition-colors ${
                   showVersions
-                    ? "border-purple-400/50 bg-purple-500/25 text-purple-200"
+                    ? "border-brand-accent/50 bg-brand/25 text-brand-muted"
                     : "border-white/20 bg-black/60 text-white/70 hover:bg-white/15 hover:text-white"
                 }`}
               >
