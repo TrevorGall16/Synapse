@@ -276,13 +276,16 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
           </div>
         </div>
 
-        {/* Comments drawer — slides from right, zero width when closed */}
-        <CommentsDrawer
-          postId={activePostId}
-          isOpen={commentsOpen}
-          onClose={toggleComments}
-          commentsEnabled={activePost?.comments_enabled !== false}
-        />
+        {/* Comments drawer — slides from right, zero width when closed.
+            Only mount when activePostId is truthy to avoid setup with empty postId. */}
+        {activePostId && (
+          <CommentsDrawer
+            postId={activePostId}
+            isOpen={commentsOpen}
+            onClose={toggleComments}
+            commentsEnabled={activePost?.comments_enabled !== false}
+          />
+        )}
       </div>
     </div>
   );

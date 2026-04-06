@@ -28,6 +28,9 @@ function timeAgo(iso: string, _tick: number): string {
 /** Visual indent caps at 5 to prevent narrow comments */
 const MAX_INDENT_DEPTH = 5;
 
+/** Stable empty array — avoids new [] on every selector read when no comments exist */
+const EMPTY_COMMENTS: Comment[] = [];
+
 // ── CommentsDrawer ───────────────────────────────────────────────────────────
 
 interface CommentsDrawerProps {
@@ -40,11 +43,8 @@ interface CommentsDrawerProps {
 export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true }: CommentsDrawerProps) {
   const fetchComments = useCommentStore((s) => s.fetchComments);
   const addComment = useCommentStore((s) => s.addComment);
-  // Subscribe directly to the array for this post — Zustand shallow compare
-  // catches the new array ref produced by addComment's immutable spread.
-  const postComments = useCommentStore(
-    useCallback((s) => s.commentsByPost[postId] ?? [], [postId]),
-  );
+  // Subscribe to the array for this post — stable fallback avoids new ref each read.
+  const postComments = useCommentStore((s) => s.commentsByPost[postId] ?? EMPTY_COMMENTS);
   const hasMore = useCommentStore((s) => s.hasMore);
   const userId = useUserStore((s) => s.commentUserId);
 
