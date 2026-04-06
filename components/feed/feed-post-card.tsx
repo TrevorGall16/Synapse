@@ -2,7 +2,7 @@
 
 import { useRef, useState, useMemo, useEffect, useCallback } from "react";
 import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch, Download } from "lucide-react";
-import { type FeedPost, isBlobUrl, useFeedStore } from "@/lib/store/feed-store";
+import { type FeedPost, isBlobUrl, useFeedStore, FALLBACK_VIDEO_URL } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { canRemix } from "@/lib/policy";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
@@ -186,7 +186,15 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
             ...(hovered && firstClipAnimation ? { animation: firstClipAnimation } : {}),
           }}
           muted loop playsInline preload="metadata"
-          onError={() => setMediaOffline(true)}
+          onError={() => {
+            const v = videoRef.current;
+            // Layer 2: if the dead URL is a blob or not already the fallback, swap to placeholder
+            if (v && v.src !== FALLBACK_VIDEO_URL) {
+              v.src = FALLBACK_VIDEO_URL;
+            } else {
+              setMediaOffline(true);
+            }
+          }}
         />
         {mediaOffline && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/60">

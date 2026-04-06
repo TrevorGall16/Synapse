@@ -78,6 +78,12 @@ interface FeedState {
 /** True if the URL is a Blob (local-session only, breaks on refresh) */
 export function isBlobUrl(url?: string): boolean { return !!url?.startsWith("blob:"); }
 
+/**
+ * Stable HQ placeholder video used when local blob URLs are irrecoverable.
+ * Keeps the post testable in the feed instead of showing "Media Offline."
+ */
+export const FALLBACK_VIDEO_URL = "https://videos.pexels.com/video-files/3129671/3129671-uhd_2560_1440_30fps.mp4";
+
 export const useFeedStore = create<FeedState>()(
   persist(
     (set, get) => ({
@@ -137,18 +143,27 @@ export const useFeedStore = create<FeedState>()(
             const post = validateFeedPost(raw, `post ${(raw as { id?: string })?.id ?? "?"}`);
             if (!post) return null;
             try {
-              if (!post.projectSnapshot?.mediaPool?.length) return post as FeedPost;
+              if (!post.projectSnapshot?.mediaPool?.length) {
+                // Layer 2: no media pool to recover — use fallback if videoUrl is missing/blob
+                return {
+                  ...post,
+                  videoUrl: post.videoUrl && !isBlobUrl(post.videoUrl) ? post.videoUrl : FALLBACK_VIDEO_URL,
+                } as FeedPost;
+              }
+              // Layer 1: attempt to restore blob URLs from media-pool-db
               const pool = await hydrateMediaPool(post.projectSnapshot.mediaPool);
-              // Restore videoUrl from first hydrated video (was stripped on IDB save).
               const firstVideo = pool.find((m) => m.type === "video");
+              const restoredUrl = post.videoUrl ?? firstVideo?.previewUrl;
               return {
                 ...post,
-                videoUrl: post.videoUrl ?? firstVideo?.previewUrl,
+                // Layer 2: if blob recovery yielded nothing, fall back to placeholder
+                videoUrl: restoredUrl && !isBlobUrl(restoredUrl) ? restoredUrl : (firstVideo?.previewUrl ?? FALLBACK_VIDEO_URL),
                 projectSnapshot: { ...post.projectSnapshot, mediaPool: pool },
               } as FeedPost;
             } catch (err) {
               console.error("[FeedStore] hydrateAllPosts: failed to hydrate post", post.id, err);
-              return post as FeedPost; // return the post without blob URLs rather than dropping it
+              // Layer 2 fallback: post stays in feed with placeholder video
+              return { ...post, videoUrl: FALLBACK_VIDEO_URL } as FeedPost;
             }
           }),
         ).then((results) => results.filter((p): p is FeedPost => p !== null));

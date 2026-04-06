@@ -3,12 +3,13 @@
 import { useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Upload, X, Film, Image, Check, AlertCircle,
-  MessageCircle, Star, ShieldAlert, Zap, Globe,
+  Upload, X, Film, Image, Check, AlertCircle, ArrowRight,
+  MessageCircle, Star, Zap, Globe,
 } from "lucide-react";
 import { useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { useProjectStore } from "@/lib/store/project-store";
+import { useCommentStore } from "@/lib/store/comment-store";
 import { saveMediaToDB } from "@/lib/store/media-pool-db";
 import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
 import type { MediaPoolItem } from "@/lib/store/types";
@@ -56,13 +57,13 @@ export default function UploadPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
-  const [tagsRaw, setTagsRaw] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
   const [category, setCategory] = useState("");
 
   // Toggles
   const [commentsEnabled, setCommentsEnabled] = useState(true);
   const [featured, setFeatured] = useState(false);
-  const [adultContent, setAdultContent] = useState(false);
 
   // Thumbnail
   const [thumbnailIdx, setThumbnailIdx] = useState(0);
@@ -97,7 +98,23 @@ export default function UploadPage() {
     if (fileRef.current) fileRef.current.value = "";
   }, [previewUrl]);
 
+  // ── Tag chip helpers ───────────────────────────────────────────────────────
+
+  const commitTag = useCallback((raw: string) => {
+    const t = raw.trim().replace(/[,#]/g, "").trim();
+    if (!t) return;
+    const tag = `#${t}`;
+    if (!tags.includes(tag)) setTags((prev) => [...prev, tag]);
+    setTagInput("");
+  }, [tags]);
+
+  const removeTag = useCallback((tag: string) => {
+    setTags((prev) => prev.filter((t) => t !== tag));
+  }, []);
+
   // ── Publish (Social Post) ─────────────────────────────────────────────────
+
+  const publishedIdRef = useRef<string | null>(null);
 
   const handlePublish = useCallback(async () => {
     if (!title.trim() || !profile) return;
@@ -113,17 +130,16 @@ export default function UploadPage() {
     setStageProgress(70);
     setStage("finalizing");
 
-    const tags = tagsRaw.trim()
-      ? tagsRaw.split(/\s+/).map((t) => (t.startsWith("#") ? t : `#${t}`))
-      : ["#synapse"];
+    const finalTags = tags.length > 0 ? tags : ["#synapse"];
     const idx = Math.floor(Math.random() * ACCENTS.length);
+    const postId = crypto.randomUUID();
 
     addPost({
-      id: crypto.randomUUID(),
+      id: postId,
       user: { handle: profile.username, initial: profile.displayName[0]?.toUpperCase() ?? "U", hue: profile.hue },
       title: title.trim(),
       description: desc.trim() || undefined,
-      tags,
+      tags: finalTags,
       bg: BGS[idx],
       accent: ACCENTS[idx],
       duration: "—",
@@ -137,11 +153,13 @@ export default function UploadPage() {
       comments_enabled: commentsEnabled,
     });
 
+    // Initialize empty comments for this post — prevents mock comment seeding
+    useCommentStore.getState().initEmptyPost(postId);
+
+    publishedIdRef.current = postId;
     setStageProgress(100);
     setStage("done");
-    await tick(1200);
-    router.push("/");
-  }, [title, profile, tagsRaw, desc, file, featured, category, commentsEnabled, addPost, router]);
+  }, [title, profile, tags, desc, file, featured, category, commentsEnabled, addPost]);
 
   // ── Open in Studio ────────────────────────────────────────────────────────
 
@@ -195,8 +213,11 @@ export default function UploadPage() {
             <span className="text-[10px] font-semibold text-brand-text">{STAGE_LABELS[stage]}</span>
             <div className="flex-1 h-1.5 rounded-full bg-white/8 overflow-hidden">
               <div
-                className="h-full rounded-full bg-brand transition-all duration-500 ease-out"
-                style={{ width: `${progressPct}%` }}
+                className="h-full rounded-full transition-[width] duration-700 ease-out"
+                style={{
+                  width: `${progressPct}%`,
+                  background: "linear-gradient(90deg, var(--color-brand) 0%, var(--color-brand-accent) 100%)",
+                }}
               />
             </div>
             <span className="text-[10px] tabular-nums text-white/30">{progressPct}%</span>
@@ -325,20 +346,43 @@ export default function UploadPage() {
             <p className="mt-1 text-right text-[9px] tabular-nums text-white/20">{desc.length}/{DESCRIPTION_MAX}</p>
           </div>
 
-          {/* Tags */}
+          {/* Tags (Chip Engine) */}
           <div>
             <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Tags</label>
-            <input
-              value={tagsRaw}
-              onChange={(e) => setTagsRaw(e.target.value)}
-              placeholder="#techno #glitch #hypnotic"
-              className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder-white/20 outline-none transition-colors focus:border-brand-accent/40 focus:bg-white/[0.06]"
-            />
+            <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 transition-colors focus-within:border-brand-accent/40 focus-within:bg-white/[0.06]">
+              {tags.map((t) => (
+                <span
+                  key={t}
+                  className="flex items-center gap-1 rounded-full border border-brand-accent/20 bg-brand-accent/10 px-2.5 py-0.5 text-xs font-semibold text-brand-accent"
+                >
+                  {t}
+                  <button type="button" onClick={() => removeTag(t)} className="ml-0.5 text-brand-accent/50 hover:text-brand-accent">
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+              <input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " " || e.key === ",") {
+                    e.preventDefault();
+                    commitTag(tagInput);
+                  }
+                  if (e.key === "Backspace" && !tagInput && tags.length > 0) {
+                    setTags((prev) => prev.slice(0, -1));
+                  }
+                }}
+                onBlur={() => commitTag(tagInput)}
+                placeholder={tags.length === 0 ? "Type a tag, press Space or Enter…" : ""}
+                className="min-w-[120px] flex-1 bg-transparent text-sm text-white placeholder-white/20 outline-none"
+              />
+            </div>
           </div>
 
-          {/* Category */}
+          {/* Channel (Category) */}
           <div>
-            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Category</label>
+            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Channel</label>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
@@ -369,34 +413,49 @@ export default function UploadPage() {
               checked={featured}
               onChange={setFeatured}
             />
-            <Toggle
-              icon={<ShieldAlert size={13} />}
-              label="Adult Content (18+)"
-              sublabel="Flag content for mature audiences"
-              checked={adultContent}
-              onChange={setAdultContent}
-            />
           </div>
 
           {/* Divider */}
           <div className="flex-1" />
 
           {/* Actions */}
-          <div className="flex gap-3">
-            <button
-              onClick={handlePublish}
-              disabled={!canPublish}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-bold text-white transition-all hover:bg-brand-accent disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              {stage === "done" ? (
-                <><Check size={15} /> Published!</>
-              ) : stage === "error" ? (
-                <><AlertCircle size={15} /> Retry</>
-              ) : (
-                <><Globe size={15} /> Publish</>
-              )}
-            </button>
-          </div>
+          {stage === "done" ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2.5 rounded-xl border border-green-500/25 bg-green-500/10 px-4 py-3">
+                <Check size={16} className="shrink-0 text-green-400" />
+                <div>
+                  <p className="text-sm font-bold text-green-300">Published!</p>
+                  <p className="text-[10px] text-white/40">Your post is live on the feed.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => router.push("/")}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-brand py-3 text-sm font-bold text-white transition-all hover:bg-brand-accent"
+              >
+                View Post <ArrowRight size={13} />
+              </button>
+              <button
+                onClick={() => router.push("/")}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-white/8 py-2.5 text-sm font-semibold text-white/70 transition-colors hover:bg-white/15"
+              >
+                Return to Feed
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              <button
+                onClick={handlePublish}
+                disabled={!canPublish}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-bold text-white transition-all hover:bg-brand-accent disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {stage === "error" ? (
+                  <><AlertCircle size={15} /> Retry</>
+                ) : (
+                  <><Globe size={15} /> Publish</>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

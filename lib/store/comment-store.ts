@@ -118,6 +118,8 @@ interface CommentState {
   /** Track which posts have been initially loaded (ephemeral, not persisted) */
   loadedPosts: Set<string>;
 
+  /** Initialize a post with an empty comment list — prevents mock seeding */
+  initEmptyPost: (postId: string) => void;
   /** Fetch a page of comments for a post (cursor = last comment's created_at) */
   fetchComments: (postId: string, cursor?: string) => Comment[];
   /** Add a comment optimistically — auto-upvotes by author */
@@ -148,6 +150,14 @@ export const useCommentStore = create<CommentState>()(
       authors: Object.fromEntries(MOCK_AUTHORS.map((a) => [a.id, a])),
       hasMore: {},
       loadedPosts: new Set(),
+
+      initEmptyPost: (postId) => {
+        set((s) => ({
+          loadedPosts: new Set([...s.loadedPosts, postId]),
+          commentsByPost: { ...s.commentsByPost, [postId]: [] },
+          hasMore: { ...s.hasMore, [postId]: false },
+        }));
+      },
 
       fetchComments: (postId, cursor) => {
         const state = get();
