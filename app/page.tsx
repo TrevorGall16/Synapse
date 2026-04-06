@@ -9,9 +9,8 @@ import { useSearchStore } from "@/lib/store/search-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { TheaterMode, primeTheaterGesture } from "@/components/feed/theater-mode";
 import { GlobalSearch } from "@/components/feed/global-search";
-import { UploadModal } from "@/components/feed/upload-modal";
 import { FeedPostCard } from "@/components/feed/feed-post-card";
-import { saveMediaToDB, retainMedia } from "@/lib/store/media-pool-db";
+import { retainMedia } from "@/lib/store/media-pool-db";
 import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
 
 // ── Demo snapshot ─────────────────────────────────────────────────────────────
@@ -57,7 +56,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
   return (
     <button onClick={onClick}
       className={`whitespace-nowrap rounded-full px-3 py-1 text-[10px] font-semibold transition-colors ${
-        active ? "bg-purple-500/28 text-purple-200 ring-1 ring-purple-500/40" : "bg-white/6 text-white/40 hover:bg-white/12 hover:text-white/65"
+        active ? "bg-brand/28 text-brand-muted ring-1 ring-brand/40" : "bg-white/6 text-white/40 hover:bg-white/12 hover:text-white/65"
       }`}
     >{label}</button>
   );
@@ -67,7 +66,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 function Toast({ msg }: { msg: string }) {
   return (
     <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-full border border-white/14 bg-[#1c1c1c]/95 px-4 py-2.5 shadow-xl backdrop-blur-sm">
-      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-purple-400" /><span className="text-xs font-semibold text-white/90">{msg}</span>
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-accent" /><span className="text-xs font-semibold text-white/90">{msg}</span>
     </div>
   );
 }
@@ -76,7 +75,6 @@ function Toast({ msg }: { msg: string }) {
 export default function DiscoveryFeedPage() {
   const router = useRouter();
   const [theaterPostId, setTheaterPostId] = useState<string | null>(null);
-  const [showUpload, setShowUpload]   = useState(false);
   const [activeTag, setActiveTag]     = useState<string | null>(null);
   const [feedSort, setFeedSort]       = useState<"latest" | "popular" | "trending">("latest");
   const [toast, setToast]             = useState<string | null>(null);
@@ -261,21 +259,6 @@ export default function DiscoveryFeedPage() {
     showImportToast("Saved to Media Pool");
   };
 
-  const handleStudioFile = (file: File) => {
-    setShowUpload(false);
-    const url = URL.createObjectURL(file);
-    const mediaId = crypto.randomUUID();
-    const media: MediaPoolItem = { id: mediaId, name: file.name, type: "video", duration: 30_000_000, previewUrl: url };
-    saveMediaToDB(file, media).catch(console.warn);
-    const vTrack = tracks.find((t) => t.type === "video");
-    if (vTrack) { addMediaItem(media); addClip(vTrack.id, { id: crypto.randomUUID(), trackId: vTrack.id, sourceId: mediaId, startTime: 0, duration: media.duration, mediaOffset: 0 }); }
-    else {
-      loadProject({ tracks: [{ id: "v1", type: "video", name: "Video 1", color: "#3b82f6", height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false, opacityOrVolume: 100, clips: [{ id: crypto.randomUUID(), trackId: "v1", sourceId: mediaId, startTime: 0, duration: media.duration, mediaOffset: 0 }] }], duration: media.duration + 5_000_000, projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" } });
-      addMediaItem(media);
-    }
-    router.push("/studio");
-  };
-
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
       {/* Header */}
@@ -292,13 +275,13 @@ export default function DiscoveryFeedPage() {
               <Trash2 size={10} />Clean Up ({offlineCount})
             </button>
           )}
-          <button onClick={() => setShowUpload(true)} className="flex items-center gap-1.5 rounded-lg bg-white/8 px-2.5 py-1.5 text-[11px] font-semibold text-white/60 transition-colors hover:bg-white/14 hover:text-white">
+          <button onClick={() => router.push("/upload")} className="flex items-center gap-1.5 rounded-lg bg-white/8 px-2.5 py-1.5 text-[11px] font-semibold text-white/60 transition-colors hover:bg-white/14 hover:text-white">
             <Upload size={11} />Upload
           </button>
           <button onClick={() => router.push("/profile/you")} className="flex items-center gap-1.5 rounded-lg bg-white/8 px-2.5 py-1.5 text-[11px] font-semibold text-white/60 transition-colors hover:bg-white/14 hover:text-white">
             <User size={11} />Profile
           </button>
-          <button onClick={() => router.push("/studio")} className="flex items-center gap-1.5 rounded-lg bg-purple-500/20 px-2.5 py-1.5 text-[11px] font-bold text-purple-300 transition-colors hover:bg-purple-500/30">
+          <button onClick={() => router.push("/studio")} className="flex items-center gap-1.5 rounded-lg bg-brand/20 px-2.5 py-1.5 text-[11px] font-bold text-brand-text transition-colors hover:bg-brand/30">
             <Zap size={11} />Studio
           </button>
         </div>
@@ -317,7 +300,7 @@ export default function DiscoveryFeedPage() {
                 feedSort === s
                   ? s === "trending" ? "bg-orange-500/25 text-orange-200 ring-1 ring-orange-500/40"
                     : s === "popular" ? "bg-red-500/20 text-red-300 ring-1 ring-red-500/35"
-                    : "bg-purple-500/28 text-purple-200 ring-1 ring-purple-500/40"
+                    : "bg-brand/28 text-brand-muted ring-1 ring-brand/40"
                   : "bg-white/5 text-white/40 hover:bg-white/12 hover:text-white/65"
               }`}
             >{s === "trending" ? "🔥 Trending" : s === "popular" ? "❤️ Popular" : "Latest"}</button>
@@ -348,9 +331,9 @@ export default function DiscoveryFeedPage() {
       {/* Scrollable grid */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         <div className="px-6 py-5">
-          {activeTag && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-purple-300/80">{activeTag}</span></p>}
+          {activeTag && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-brand-text/80">{activeTag}</span></p>}
           {!activeTag && !searchQuery && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">Community Edits</p>}
-          {!activeTag && searchQuery && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-purple-300/80">{searchQuery}</span></p>}
+          {!activeTag && searchQuery && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-brand-text/80">{searchQuery}</span></p>}
           {filteredPosts.length > 0 ? (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
               {filteredPosts.map((post) => (
@@ -369,7 +352,7 @@ export default function DiscoveryFeedPage() {
           ) : (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <p className="text-sm font-semibold text-white/25">No results for {searchQuery || activeTag}</p>
-              <button onClick={() => { setActiveTag(null); }} className="mt-3 text-[11px] text-purple-400/70 hover:text-purple-300">Clear filter</button>
+              <button onClick={() => { setActiveTag(null); }} className="mt-3 text-[11px] text-brand-accent/70 hover:text-brand-text">Clear filter</button>
             </div>
           )}
         </div>
@@ -395,7 +378,6 @@ export default function DiscoveryFeedPage() {
           onNavigate={(p) => setTheaterPostId(p.id)}
         />
       )}
-      {showUpload && <UploadModal onClose={() => setShowUpload(false)} onStudioFile={handleStudioFile} />}
       {toast && <Toast msg={toast} />}
 
       {/* Back to top */}
