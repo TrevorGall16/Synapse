@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Send, ChevronUp, ChevronDown, CornerDownRight, Trash2,
   X, AlertCircle, ArrowUp, Minus, Plus, MessageCircleOff,
+  Flame, Clock,
 } from "lucide-react";
 import { useCommentStore, type Comment } from "@/lib/store/comment-store";
 import { useUserStore } from "@/lib/store/user-store";
@@ -31,6 +32,8 @@ const MAX_INDENT_DEPTH = 5;
 /** Stable empty array — avoids new [] on every selector read when no comments exist */
 const EMPTY_COMMENTS: Comment[] = [];
 
+type SortMode = "top" | "new";
+
 // ── CommentsDrawer ───────────────────────────────────────────────────────────
 
 interface CommentsDrawerProps {
@@ -41,15 +44,14 @@ interface CommentsDrawerProps {
 }
 
 export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true }: CommentsDrawerProps) {
-  const fetchComments = useCommentStore((s) => s.fetchComments);
-  const addComment = useCommentStore((s) => s.addComment);
-  // Subscribe to the array for this post — stable fallback avoids new ref each read.
+  // State-only selectors — no action subscriptions to avoid re-render loops.
   const postComments = useCommentStore((s) => s.commentsByPost[postId] ?? EMPTY_COMMENTS);
-  const hasMore = useCommentStore((s) => s.hasMore);
+  const hasMore = useCommentStore((s) => !!s.hasMore[postId]);
   const userId = useUserStore((s) => s.commentUserId);
 
   const [body, setBody] = useState("");
   const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>("new");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -67,26 +69,77 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
   // Highlight pulse target — set after jump-to-parent
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
-  // Load comments on first open
+  // Load comments on first open — access action via getState() to avoid selector subscription.
   useEffect(() => {
-    if (isOpen && commentsEnabled) fetchComments(postId);
-  }, [isOpen, postId, fetchComments, commentsEnabled]);
+    if (!isOpen || !postId || !commentsEnabled) return;
+    useCommentStore.getState().fetchComments(postId);
+  }, [isOpen, postId, commentsEnabled]);
 
   // Focus input when reply target changes
   useEffect(() => {
     if (replyTo !== null) inputRef.current?.focus();
   }, [replyTo]);
 
-  // Sort by path for threaded display — recomputes when postComments ref changes
-  const sortedComments = useMemo(
-    () => [...postComments].sort((a, b) => a.path.localeCompare(b.path)),
-    [postComments],
-  );
+  // Subscribe to votes map so we can sort by score reactively
+  const votes = useCommentStore((s) => s.votes);
+
+  // Sort comments based on mode
+  const sortedComments = useMemo(() => {
+    const byPath = [...postComments].sort((a, b) => a.path.localeCompare(b.path));
+
+    if (sortMode === "new") {
+      // Group threads by root, sort roots by newest, keep thread order within
+      const rootOrder = new Map<string, string>(); // root_id -> newest created_at
+      for (const c of byPath) {
+        const existing = rootOrder.get(c.root_id);
+        if (!existing || c.created_at > existing) {
+          rootOrder.set(c.root_id, c.created_at);
+        }
+      }
+      return [...byPath].sort((a, b) => {
+        // Different roots: sort by newest in root
+        if (a.root_id !== b.root_id) {
+          const aNewest = rootOrder.get(a.root_id) ?? a.created_at;
+          const bNewest = rootOrder.get(b.root_id) ?? b.created_at;
+          return bNewest.localeCompare(aNewest);
+        }
+        // Same root: preserve path order for threading
+        return a.path.localeCompare(b.path);
+      });
+    }
+
+    // "top" mode: sort root threads by total score, tie-break by newest
+    const rootScores = new Map<string, number>();
+    for (const c of byPath) {
+      let score = 0;
+      for (const [key, vote] of Object.entries(votes)) {
+        if (key.startsWith(`${c.id}:`)) score += vote.value;
+      }
+      rootScores.set(c.root_id, (rootScores.get(c.root_id) ?? 0) + score);
+    }
+    const rootNewest = new Map<string, string>();
+    for (const c of byPath) {
+      const existing = rootNewest.get(c.root_id);
+      if (!existing || c.created_at > existing) rootNewest.set(c.root_id, c.created_at);
+    }
+
+    return [...byPath].sort((a, b) => {
+      if (a.root_id !== b.root_id) {
+        const aScore = rootScores.get(a.root_id) ?? 0;
+        const bScore = rootScores.get(b.root_id) ?? 0;
+        if (bScore !== aScore) return bScore - aScore;
+        // Tie-break by newest
+        const aTime = rootNewest.get(a.root_id) ?? a.created_at;
+        const bTime = rootNewest.get(b.root_id) ?? b.created_at;
+        return bTime.localeCompare(aTime);
+      }
+      return a.path.localeCompare(b.path);
+    });
+  }, [postComments, sortMode, votes]);
 
   // Filter out comments whose ancestor is collapsed
   const visibleComments = useMemo(() => {
     if (collapsedIds.size === 0) return sortedComments;
-    // Build a set of collapsed paths for fast prefix matching
     const collapsedPaths: string[] = [];
     for (const id of collapsedIds) {
       const c = postComments.find((x) => x.id === id);
@@ -115,7 +168,7 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
     const target = postComments.find((c) => c.id === targetId);
     if (!target) return;
 
-    // Expand ancestors: for each collapsed ID, check if target's path starts with it
+    // Expand ancestors
     setCollapsedIds((prev) => {
       if (prev.size === 0) return prev;
       const next = new Set(prev);
@@ -128,28 +181,31 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
       return next.size === prev.size ? prev : next;
     });
 
-    // Scroll after React re-renders the expanded thread
+    // Double rAF to ensure React has committed expanded children
     requestAnimationFrame(() => {
-      const el = scrollRef.current?.querySelector(`#comment-${CSS.escape(targetId)}`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        setHighlightId(targetId);
-        setTimeout(() => setHighlightId(null), 1500);
-      }
+      requestAnimationFrame(() => {
+        const container = scrollRef.current;
+        if (!container) return;
+        const el = container.querySelector(`#comment-${CSS.escape(targetId)}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          setHighlightId(targetId);
+          setTimeout(() => setHighlightId(null), 1800);
+        }
+      });
     });
   }, [postComments]);
 
   const handleSubmit = useCallback(() => {
     const trimmed = body.trim();
     if (!trimmed || !userId) return;
-    addComment(postId, userId, trimmed, replyTo);
+    useCommentStore.getState().addComment(postId, userId, trimmed, replyTo);
     setBody("");
     setReplyTo(null);
-    // Scroll to bottom after insert
     setTimeout(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     }, 50);
-  }, [body, userId, postId, replyTo, addComment]);
+  }, [body, userId, postId, replyTo]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -160,8 +216,10 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
 
   const handleLoadMore = () => {
     const last = sortedComments[sortedComments.length - 1];
-    if (last) fetchComments(postId, last.created_at);
+    if (last) useCommentStore.getState().fetchComments(postId, last.created_at);
   };
+
+  const activeCount = postComments.filter((c) => !c.is_deleted).length;
 
   return (
     <div
@@ -181,15 +239,44 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-white/90">Comments</span>
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs tabular-nums text-white/50">
-            {postComments.filter((c) => !c.is_deleted).length}
+            {activeCount}
           </span>
         </div>
-        <button
-          onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white/40 transition-colors hover:bg-white/10 hover:text-white"
-        >
-          <X size={16} />
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Sort toggle */}
+          {commentsEnabled && activeCount > 0 && (
+            <div className="mr-1 flex items-center rounded-full bg-white/5 p-0.5">
+              <button
+                onClick={() => setSortMode("top")}
+                className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition-colors ${
+                  sortMode === "top"
+                    ? "bg-white/10 text-orange-400"
+                    : "text-white/30 hover:text-white/50"
+                }`}
+                title="Sort by top score"
+              >
+                <Flame size={10} /> Top
+              </button>
+              <button
+                onClick={() => setSortMode("new")}
+                className={`flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition-colors ${
+                  sortMode === "new"
+                    ? "bg-white/10 text-purple-400"
+                    : "text-white/30 hover:text-white/50"
+                }`}
+                title="Sort by newest"
+              >
+                <Clock size={10} /> New
+              </button>
+            </div>
+          )}
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Comment list */}
@@ -208,7 +295,7 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
             <p className="text-sm text-white/25">No comments yet. Be the first!</p>
           </div>
         ) : (
-          <div className="space-y-1 py-2">
+          <div className="space-y-3 px-2 py-3">
             {visibleComments.map((c) => (
               <CommentNode
                 key={c.id}
@@ -225,10 +312,10 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
                 tick={tick}
               />
             ))}
-            {hasMore[postId] && (
+            {hasMore && (
               <button
                 onClick={handleLoadMore}
-                className="mx-4 my-2 rounded-lg bg-white/5 px-3 py-2 text-xs font-medium text-white/50 transition-colors hover:bg-white/10"
+                className="mx-2 my-1 rounded-xl bg-white/5 px-3 py-2 text-xs font-medium text-white/50 transition-colors hover:bg-white/10"
               >
                 Load more...
               </button>
@@ -271,7 +358,7 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
       {/* Input area — hidden when comments disabled */}
       {commentsEnabled ? (
         <div className="shrink-0 border-t border-white/10 px-3 py-2.5">
-          <div className="flex items-end gap-2 rounded-lg bg-white/8 px-3 py-2">
+          <div className="flex items-end gap-2 rounded-xl bg-white/8 px-3 py-2 border border-white/5">
             <textarea
               ref={inputRef}
               value={body}
@@ -317,7 +404,6 @@ interface CommentNodeProps {
   collapsedIds: Set<string>;
   onToggleCollapse: (id: string) => void;
   onJumpToComment: (id: string) => void;
-  /** Shared timestamp from drawer — avoids per-comment intervals */
   tick: number;
 }
 
@@ -325,16 +411,20 @@ function CommentNode({
   comment, postId, userId, onReply, isReplyTarget, isHighlighted,
   allComments, collapsedIds, onToggleCollapse, onJumpToComment, tick,
 }: CommentNodeProps) {
-  const getScore = useCommentStore((s) => s.getScore);
-  const getUserVote = useCommentStore((s) => s.getUserVote);
-  const handleVote = useCommentStore((s) => s.handleVote);
-  const deleteComment = useCommentStore((s) => s.deleteComment);
-  const dismissFailedComment = useCommentStore((s) => s.dismissFailedComment);
-  const getAuthor = useCommentStore((s) => s.getAuthor);
+  // Reactive selectors for vote display — primitives are stable, no loop risk.
+  const score = useCommentStore((s) => {
+    let sc = 0;
+    for (const [key, vote] of Object.entries(s.votes)) {
+      if (key.startsWith(`${comment.id}:`)) sc += vote.value;
+    }
+    return sc;
+  });
+  const userVote = useCommentStore(
+    (s) => s.votes[`${comment.id}:${userId}`]?.value ?? 0,
+  );
 
-  const score = getScore(comment.id);
-  const userVote = getUserVote(comment.id, userId);
-  const author = getAuthor(comment.author_id);
+  // Author data is static — safe to read once via getState()
+  const author = useCommentStore.getState().getAuthor(comment.author_id);
   const isOwn = comment.author_id === userId;
   const isPending = comment._status === "pending";
   const isFailed = comment._status === "failed";
@@ -351,6 +441,7 @@ function CommentNode({
   );
   const hasChildren = childComments.length > 0;
   const isCollapsed = collapsedIds.has(comment.id);
+  const isRoot = comment.depth === 0;
 
   const timestamp = timeAgo(comment.created_at, tick);
 
@@ -358,8 +449,8 @@ function CommentNode({
     return (
       <div
         id={`comment-${comment.id}`}
-        className="flex items-center gap-2 py-2 text-xs italic text-white/25"
-        style={{ paddingLeft: `${indent * 16 + 12}px` }}
+        className="flex items-center gap-2 py-2 text-xs italic text-white/20"
+        style={{ marginLeft: `${indent * 16}px` }}
       >
         <span>[deleted]</span>
       </div>
@@ -370,123 +461,154 @@ function CommentNode({
     <div
       id={`comment-${comment.id}`}
       data-comment-id={comment.id}
-      className={`group relative py-3 transition-all duration-300
+      className={`group relative transition-all duration-300
+        ${isRoot ? "" : "ml-3"}
         ${isPending ? "opacity-60" : isFailed ? "opacity-40" : ""}
-        ${isReplyTarget ? "ring-1 ring-purple-400/50 bg-purple-500/10 rounded-lg" : ""}
-        ${isHighlighted ? "bg-purple-500/15 ring-1 ring-purple-400/40 rounded-lg animate-pulse" : ""}
       `}
-      style={{ paddingLeft: `${indent * 16 + 12}px`, paddingRight: 12 }}
+      style={{ marginLeft: indent > 0 ? `${indent * 16}px` : undefined }}
     >
-      {/* Clickable thread guide line — thicker and higher contrast */}
-      {indent > 0 && (
-        <button
-          onClick={() => onToggleCollapse(comment.id)}
-          className="absolute top-0 bottom-0 flex items-stretch group/thread"
-          style={{ left: `${indent * 16}px`, width: 14, padding: "0 5px" }}
-          title={isCollapsed ? "Expand thread" : "Collapse thread"}
-        >
-          <div className={`w-[2px] rounded-full transition-colors ${isCollapsed ? "bg-purple-400/60" : "bg-white/15 group-hover/thread:bg-white/40"}`} />
-        </button>
-      )}
-
-      {/* Header row */}
-      <div className="mb-1 flex items-center gap-2">
-        {/* Collapse/expand toggle */}
-        {hasChildren && (
+      {/* Glassmorphism bubble */}
+      <div
+        className={`relative rounded-2xl border px-3.5 py-3 transition-all duration-300
+          ${isHighlighted
+            ? "border-purple-400/40 bg-purple-500/15 shadow-[0_0_20px_rgba(168,85,247,0.15)]"
+            : isReplyTarget
+              ? "border-purple-400/30 bg-purple-500/8 shadow-sm"
+              : "border-white/[0.07] bg-white/[0.04] hover:bg-white/[0.06] shadow-sm"
+          }
+        `}
+        style={{
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+        }}
+      >
+        {/* Thread guide line for nested comments */}
+        {indent > 0 && (
           <button
             onClick={() => onToggleCollapse(comment.id)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/30 transition-colors hover:bg-white/10 hover:text-white/60"
+            className="absolute -left-3 top-0 bottom-0 flex items-stretch group/thread"
+            style={{ width: 14, padding: "0 5px" }}
             title={isCollapsed ? "Expand thread" : "Collapse thread"}
           >
-            {isCollapsed ? <Plus size={12} /> : <Minus size={12} />}
+            <div className={`w-[2px] rounded-full transition-colors ${isCollapsed ? "bg-purple-400/60" : "bg-white/10 group-hover/thread:bg-white/30"}`} />
           </button>
         )}
-        {/* Avatar */}
-        <div
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-          style={{ background: `hsl(${hue} 50% 30%)` }}
-        >
-          {displayName[0]?.toUpperCase()}
-        </div>
-        <span className="text-sm font-semibold text-white/80">{displayName}</span>
-        <span className="text-xs text-white/30">{timestamp}</span>
-        {isCollapsed && hasChildren && (
-          <span className="text-xs text-white/20">[{childComments.length} hidden]</span>
-        )}
-        {isPending && <span className="text-xs text-yellow-400/60">sending...</span>}
-        {isFailed && (
-          <button
-            onClick={() => dismissFailedComment(postId, comment.id)}
-            className="flex h-8 items-center gap-1 rounded-full px-2 text-xs text-red-400/80 transition-colors hover:bg-red-500/10 hover:text-red-300"
+
+        {/* Header row */}
+        <div className="mb-1.5 flex items-center gap-2">
+          {hasChildren && (
+            <button
+              onClick={() => onToggleCollapse(comment.id)}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white/25 transition-colors hover:bg-white/10 hover:text-white/50"
+              title={isCollapsed ? "Expand thread" : "Collapse thread"}
+            >
+              {isCollapsed ? <Plus size={11} /> : <Minus size={11} />}
+            </button>
+          )}
+          {/* Avatar */}
+          <div
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white/90"
+            style={{ background: `hsl(${hue} 45% 28%)` }}
           >
-            <AlertCircle size={12} /> Failed — tap to dismiss
-          </button>
+            {displayName[0]?.toUpperCase()}
+          </div>
+          <span className="text-xs font-semibold text-white/75">{displayName}</span>
+          <span className="text-[10px] text-white/25">{timestamp}</span>
+          {isCollapsed && hasChildren && (
+            <span className="text-[10px] text-white/15">[{childComments.length} hidden]</span>
+          )}
+          {isPending && <span className="text-[10px] text-yellow-400/50">sending...</span>}
+          {isFailed && (
+            <button
+              onClick={() => useCommentStore.getState().dismissFailedComment(postId, comment.id)}
+              className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] text-red-400/70 transition-colors hover:bg-red-500/10 hover:text-red-300"
+            >
+              <AlertCircle size={10} /> Failed — dismiss
+            </button>
+          )}
+        </div>
+
+        {/* Body */}
+        <AnimatePresence>
+          {!isCollapsed && (
+            <motion.p
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mb-2 text-[13px] leading-relaxed text-white/65"
+            >
+              {comment.body}
+            </motion.p>
+          )}
+        </AnimatePresence>
+
+        {/* Action row */}
+        {!isCollapsed && (
+          <div className="flex items-center gap-2">
+            {/* Votes */}
+            <div className="flex items-center gap-0.5 rounded-full bg-white/[0.03] px-1">
+              <motion.button
+                whileTap={{ scale: 0.8 }}
+                onClick={() => useCommentStore.getState().handleVote(comment.id, userId, 1)}
+                className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                  userVote === 1
+                    ? "text-orange-400 bg-orange-500/10"
+                    : "text-white/20 hover:bg-white/10 hover:text-white/50"
+                }`}
+              >
+                <ChevronUp size={14} />
+              </motion.button>
+              <span className={`min-w-[18px] text-center text-[11px] tabular-nums font-semibold ${
+                score > 0 ? "text-orange-400" : score < 0 ? "text-indigo-400" : "text-white/20"
+              }`}>
+                {score}
+              </span>
+              <motion.button
+                whileTap={{ scale: 0.8 }}
+                onClick={() => useCommentStore.getState().handleVote(comment.id, userId, -1)}
+                className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                  userVote === -1
+                    ? "text-indigo-400 bg-indigo-500/10"
+                    : "text-white/20 hover:bg-white/10 hover:text-white/50"
+                }`}
+              >
+                <ChevronDown size={14} />
+              </motion.button>
+            </div>
+
+            {/* Reply */}
+            {comment.depth < 8 && (
+              <button
+                onClick={() => onReply(comment.id)}
+                className="flex h-7 items-center gap-1 rounded-full px-2 text-[10px] text-white/25 transition-colors hover:bg-white/8 hover:text-white/50"
+              >
+                <CornerDownRight size={10} /> Reply
+              </button>
+            )}
+
+            {/* Jump to parent */}
+            {comment.parent_id && (
+              <button
+                onClick={() => onJumpToComment(comment.parent_id!)}
+                title="Jump to parent"
+                className="flex h-7 w-7 items-center justify-center rounded-full text-white/15 transition-colors hover:bg-white/8 hover:text-white/40"
+              >
+                <ArrowUp size={11} />
+              </button>
+            )}
+
+            {/* Delete (own only) */}
+            {isOwn && !isPending && (
+              <button
+                onClick={() => useCommentStore.getState().deleteComment(postId, comment.id)}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-white/15 transition-colors hover:bg-red-500/10 hover:text-red-400"
+              >
+                <Trash2 size={10} />
+              </button>
+            )}
+          </div>
         )}
       </div>
-
-      {/* Body */}
-      {!isCollapsed && (
-        <p className="mb-2 text-sm leading-relaxed text-white/75">{comment.body}</p>
-      )}
-
-      {/* Action row — always visible for accessibility */}
-      {!isCollapsed && (
-        <div className="flex items-center gap-3">
-          {/* Votes with framer-motion */}
-          <div className="flex items-center gap-1">
-            <motion.button
-              whileTap={{ scale: 0.8 }}
-              whileHover={{ scale: 1.1 }}
-              onClick={() => handleVote(comment.id, userId, 1)}
-              className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${userVote === 1 ? "text-orange-500 bg-orange-500/10" : "text-white/30 hover:bg-white/10 hover:text-white/60"}`}
-            >
-              <ChevronUp size={16} />
-            </motion.button>
-            <span className={`min-w-[20px] text-center text-xs tabular-nums font-medium ${score > 0 ? "text-orange-500" : score < 0 ? "text-indigo-400" : "text-white/30"}`}>
-              {score}
-            </span>
-            <motion.button
-              whileTap={{ scale: 0.8 }}
-              whileHover={{ scale: 1.1 }}
-              onClick={() => handleVote(comment.id, userId, -1)}
-              className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${userVote === -1 ? "text-indigo-400 bg-indigo-500/10" : "text-white/30 hover:bg-white/10 hover:text-white/60"}`}
-            >
-              <ChevronDown size={16} />
-            </motion.button>
-          </div>
-
-          {/* Reply */}
-          {comment.depth < 8 && (
-            <button
-              onClick={() => onReply(comment.id)}
-              className="flex h-8 items-center gap-1 rounded-full px-2 text-xs text-white/30 transition-colors hover:bg-white/10 hover:text-white/60"
-            >
-              <CornerDownRight size={12} /> Reply
-            </button>
-          )}
-
-          {/* Jump to parent */}
-          {comment.parent_id && (
-            <button
-              onClick={() => onJumpToComment(comment.parent_id!)}
-              title="Jump to parent"
-              className="flex h-8 w-8 items-center justify-center rounded-full text-white/20 transition-colors hover:bg-white/10 hover:text-white/50"
-            >
-              <ArrowUp size={12} />
-            </button>
-          )}
-
-          {/* Delete (own only) */}
-          {isOwn && !isPending && (
-            <button
-              onClick={() => deleteComment(postId, comment.id)}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-white/20 transition-colors hover:bg-red-500/10 hover:text-red-400"
-            >
-              <Trash2 size={12} />
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
