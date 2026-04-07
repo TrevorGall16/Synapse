@@ -45,6 +45,19 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
   });
   const [muted, setMuted]             = useState(true);
   const [activePostId, setActivePostId] = useState(post.id);
+  // Progressive hydration — only mount real <TheaterCell>s for ids in this set.
+  // All other queue items render as lightweight placeholders that preserve scroll math.
+  // Starts with just the seed, expands to seed±1 after first paint, then expands as IO
+  // marks new active posts on scroll. Ids are never removed once hydrated.
+  const [hydratedIds, setHydratedIds] = useState<Set<string>>(() => new Set([post.id]));
+  const ensureHydrated = useCallback((ids: string[]) => {
+    setHydratedIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of ids) if (id && !next.has(id)) { next.add(id); changed = true; }
+      return changed ? next : prev;
+    });
+  }, []);
   const [showVersions, setShowVersions] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const toggleComments = useCallback(() => setCommentsOpen((v) => !v), []);
@@ -58,6 +71,32 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     if (isLocked) return;
     setQueue(buildQueue(post, allPosts));
   }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After first paint: hydrate neighbors of the seed (prev + next) via rAF so
+  // the shell becomes interactive before heavy cell work begins.
+  useEffect(() => {
+    const idx = queue.findIndex((p) => p.id === post.id);
+    if (idx < 0) return;
+    const r = requestAnimationFrame(() => {
+      const ids: string[] = [];
+      if (queue[idx - 1]) ids.push(queue[idx - 1].id);
+      if (queue[idx + 1]) ids.push(queue[idx + 1].id);
+      if (ids.length) ensureHydrated(ids);
+    });
+    return () => cancelAnimationFrame(r);
+  }, [queue, post.id, ensureHydrated]);
+
+  // When the active cell changes (scroll), hydrate it + its immediate neighbors.
+  // Progressive: ids accumulate, so cells never unmount mid-session.
+  useEffect(() => {
+    if (!activePostId) return;
+    const idx = queue.findIndex((p) => p.id === activePostId);
+    if (idx < 0) return;
+    const ids = [activePostId];
+    if (queue[idx - 1]) ids.push(queue[idx - 1].id);
+    if (queue[idx + 1]) ids.push(queue[idx + 1].id);
+    ensureHydrated(ids);
+  }, [activePostId, queue, ensureHydrated]);
 
   // Keyboard close
   useEffect(() => {
@@ -276,18 +315,34 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
             style={{ scrollbarWidth: "none" }}
           >
             {Array.from(new Map(queue.map((p) => [p.id, p])).values()).map((p) => (
-              <TheaterCell
-                key={p.id}
-                post={p}
-                isActive={activePostId === p.id}
-                cellRef={setCellRef(p.id)}
-                onRemix={onRemix}
-                onCreator={onCreator}
-                onHashtagClick={onHashtagClick ?? (() => {})}
-                globalMuted={muted}
-                isCommentsOpen={commentsOpen}
-                onToggleComments={toggleComments}
-              />
+              hydratedIds.has(p.id) ? (
+                <TheaterCell
+                  key={p.id}
+                  post={p}
+                  isActive={activePostId === p.id}
+                  cellRef={setCellRef(p.id)}
+                  onRemix={onRemix}
+                  onCreator={onCreator}
+                  onHashtagClick={onHashtagClick ?? (() => {})}
+                  globalMuted={muted}
+                  isCommentsOpen={commentsOpen}
+                  onToggleComments={toggleComments}
+                />
+              ) : (
+                // Placeholder: preserves snap/scroll math. Real <TheaterCell> mounts
+                // once the cell enters viewport (IO → activePostId → ensureHydrated).
+                <div
+                  key={p.id}
+                  ref={setCellRef(p.id)}
+                  className="relative h-screen w-full snap-start flex items-center justify-center"
+                  style={{ background: p.bg ?? "#0a0a0a" }}
+                >
+                  <div className="flex flex-col items-center gap-2 opacity-60">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/10 border-t-white/50" />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-white/30">Loading</span>
+                  </div>
+                </div>
+              )
             ))}
           </div>
         </div>

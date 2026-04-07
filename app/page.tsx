@@ -153,6 +153,21 @@ export default function DiscoveryFeedPage() {
     );
   }, [displayPosts, searchQuery]);
 
+  // Hydrate search/tag filter from URL on mount — so external links
+  // (e.g. from global search tag results, or a refresh) restore the filter state.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const s = params.get("search");
+    const t = params.get("tag");
+    if (t) {
+      const norm = t.startsWith("#") ? t : `#${t}`;
+      setActiveTag(norm);
+      setSearchQuery(t.replace(/^#/, ""));
+    } else if (s) {
+      setSearchQuery(s);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Infinite scroll — load more when sentinel enters viewport
   useEffect(() => {
     const el = sentinelRef.current;
@@ -288,7 +303,7 @@ export default function DiscoveryFeedPage() {
       </div>
 
       {/* Search bar */}
-      <GlobalSearch />
+      <GlobalSearch posts={allPosts} />
 
       {/* Sort + Niche filter bar */}
       <div className="shrink-0 overflow-x-auto border-b border-white/8 px-4 py-2 scrollbar-none">
