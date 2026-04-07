@@ -5,6 +5,8 @@ import { Search, X, Video, User as UserIcon, Hash } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useSearchStore } from "@/lib/store/search-store";
 import type { FeedPost } from "@/lib/store/feed-store";
+import { normalizeTag } from "@/lib/mock-posts";
+import { buildPostIndex, rankPosts, fuzzyMatch } from "@/lib/search-index";
 
 type ResultKind = "video" | "creator" | "tag";
 interface Result {
@@ -59,54 +61,61 @@ export function GlobalSearch({ posts = [] }: Props) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  // Grouped results — bounded per group to keep the dropdown fast.
+  // Derived index — memoized on the posts array identity. Caller (home feed)
+  // already memoizes allPosts, so this only rebuilds when the catalog changes.
+  const index = useMemo(() => buildPostIndex(posts), [posts]);
+
+  // Grouped results — uses index byTag/byCreator for O(1) lookups where
+  // possible, and weighted scoring (title > tags > desc > creator) for videos.
   const { videos, creators, tags, flat } = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return { videos: [] as Result[], creators: [] as Result[], tags: [] as Result[], flat: [] as Result[] };
     const raw = q.replace(/^[@#]/, "");
 
-    const videoRes: Result[] = [];
-    const creatorMap = new Map<string, Result>();
-    const tagMap     = new Map<string, Result>();
+    // Videos: weighted relevance via scorePost, bounded to 6.
+    const ranked = rankPosts(posts, raw, 6);
+    const videoRes: Result[] = ranked.map((p) => ({
+      kind: "video",
+      id: `v-${p.id}`,
+      label: p.title,
+      sub: `@${p.user.handle}`,
+      payload: p.id,
+    }));
 
-    for (const p of posts) {
-      const titleHit = p.title.toLowerCase().includes(raw);
-      const descHit  = !!p.description && p.description.toLowerCase().includes(raw);
-      const tagHit   = p.tags.some((t) => t.toLowerCase().replace("#", "").includes(raw));
-      if ((titleHit || descHit || tagHit) && videoRes.length < 6) {
-        videoRes.push({
-          kind: "video",
-          id: `v-${p.id}`,
-          label: p.title,
-          sub: `@${p.user.handle}`,
-          payload: p.id,
-        });
-      }
-      if (p.user.handle.toLowerCase().includes(raw) && !creatorMap.has(p.user.handle)) {
-        creatorMap.set(p.user.handle, {
+    // Creators: substring on handle; fallback to fuzzyMatch for longer queries.
+    const creatorRes: Result[] = [];
+    const seenCreators = new Set<string>();
+    for (const [handle] of index.byCreator) {
+      if (seenCreators.has(handle)) continue;
+      if (handle.includes(raw) || fuzzyMatch(handle, raw)) {
+        creatorRes.push({
           kind: "creator",
-          id: `c-${p.user.handle}`,
-          label: `@${p.user.handle}`,
-          payload: p.user.handle,
+          id: `c-${handle}`,
+          label: `@${handle}`,
+          payload: handle,
         });
-      }
-      for (const t of p.tags) {
-        const norm = t.replace(/^#/, "").toLowerCase();
-        if (norm.includes(raw) && !tagMap.has(norm)) {
-          tagMap.set(norm, { kind: "tag", id: `t-${norm}`, label: `#${norm}`, payload: norm });
-        }
+        seenCreators.add(handle);
+        if (creatorRes.length >= 5) break;
       }
     }
 
-    const creatorRes = Array.from(creatorMap.values()).slice(0, 5);
-    const tagRes     = Array.from(tagMap.values()).slice(0, 8);
+    // Tags: substring on normalized tag; fuzzyMatch for longer queries.
+    const tagRes: Result[] = [];
+    const rawNorm = normalizeTag(raw);
+    for (const [tag] of index.byTag) {
+      if (tag.includes(rawNorm) || fuzzyMatch(tag, rawNorm)) {
+        tagRes.push({ kind: "tag", id: `t-${tag}`, label: `#${tag}`, payload: tag });
+        if (tagRes.length >= 8) break;
+      }
+    }
+
     return {
       videos: videoRes,
       creators: creatorRes,
       tags: tagRes,
       flat: [...videoRes, ...creatorRes, ...tagRes],
     };
-  }, [posts, searchQuery]);
+  }, [index, posts, searchQuery]);
 
   // Reset highlight whenever results change.
   useEffect(() => { setHi(0); }, [searchQuery]);

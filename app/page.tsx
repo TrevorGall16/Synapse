@@ -12,6 +12,8 @@ import { GlobalSearch } from "@/components/feed/global-search";
 import { FeedPostCard } from "@/components/feed/feed-post-card";
 import { retainMedia } from "@/lib/store/media-pool-db";
 import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
+import { normalizeTag } from "@/lib/mock-posts";
+import { rankPosts } from "@/lib/search-index";
 
 // ── Demo snapshot ─────────────────────────────────────────────────────────────
 function buildDemoSnapshot(id: string, title: string) {
@@ -116,7 +118,11 @@ export default function DiscoveryFeedPage() {
     [theaterPostId, allPosts],
   );
   const displayPosts = useMemo(() => {
-    const base = activeTag ? allPosts.filter((p) => p.tags.includes(activeTag)) : allPosts;
+    // Tag filter: compare on normalized form so "#Glitch" and "glitch" match.
+    const nActive = activeTag ? normalizeTag(activeTag) : null;
+    const base = nActive
+      ? allPosts.filter((p) => p.tags.some((t) => normalizeTag(t) === nActive))
+      : allPosts;
     if (feedSort === "latest") return base;
     if (feedSort === "popular") {
       return [...base].sort((a, b) => {
@@ -138,19 +144,14 @@ export default function DiscoveryFeedPage() {
     });
   }, [activeTag, allPosts, feedSort, likedPostIds]);
 
-  // Search filter — applied after tag + sort so it composes with existing controls.
-  // Operates on displayPosts only; allPosts stays untouched so TheaterMode never re-mounts.
+  // Search filter — weighted relevance ranking (title > tags > description > creator).
+  // When there's no query, fall through to the sorted displayPosts. When a query
+  // is present, rankPosts returns a relevance-ordered, bounded result set so the
+  // feed stays responsive under simulated large datasets.
   const filteredPosts = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = searchQuery.trim();
     if (!q) return displayPosts;
-    // Strip leading @ or # so users can type either form
-    const raw = q.startsWith("@") || q.startsWith("#") ? q.slice(1) : q;
-    return displayPosts.filter((post) =>
-      post.title.toLowerCase().includes(raw) ||
-      post.user.handle.toLowerCase().includes(raw) ||
-      post.tags.some((t) => t.toLowerCase().replace("#", "").includes(raw)) ||
-      (post.category?.toLowerCase().includes(raw))
-    );
+    return rankPosts(displayPosts, q, 200);
   }, [displayPosts, searchQuery]);
 
   // Hydrate search/tag filter from URL on mount — so external links
