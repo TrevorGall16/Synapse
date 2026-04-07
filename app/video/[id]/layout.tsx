@@ -14,6 +14,7 @@
 
 import type { Metadata, ResolvingMetadata } from "next";
 import { findMockPostById, formatTag } from "@/lib/mock-posts";
+import { getCanonicalBaseUrl, absoluteUrl } from "@/lib/canonical";
 
 interface RouteParams { id: string }
 
@@ -24,9 +25,11 @@ export async function generateMetadata(
   const { id } = await params;
   const post = findMockPostById(id);
   const url  = `/video/${id}`;
+  const base = getCanonicalBaseUrl();
 
   if (!post) {
     return {
+      metadataBase: new URL(base),
       title: "Video · Synapse",
       description: "Browse audio-synced visual edits on Synapse.",
       alternates: { canonical: url },
@@ -40,6 +43,7 @@ export async function generateMetadata(
     `${post.title} by @${post.user.handle}. Tags: ${post.tags.map(formatTag).join(" ")}. Watch this audio-synced visual edit on Synapse.`;
 
   return {
+    metadataBase: new URL(base),
     title,
     description,
     alternates: { canonical: url },
@@ -68,6 +72,19 @@ export default async function VideoLayout({
 }) {
   const { id } = await params;
   const post = findMockPostById(id);
+
+  // BreadcrumbList — always emitted so crawlers can walk Home → Creators →
+  // @username → Video Title even if we don't have full VideoObject data.
+  const breadcrumbs = post && {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home",     item: absoluteUrl("/") },
+      { "@type": "ListItem", position: 2, name: "Creators", item: absoluteUrl("/browse") },
+      { "@type": "ListItem", position: 3, name: `@${post.user.handle}`, item: absoluteUrl(`/profile/${post.user.handle}`) },
+      { "@type": "ListItem", position: 4, name: post.title, item: absoluteUrl(`/video/${id}`) },
+    ],
+  };
 
   // JSON-LD VideoObject — only when we have real catalog data.
   const jsonLd = post && {
@@ -101,6 +118,13 @@ export default async function VideoLayout({
 
   return (
     <>
+      {breadcrumbs && (
+        <script
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbs) }}
+        />
+      )}
       {jsonLd && (
         <script
           type="application/ld+json"

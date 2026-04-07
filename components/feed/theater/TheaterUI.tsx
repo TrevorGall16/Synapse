@@ -140,10 +140,15 @@ export function TheaterUI({
   const handleCopyLink = useCallback(() => {
     if (!post.id) { showToast("Cannot share — post has no ID"); setShareOpen(false); return; }
     const url = buildPostShareUrl(post.id);
-    navigator.clipboard.writeText(url).then(
-      () => { setCopied(true); setTimeout(() => setCopied(false), 1500); },
-      () => showToast("Failed to copy link"),
-    );
+    // Optimistic UI: flip the "✓ Copied" state immediately so the user sees
+    // feedback in the same frame as the click. Roll back only if the clipboard
+    // write actually rejects (rare — user denied permission / non-secure context).
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+    navigator.clipboard.writeText(url).catch(() => {
+      setCopied(false);
+      showToast("Failed to copy link");
+    });
     setTimeout(() => setShareOpen(false), 800);
   }, [post.id]);
 
@@ -159,11 +164,12 @@ export function TheaterUI({
     setShareOpen(false);
   }, [post.id, post.title]);
 
-  const handleShareReddit = useCallback(() => {
+  const handleShareWhatsApp = useCallback(() => {
     if (!post.id) { showToast("Cannot share — post has no ID"); setShareOpen(false); return; }
     const url = buildPostShareUrl(post.id);
+    const text = `${post.title} — ${url}`;
     window.open(
-      `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(post.title)}`,
+      `https://wa.me/?text=${encodeURIComponent(text)}`,
       "_blank",
       "noopener,noreferrer",
     );
@@ -358,26 +364,34 @@ export function TheaterUI({
           </button>
           {shareOpen && (
             <div
-              className="absolute right-full mr-2 bottom-0 z-[60] min-w-[150px] rounded-xl border border-white/20 py-1.5 shadow-2xl"
-              style={{ background: "rgba(30,30,30,0.75)", backdropFilter: "blur(16px) saturate(180%)", WebkitBackdropFilter: "blur(16px) saturate(180%)" }}
+              className="absolute right-full mr-2 bottom-0 z-[60] min-w-[180px] overflow-hidden rounded-2xl border border-white/20 py-1.5 shadow-2xl"
+              style={{ background: "rgba(20,20,20,0.72)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)" }}
+              role="dialog"
+              aria-label="Share video"
             >
+              <div className="px-3.5 pt-2 pb-1 text-[9px] font-bold uppercase tracking-widest text-white/35">Share</div>
               <button
                 onClick={handleCopyLink}
-                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10"
+                className="flex w-full items-center justify-between gap-2 px-3.5 py-2 text-left text-[11px] font-semibold text-white/90 transition-colors hover:bg-white/10"
               >
-                {copied ? <span className="text-emerald-400">✓ Copied!</span> : "Copy Link"}
+                <span>Copy link</span>
+                {/* Optimistic feedback: the ✓ flips on instantly, even before the
+                    clipboard promise settles — the callback only bails on failure. */}
+                {copied
+                  ? <span className="text-emerald-400">✓ Copied</span>
+                  : <span className="text-white/30">⌘C</span>}
               </button>
               <button
                 onClick={handleShareTwitter}
-                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10"
+                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-semibold text-white/90 transition-colors hover:bg-white/10"
               >
                 Share to X
               </button>
               <button
-                onClick={handleShareReddit}
-                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10"
+                onClick={handleShareWhatsApp}
+                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-semibold text-white/90 transition-colors hover:bg-white/10"
               >
-                Share to Reddit
+                Share to WhatsApp
               </button>
             </div>
           )}

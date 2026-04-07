@@ -22,7 +22,7 @@ import { hydrateMediaPool } from "@/lib/store/media-pool-db";
 import { useHydrationStore } from "@/lib/store/hydration-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { useFeedStore } from "@/lib/store/feed-store";
-import { followCreator, unfollowCreator, isFollowing } from "@/lib/store/social-idb";
+import { followCreator as idbFollow, unfollowCreator as idbUnfollow } from "@/lib/store/social-idb";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { buildTextStyle } from "@/lib/utils/preview-helpers";
 import { canRemix } from "@/lib/policy";
@@ -76,7 +76,6 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   const [isPlaying, setIsPlaying]             = useState(false);
   const [videoVisible, setVideoVisible]       = useState(false);
   const [mediaError, setMediaError]           = useState(false);
-  const [following, setFollowing]             = useState(false);
   const [showPlayOverlay, setShowPlayOverlay] = useState(false);
   const [showUnmuteToast, setShowUnmuteToast] = useState(false);
   const [isIdle, setIsIdle]                   = useState(false);
@@ -85,6 +84,12 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
 
   const isHydrated       = useHydrationStore((s) => s.isHydrated);
   const currentUsername  = useUserStore((s) => s.profile?.username);
+  // Sync follow state from zustand (reactive) instead of the async IDB probe
+  // the original implementation used — lets the button feel instantaneous and
+  // survive cell unmount/remount without flicker.
+  const following        = useUserStore((s) => s.following.includes(post.user.handle));
+  const storeFollow      = useUserStore((s) => s.followCreator);
+  const storeUnfollow    = useUserStore((s) => s.unfollowCreator);
   const likedPostIds     = useFeedStore((s) => s.likedPostIds);
   const toggleLike       = useFeedStore((s) => s.toggleLike);
   const liked            = likedPostIds.includes(post.id);
@@ -101,18 +106,19 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
     };
   }, []);
 
-  useEffect(() => {
-    isFollowing(post.user.handle).then(setFollowing).catch(() => {});
-  }, [post.user.handle]);
-
-  const handleFollowToggle = useCallback(async () => {
-    const next = !following;
-    setFollowing(next);
-    try {
-      if (next) await followCreator(post.user.handle);
-      else await unfollowCreator(post.user.handle);
-    } catch { setFollowing(!next); }
-  }, [following, post.user.handle]);
+  // Optimistic follow toggle — zustand update is synchronous so the button,
+  // follower count, and feed relevance boost all apply within the same frame.
+  // IDB write is fire-and-forget: the zustand state is the source of truth
+  // and is itself persisted via zustand/middleware.
+  const handleFollowToggle = useCallback(() => {
+    if (following) {
+      storeUnfollow(post.user.handle);
+      idbUnfollow(post.user.handle).catch(() => {});
+    } else {
+      storeFollow(post.user.handle);
+      idbFollow(post.user.handle).catch(() => {});
+    }
+  }, [following, post.user.handle, storeFollow, storeUnfollow]);
 
   // Idle timer: 2 s of no mouse movement while playing → ghost UI
   const resetIdleTimer = useCallback(() => {

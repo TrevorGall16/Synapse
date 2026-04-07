@@ -118,52 +118,117 @@ export function fuzzyMatch(haystack: string, needle: string): boolean {
   return false;
 }
 
-// ── Scoring ──────────────────────────────────────────────────────────────────
-/** Weighted relevance score for a post against a raw query.
- *  title > tags > description > creator handle. Exact > substring > fuzzy. */
-export function scorePost(post: FeedPost, rawQuery: string): number {
-  const q = rawQuery.trim().toLowerCase().replace(/^[@#]/, "");
-  if (!q) return 0;
+// ── Scoring — deterministic tiered ranking ───────────────────────────────────
+/**
+ * Relevance tiers, highest first. `rankPosts` sorts strictly by tier; the
+ * tiebreak score (engagement + recency + optional follow boost) is *only*
+ * consulted when two posts share the same tier. This eliminates ranking
+ * ambiguity — e.g., a creator-name hit can never outrank a title substring,
+ * regardless of how many likes the creator-name-hit post has.
+ */
+export const RELEVANCE_TIER = {
+  EXACT_TITLE:    6,
+  TITLE_PREFIX:   5,
+  TITLE_SUBSTRING:4,
+  TAG:            3,
+  DESCRIPTION:    2,
+  CREATOR:        1,
+  NONE:           0,
+} as const;
+export type RelevanceTier = typeof RELEVANCE_TIER[keyof typeof RELEVANCE_TIER];
 
-  let score = 0;
-  const title = post.title.toLowerCase();
-  const handle = post.user.handle.toLowerCase();
-  const desc = (post.description ?? "").toLowerCase();
-
-  // Title: highest weight
-  if (title === q) score += 100;
-  else if (title.startsWith(q)) score += 60;
-  else if (title.includes(q))   score += 40;
-  else if (fuzzyMatch(title, q)) score += 15;
-
-  // Tags: second weight
-  for (const t of post.tags) {
-    const n = normalizeTag(t);
-    if (n === q) { score += 35; break; }
-    if (n.includes(q)) { score += 20; break; }
-  }
-
-  // Description: third
-  if (desc.includes(q)) score += 10;
-  else if (fuzzyMatch(desc, q)) score += 4;
-
-  // Creator handle: lowest (but exact handle still meaningful)
-  if (handle === q) score += 25;
-  else if (handle.includes(q)) score += 8;
-
-  // Small popularity tiebreaker so equal-relevance results favor engagement.
-  score += Math.log10(post.likes + 1) * 0.5;
-
-  return score;
+export interface ScoredPost {
+  post: FeedPost;
+  tier: RelevanceTier;
+  tiebreak: number;
 }
 
-/** Rank posts by relevance, return top N. */
-export function rankPosts(posts: readonly FeedPost[], rawQuery: string, limit = 20): FeedPost[] {
-  const scored: Array<{ p: FeedPost; s: number }> = [];
-  for (const p of posts) {
-    const s = scorePost(p, rawQuery);
-    if (s > 0) scored.push({ p, s });
+export interface ScoreOpts {
+  /** Creator handles the current viewer follows — adds a tiebreak bonus only. */
+  followedHandles?: ReadonlySet<string>;
+  /** Enable fuzzy matching on title / description / creator for longer queries. */
+  fuzzy?: boolean;
+}
+
+/**
+ * Assign a post a deterministic tier + tiebreak score for a query.
+ * Returns `tier === 0` when the post does not match at all.
+ *
+ * Precedence (strict, tier-first):
+ *   exact title > title prefix > title substring > tags > description > creator
+ *
+ * Tiebreak (only used within a single tier):
+ *   log10(likes) + followBoost + recency-decay
+ */
+export function scorePost(
+  post: FeedPost,
+  rawQuery: string,
+  opts: ScoreOpts = {},
+): ScoredPost {
+  const q = rawQuery.trim().toLowerCase().replace(/^[@#]/, "");
+  if (!q) return { post, tier: RELEVANCE_TIER.NONE, tiebreak: 0 };
+
+  const title  = post.title.toLowerCase();
+  const handle = post.user.handle.toLowerCase();
+  const desc   = (post.description ?? "").toLowerCase();
+  const useFuzzy = opts.fuzzy !== false;
+
+  // Determine the single highest-relevance tier this post qualifies for.
+  let tier: RelevanceTier = RELEVANCE_TIER.NONE;
+
+  if (title === q) {
+    tier = RELEVANCE_TIER.EXACT_TITLE;
+  } else if (title.startsWith(q)) {
+    tier = RELEVANCE_TIER.TITLE_PREFIX;
+  } else if (title.includes(q) || (useFuzzy && fuzzyMatch(title, q))) {
+    tier = RELEVANCE_TIER.TITLE_SUBSTRING;
+  } else if (post.tags.some((t) => {
+    const n = normalizeTag(t);
+    return n === q || n.includes(q) || (useFuzzy && fuzzyMatch(n, q));
+  })) {
+    tier = RELEVANCE_TIER.TAG;
+  } else if (desc.includes(q) || (useFuzzy && fuzzyMatch(desc, q))) {
+    tier = RELEVANCE_TIER.DESCRIPTION;
+  } else if (handle === q || handle.includes(q) || (useFuzzy && fuzzyMatch(handle, q))) {
+    tier = RELEVANCE_TIER.CREATOR;
   }
-  scored.sort((a, b) => b.s - a.s);
-  return scored.slice(0, limit).map((x) => x.p);
+
+  if (tier === RELEVANCE_TIER.NONE) return { post, tier, tiebreak: 0 };
+
+  // Tiebreak: engagement + small follow boost + mild recency.
+  // Used ONLY to order posts that share a tier. Deliberately bounded so it
+  // can never cross a tier boundary.
+  const engagement = Math.log10(post.likes + 1);
+  const followed = opts.followedHandles && opts.followedHandles.has(post.user.handle);
+  const followBoost = followed ? 1.0 : 0;
+  let recency = 0;
+  if (post.createdAt) {
+    const hoursAgo = Math.max(1, (Date.now() - post.createdAt) / 3_600_000);
+    recency = 1 / Math.pow(hoursAgo + 2, 0.5);
+  }
+  const tiebreak = engagement + followBoost + recency;
+
+  return { post, tier, tiebreak };
+}
+
+/**
+ * Rank posts by deterministic tier, then tiebreak. Returns top `limit`
+ * matching posts in strict relevance order.
+ */
+export function rankPosts(
+  posts: readonly FeedPost[],
+  rawQuery: string,
+  limit = 20,
+  opts: ScoreOpts = {},
+): FeedPost[] {
+  const scored: ScoredPost[] = [];
+  for (const p of posts) {
+    const s = scorePost(p, rawQuery, opts);
+    if (s.tier > 0) scored.push(s);
+  }
+  scored.sort((a, b) => {
+    if (a.tier !== b.tier) return b.tier - a.tier;
+    return b.tiebreak - a.tiebreak;
+  });
+  return scored.slice(0, limit).map((x) => x.post);
 }

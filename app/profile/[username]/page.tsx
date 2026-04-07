@@ -442,6 +442,9 @@ export default function ProfilePage() {
   const username = Array.isArray(params.username) ? params.username[0] : (params.username ?? "you");
 
   const { profile: storeProfile, hasHydrated } = useUserStore();
+  // Optimistic follower delta for this creator — bumped instantly when the
+  // viewer hits Follow anywhere in the app. Falls back to 0 for untouched creators.
+  const followerDelta = useUserStore((s) => s.followerDeltas[Array.isArray(params.username) ? params.username[0] : (params.username ?? "")] ?? 0);
   const openProjectInTab = useProjectStore((s) => s.openProjectInTab);
   const loadProject      = useProjectStore((s) => s.loadProject);
   const allUserPosts     = useFeedStore((s) => s.userPosts);
@@ -469,9 +472,13 @@ export default function ProfilePage() {
   const currentUser  = storeProfile ?? DEFAULT_PROFILE;
   const isOwnProfile = username === currentUser.username || username === "you";
   const creator      = isOwnProfile ? null : CREATOR_MAP[username];
-  const profile      = isOwnProfile
+  const profileBase  = isOwnProfile
     ? { displayName: currentUser.displayName, bio: currentUser.bio, hue: currentUser.hue, followers: currentUser.followers, following: currentUser.following }
     : (creator ?? { displayName: username, bio: "Synapse creator", hue: 200, followers: 0, following: 0 });
+  // Apply the optimistic follow delta to the target creator's follower count.
+  const profile = isOwnProfile
+    ? profileBase
+    : { ...profileBase, followers: Math.max(0, profileBase.followers + followerDelta) };
 
   const accent   = isOwnProfile ? `hsl(${profile.hue} 55% 45%)` : (MOCK_ACCENT[username] ?? "#7c3aed");
   const bannerBg = isOwnProfile ? `hsl(${profile.hue} 30% 8%)`  : (MOCK_BG[username]     ?? "#1a1a1a");

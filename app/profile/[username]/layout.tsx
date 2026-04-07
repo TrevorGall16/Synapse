@@ -11,6 +11,7 @@
 
 import type { Metadata, ResolvingMetadata } from "next";
 import { findMockCreator } from "@/lib/mock-posts";
+import { getCanonicalBaseUrl, absoluteUrl } from "@/lib/canonical";
 
 interface RouteParams { username: string }
 
@@ -21,9 +22,11 @@ export async function generateMetadata(
   const { username } = await params;
   const url = `/profile/${username}`;
   const creator = findMockCreator(username);
+  const base = getCanonicalBaseUrl();
 
   if (username === "you") {
     return {
+      metadataBase: new URL(base),
       title: "Your Profile · Synapse",
       description: "Your published edits, drafts, and stats on Synapse.",
       alternates: { canonical: url },
@@ -34,6 +37,7 @@ export async function generateMetadata(
   if (!creator) {
     // Unknown username — still render, but do not index until backed by data.
     return {
+      metadataBase: new URL(base),
       title: `@${username} · Synapse`,
       description: `Edits and recipes by @${username} on Synapse.`,
       alternates: { canonical: url },
@@ -45,6 +49,7 @@ export async function generateMetadata(
   const description = `${creator.bio} — ${creator.postCount} edits, ${creator.followers.toLocaleString()} followers, ${creator.totalLikes.toLocaleString()} total likes.`;
 
   return {
+    metadataBase: new URL(base),
     title,
     description,
     alternates: { canonical: url },
@@ -74,6 +79,17 @@ export default async function ProfileLayout({
   const { username } = await params;
   const creator = findMockCreator(username);
 
+  // BreadcrumbList — Home → Creators → @username. Emitted for any non-"you" route.
+  const breadcrumbs = username !== "you" && {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home",     item: absoluteUrl("/") },
+      { "@type": "ListItem", position: 2, name: "Creators", item: absoluteUrl("/browse") },
+      { "@type": "ListItem", position: 3, name: `@${username}`, item: absoluteUrl(`/profile/${username}`) },
+    ],
+  };
+
   const jsonLd = creator && username !== "you" && {
     "@context": "https://schema.org",
     "@type": "ProfilePage",
@@ -100,6 +116,13 @@ export default async function ProfileLayout({
 
   return (
     <>
+      {breadcrumbs && (
+        <script
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbs) }}
+        />
+      )}
       {jsonLd && (
         <script
           type="application/ld+json"

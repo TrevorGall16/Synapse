@@ -93,6 +93,7 @@ export default function DiscoveryFeedPage() {
   const searchQuery    = useSearchStore((s) => s.searchQuery);
   const setSearchQuery = useSearchStore((s) => s.setSearchQuery);
   const currentProfile = useUserStore((s) => s.profile);
+  const followingList  = useUserStore((s) => s.following);
   const cleanupOffline = useCallback(() => {
     const { userPosts: posts, removePost: rp } = useFeedStore.getState();
     posts.filter((p) => isBlobUrl(p.videoUrl)).forEach((p) => rp(p.id));
@@ -117,6 +118,9 @@ export default function DiscoveryFeedPage() {
     () => (theaterPostId ? allPosts.find((p) => p.id === theaterPostId) ?? null : null),
     [theaterPostId, allPosts],
   );
+  // Stable Set for O(1) membership checks in scoring + re-ordering.
+  const followedSet = useMemo(() => new Set(followingList), [followingList]);
+
   const displayPosts = useMemo(() => {
     // Tag filter: compare on normalized form so "#Glitch" and "glitch" match.
     const nActive = activeTag ? normalizeTag(activeTag) : null;
@@ -144,15 +148,26 @@ export default function DiscoveryFeedPage() {
     });
   }, [activeTag, allPosts, feedSort, likedPostIds]);
 
-  // Search filter — weighted relevance ranking (title > tags > description > creator).
-  // When there's no query, fall through to the sorted displayPosts. When a query
-  // is present, rankPosts returns a relevance-ordered, bounded result set so the
-  // feed stays responsive under simulated large datasets.
+  // Search filter — deterministic tiered ranking (exact title > prefix > substring
+  // > tags > description > creator). Within a tier, engagement + follow-boost
+  // decide order. rankPosts bounds the output so the feed stays responsive
+  // under simulated large datasets.
   const filteredPosts = useMemo(() => {
     const q = searchQuery.trim();
-    if (!q) return displayPosts;
-    return rankPosts(displayPosts, q, 200);
-  }, [displayPosts, searchQuery]);
+    if (!q) {
+      // No query: apply a stable follow-boost re-ordering on top of the sort
+      // mode. Followed creators float up; non-followed posts are NOT filtered
+      // out — just pushed down. JS Array.sort is stable (V8), so within each
+      // group the upstream sort order (latest/popular/trending) is preserved.
+      if (followedSet.size === 0) return displayPosts;
+      return [...displayPosts].sort((a, b) => {
+        const aF = followedSet.has(a.user.handle) ? 1 : 0;
+        const bF = followedSet.has(b.user.handle) ? 1 : 0;
+        return bF - aF;
+      });
+    }
+    return rankPosts(displayPosts, q, 200, { followedHandles: followedSet });
+  }, [displayPosts, searchQuery, followedSet]);
 
   // Hydrate search/tag filter from URL on mount — so external links
   // (e.g. from global search tag results, or a refresh) restore the filter state.
