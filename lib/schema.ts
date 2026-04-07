@@ -26,7 +26,7 @@ export const COLLECTION_DESC_MAX = 500;
 
 export const USERNAME_MAX     = 40;
 export const DISPLAY_NAME_MAX = 40;
-export const BIO_MAX          = 160;
+export const BIO_MAX          = 280;
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
@@ -337,6 +337,12 @@ export const UserProfileSchema = z.object({
   hue:         z.number().int().min(0).max(359),
   followers:   z.number().nonnegative().int(),
   following:   z.number().nonnegative().int(),
+  socialLinks: z.object({
+    instagram: z.string().optional(),
+    x:         z.string().optional(),
+    youtube:   z.string().optional(),
+    website:   z.string().optional(),
+  }).optional().default({}),
 }).strip();
 
 export type ValidatedUserProfile = z.infer<typeof UserProfileSchema>;
@@ -351,6 +357,7 @@ export function coerceUserProfile(raw: unknown): ValidatedUserProfile {
     username: "you", displayName: "Your Name",
     bio: "Making edits in Synapse", hue: 270,
     followers: 0, following: 0,
+    socialLinks: {},
   };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT;
   const r = raw as Record<string, unknown>;
@@ -363,6 +370,16 @@ export function coerceUserProfile(raw: unknown): ValidatedUserProfile {
     hue:      typeof r.hue      === "number" ? Math.max(0, Math.min(359, Math.round(r.hue)))        : DEFAULT.hue,
     followers: typeof r.followers === "number" ? Math.max(0, Math.floor(r.followers))               : DEFAULT.followers,
     following: typeof r.following === "number" ? Math.max(0, Math.floor(r.following))               : DEFAULT.following,
+    socialLinks: (() => {
+      const s = r.socialLinks;
+      if (!s || typeof s !== "object") return {};
+      const sr = s as Record<string, unknown>;
+      const out: { instagram?: string; x?: string; youtube?: string; website?: string } = {};
+      (["instagram", "x", "youtube", "website"] as const).forEach((k) => {
+        if (typeof sr[k] === "string" && (sr[k] as string).length > 0) out[k] = sr[k] as string;
+      });
+      return out;
+    })(),
   };
 }
 

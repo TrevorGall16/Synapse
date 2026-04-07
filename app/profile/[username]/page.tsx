@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2, Grid3X3, LayoutGrid, Clock, Layers, GitBranch } from "lucide-react";
+import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2, Grid3X3, LayoutGrid, Clock, Layers, GitBranch, Instagram, Twitter, Youtube, Eye } from "lucide-react";
 import { useUserStore, DEFAULT_PROFILE } from "@/lib/store/user-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
@@ -35,9 +35,10 @@ const MOCK_BG: Record<string, string> = {
 };
 
 // ── Unified post card ─────────────────────────────────────────────────────────
-function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, onDelete }: {
+function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, onDelete, views, createdAt }: {
   title: string; accentColor: string; bgColor: string; index: number; videoUrl?: string;
   post?: FeedPost | null; onOpen: () => void; onDelete?: () => void;
+  views?: number; createdAt?: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const cardRef = useRef<HTMLElement>(null);
@@ -88,9 +89,9 @@ function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, 
   }, [firstClipOffset]);
 
   return (
-    <article ref={cardRef} className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all duration-300 ease-out hover:scale-[1.02] hover:border-white/20"
+    <article ref={cardRef} className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-transform duration-300 ease-out hover:scale-105 hover:border-white/20"
       onClick={onOpen} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
-      <div className="relative" style={{ aspectRatio: "9/16", background: bgColor }}>
+      <div className="relative aspect-video" style={{ background: bgColor }}>
         {/* Delete confirmation overlay */}
         {confirmDelete && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/85 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
@@ -127,7 +128,15 @@ function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, 
         )}
 
         <div className={`absolute inset-x-0 bottom-0 p-3 transition-all duration-200 ${hovered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
-          <p className="mb-2 truncate text-[11px] font-bold text-white">{title}</p>
+          <p className="mb-1.5 truncate text-[11px] font-bold text-white">{title}</p>
+          <div className="mb-2 flex items-center gap-3 text-[9px] font-semibold text-white/70">
+            {typeof views === "number" && (
+              <span className="flex items-center gap-1"><Eye size={9} />{views >= 1000 ? `${(views / 1000).toFixed(1)}k` : views}</span>
+            )}
+            {typeof createdAt === "number" && createdAt > 0 && (
+              <span className="flex items-center gap-1"><Clock size={9} />{new Date(createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+            )}
+          </div>
           <button onClick={(e) => { e.stopPropagation(); onOpen(); }} className="flex w-full items-center justify-center gap-1 rounded-lg py-1.5 text-[10px] font-bold text-white transition-all"
             style={{ background: `${accentColor}cc` }}><Zap size={9} />Open</button>
         </div>
@@ -319,6 +328,112 @@ function PostCompactRow({ item, allPosts, onOpen, onDelete, isMultiSelectMode = 
   );
 }
 
+// ── Inline Bio Editor (own profile only) ─────────────────────────────────────
+function InlineBioEditor() {
+  const profile = useUserStore((s) => s.profile);
+  const setProfile = useUserStore((s) => s.setProfile);
+  const currentBio = profile?.bio ?? DEFAULT_PROFILE.bio;
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(currentBio);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(currentBio);
+  }, [currentBio, editing]);
+
+  useEffect(() => {
+    if (editing) {
+      taRef.current?.focus();
+      taRef.current?.setSelectionRange(draft.length, draft.length);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
+  const commit = () => {
+    const trimmed = draft.slice(0, BIO_MAX);
+    if (trimmed !== currentBio) setProfile({ bio: trimmed });
+    setEditing(false);
+  };
+
+  const cancel = () => {
+    setDraft(currentBio);
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <p
+        onClick={() => setEditing(true)}
+        className="mt-1.5 cursor-text whitespace-pre-wrap rounded px-1 -mx-1 text-[13px] leading-snug text-white/70 transition-colors hover:bg-white/5"
+        title="Click to edit bio"
+      >
+        {currentBio || <span className="italic text-white/30">Add a bio…</span>}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-1.5">
+      <textarea
+        ref={taRef}
+        value={draft}
+        rows={3}
+        maxLength={BIO_MAX}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { e.preventDefault(); cancel(); }
+        }}
+        className="w-full resize-none rounded-lg border border-brand-accent/40 bg-white/5 px-2 py-1.5 text-[13px] leading-snug text-white outline-none focus:border-brand-accent"
+      />
+      <div className="mt-1 flex justify-end text-[10px] tabular-nums text-white/40">
+        <span className={draft.length >= BIO_MAX ? "text-red-400" : ""}>{draft.length}/{BIO_MAX}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Secure Social Link row ────────────────────────────────────────────────────
+function normalizeUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+function SocialLinkRow({ links }: { links?: { instagram?: string; x?: string; youtube?: string; website?: string } }) {
+  if (!links) return null;
+  const items: Array<{ key: string; icon: typeof Instagram; raw?: string; label: string }> = [
+    { key: "instagram", icon: Instagram, raw: links.instagram, label: "Instagram" },
+    { key: "x",         icon: Twitter,   raw: links.x,         label: "X" },
+    { key: "youtube",   icon: Youtube,   raw: links.youtube,   label: "YouTube" },
+    { key: "website",   icon: Globe,     raw: links.website,   label: "Website" },
+  ];
+  const valid = items
+    .map((i) => ({ ...i, href: i.raw ? normalizeUrl(i.raw) : null }))
+    .filter((i): i is typeof i & { href: string } => !!i.href);
+
+  if (valid.length === 0) return null;
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      {valid.map(({ key, icon: Icon, href, label }) => (
+        <a
+          key={key}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={label}
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/8 text-white/55 transition-colors hover:bg-white/15 hover:text-white"
+        >
+          <Icon size={13} />
+        </a>
+      ))}
+    </div>
+  );
+}
+
 // ── Profile page ──────────────────────────────────────────────────────────────
 export default function ProfilePage() {
   // ── ALL HOOKS MUST BE DECLARED FIRST — no early returns above this line ──────
@@ -503,8 +618,8 @@ export default function ProfilePage() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* ── High-sensation banner ──────────────────────────────────────────── */}
-        <div className="relative h-44 shrink-0 overflow-hidden"
+        {/* ── Cinematic 21:9 banner ──────────────────────────────────────────── */}
+        <div className="relative aspect-[21/9] w-full shrink-0 overflow-hidden"
           style={{ background: `linear-gradient(135deg, ${bannerBg} 0%, ${accent}28 55%, ${bannerBg} 100%)` }}>
           {/* diagonal grid */}
           <div className="absolute inset-0 opacity-[0.07]"
@@ -524,14 +639,16 @@ export default function ProfilePage() {
             </filter>
             <rect width="100%" height="100%" filter="url(#pg-grain)" />
           </svg>
+          {/* Bottom-to-top readability gradient */}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#141414] via-[#141414]/40 to-transparent" />
         </div>
 
         {/* ── Avatar + info ──────────────────────────────────────────────────── */}
         <div className="relative px-6 pb-5" style={{ animation: "profile-card-in 0.34s cubic-bezier(0.22,1,0.36,1) both" }}>
-          <div className="relative -mt-9 mb-3 flex items-end justify-between">
-            {/* Avatar — larger ring, slight shadow glow */}
-            <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full text-2xl font-bold text-white ring-4 ring-[#141414]"
-              style={{ background: `hsl(${profile.hue} 55% 32%)`, boxShadow: `0 0 24px ${accent}44` }}>
+          <div className="relative -mt-12 mb-3 flex items-end justify-between">
+            {/* Avatar — glassmorphic border overlapping banner */}
+            <div className="flex h-[88px] w-[88px] items-center justify-center rounded-full border-2 border-white/25 bg-white/10 text-3xl font-bold text-white backdrop-blur-md"
+              style={{ background: `hsl(${profile.hue} 55% 32%)`, boxShadow: `0 8px 32px ${accent}55, 0 0 0 4px rgba(20,20,20,0.6)` }}>
               {profile.displayName[0].toUpperCase()}
             </div>
             {/* ── Action buttons ─────────────────────────────────────────── */}
@@ -549,8 +666,7 @@ export default function ProfilePage() {
             ) : (
               <div className="flex gap-2">
                 <button
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold text-white transition-all duration-200 hover:scale-[1.02]"
-                  style={{ background: `${accent}cc` }}>
+                  className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[11px] font-bold text-white transition-all duration-200 hover:scale-[1.02] hover:bg-brand-accent">
                   <Users size={11} />Follow
                 </button>
                 <button
@@ -564,7 +680,12 @@ export default function ProfilePage() {
 
           <h1 className="text-base font-bold text-white">{profile.displayName}</h1>
           <p className="text-[11px] text-white/45">@{username}</p>
-          <p className="mt-1.5 text-[13px] leading-snug text-white/70">{profile.bio}</p>
+          {isOwnProfile ? (
+            <InlineBioEditor />
+          ) : (
+            <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-snug text-white/70">{profile.bio}</p>
+          )}
+          <SocialLinkRow links={isOwnProfile ? currentUser.socialLinks : undefined} />
 
           {/* ── Stats row ────────────────────────────────────────────────── */}
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -599,7 +720,7 @@ export default function ProfilePage() {
           <div className="flex">
             {(["published", "drafts", "liked"] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)}
-                className={`mr-4 border-b-2 pb-2.5 pt-1 text-[11px] font-semibold capitalize transition-colors ${tab === t ? "border-white/80 text-white" : "border-transparent text-white/35 hover:text-white/60"}`}
+                className={`mr-4 border-b-2 pb-2.5 pt-1 text-[11px] font-semibold capitalize transition-colors ${tab === t ? "border-brand-accent text-white" : "border-transparent text-white/35 hover:text-white/60"}`}
               >{t}</button>
             ))}
           </div>
@@ -681,6 +802,8 @@ export default function ProfilePage() {
                     <PostCard key={item.id} title={item.title} accentColor={item.accent} bgColor={item.bg} index={i}
                       videoUrl={item.post?.videoUrl}
                       post={item.post}
+                      views={item.post?.likes}
+                      createdAt={item.date}
                       onOpen={() => handleOpenPost(item)}
                       onDelete={item.type === "feed" ? () => removePost(item.id) : undefined}
                     />

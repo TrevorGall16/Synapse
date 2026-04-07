@@ -4,6 +4,13 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { coerceUserProfile } from "@/lib/schema";
 
+export interface SocialLinks {
+  instagram?: string;
+  x?: string;
+  youtube?: string;
+  website?: string;
+}
+
 export interface UserProfile {
   username: string;
   displayName: string;
@@ -11,6 +18,7 @@ export interface UserProfile {
   hue: number;
   followers: number;
   following: number;
+  socialLinks: SocialLinks;
 }
 
 export const DEFAULT_PROFILE: UserProfile = {
@@ -20,6 +28,7 @@ export const DEFAULT_PROFILE: UserProfile = {
   hue: 270,
   followers: 0,
   following: 0,
+  socialLinks: {},
 };
 
 // ── XP / Rank thresholds ───────────────────────────────────────────────────────
