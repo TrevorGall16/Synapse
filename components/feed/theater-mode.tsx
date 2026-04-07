@@ -31,10 +31,18 @@ interface TheaterModeProps {
   onHashtagClick?: (tag: string) => void;
   allPosts?: FeedPost[];
   onNavigate?: (post: FeedPost) => void;
+  /** When provided, disables buildQueue reshuffling/recommendation logic.
+   *  TheaterMode renders these posts in this exact order — used by Profile so the
+   *  vertical scroll order matches the visual grid order (Up = previous, Down = next). */
+  lockedQueue?: FeedPost[];
 }
 
-export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick, allPosts = [] }: TheaterModeProps) {
-  const [queue, setQueue]             = useState<FeedPost[]>(() => buildQueue(post, allPosts));
+export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick, allPosts = [], lockedQueue }: TheaterModeProps) {
+  const isLocked = !!lockedQueue;
+  const [queue, setQueue]             = useState<FeedPost[]>(() => {
+    if (lockedQueue && lockedQueue.length > 0) return lockedQueue;
+    return buildQueue(post, allPosts);
+  });
   const [muted, setMuted]             = useState(true);
   const [activePostId, setActivePostId] = useState(post.id);
   const [showVersions, setShowVersions] = useState(false);
@@ -45,8 +53,11 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
   const elementToPid            = useRef<WeakMap<HTMLDivElement, string>>(new WeakMap());
   const observerRef             = useRef<IntersectionObserver | null>(null);
 
-  // Rebuild queue when seed post changes
-  useEffect(() => { setQueue(buildQueue(post, allPosts)); }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Rebuild queue when seed post changes — skipped entirely when locked.
+  useEffect(() => {
+    if (isLocked) return;
+    setQueue(buildQueue(post, allPosts));
+  }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keyboard close
   useEffect(() => {
@@ -122,6 +133,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
 
   // Load more when scrolling near the end
   const handleScroll = useCallback(() => {
+    if (isLocked) return; // locked queue: never append recommendations
     const el = scrollRef.current;
     if (!el) return;
     const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - el.clientHeight * 1.5;
@@ -132,7 +144,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
         return [...prev, ...extra.slice(0, 10)];
       });
     }
-  }, [allPosts]);
+  }, [allPosts, isLocked]);
 
   const setCellRef = useCallback((postId: string) => (el: HTMLDivElement | null) => {
     if (el) {

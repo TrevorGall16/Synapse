@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, memo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2, Grid3X3, LayoutGrid, Clock, Layers, GitBranch, Instagram, Twitter, Youtube, Eye } from "lucide-react";
 import { useUserStore, DEFAULT_PROFILE } from "@/lib/store/user-store";
@@ -35,7 +35,7 @@ const MOCK_BG: Record<string, string> = {
 };
 
 // ── Unified post card ─────────────────────────────────────────────────────────
-function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, onDelete, views, createdAt }: {
+const PostCard = memo(function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, onDelete, views, createdAt }: {
   title: string; accentColor: string; bgColor: string; index: number; videoUrl?: string;
   post?: FeedPost | null; onOpen: () => void; onDelete?: () => void;
   views?: number; createdAt?: number;
@@ -91,7 +91,7 @@ function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, 
   return (
     <article ref={cardRef} className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-transform duration-300 ease-out hover:scale-105 hover:border-white/20"
       onClick={onOpen} onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
-      <div className="relative aspect-video" style={{ background: bgColor }}>
+      <div className="relative aspect-[9/16]" style={{ background: bgColor }}>
         {/* Delete confirmation overlay */}
         {confirmDelete && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/85 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
@@ -146,7 +146,7 @@ function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, 
       </div>
     </article>
   );
-}
+});
 
 // ── Edit Profile Modal ────────────────────────────────────────────────────────
 function EditProfileModal({ onClose }: { onClose: () => void }) {
@@ -479,18 +479,42 @@ export default function ProfilePage() {
   const offlinePosts = allUserPosts.filter((p) => isBlobUrl(p.videoUrl));
 
   // ── useMemo MUST come before any conditional return (Rules of Hooks) ────────
-  const unifiedPosts = useMemo(() => {
-    const feedItems = allUserPosts
+  // Public published posts — strictly status === "published" (or legacy posts with no status field).
+  // NEVER mix in registry "Project Folders" / drafts here — those are private to the owner.
+  const publishedPosts = useMemo(() => {
+    return allUserPosts
       .filter((p) => p.authorUsername === currentUser.username || (isOwnProfile && !p.authorUsername))
-      .map((p) => ({ type: "feed" as const, id: p.id, title: p.title, accent: p.accent, bg: p.bg, date: p.createdAt ?? 0, post: p }));
-    const regItems = isOwnProfile ? registryProjects.map((p) => ({
-      type: "registry" as const, id: p.id, title: p.name, accent, bg: bannerBg, date: p.lastEdited, post: null as FeedPost | null,
-    })) : [];
-    return [...feedItems, ...regItems].sort((a, b) => b.date - a.date);
-  }, [allUserPosts, registryProjects, currentUser.username, isOwnProfile, accent, bannerBg]);
+      .filter((p) => {
+        const s = (p as unknown as { status?: string }).status;
+        return s === undefined || s === "published";
+      })
+      .map((p) => ({ type: "feed" as const, id: p.id, title: p.title, accent: p.accent, bg: p.bg, date: p.createdAt ?? 0, post: p }))
+      .sort((a, b) => b.date - a.date);
+  }, [allUserPosts, currentUser.username, isOwnProfile]);
+
+  // Owner-only: Project Folders / drafts from the local registry. Never exposed to visitors.
+  const draftProjects = useMemo(() => {
+    if (!isOwnProfile) return [];
+    return registryProjects
+      .map((p) => ({ type: "registry" as const, id: p.id, title: p.name, accent, bg: bannerBg, date: p.lastEdited, post: null as FeedPost | null }))
+      .sort((a, b) => b.date - a.date);
+  }, [registryProjects, isOwnProfile, accent, bannerBg]);
+
+  // Compact view still benefits from the union — owner only.
+  const unifiedPosts = useMemo(
+    () => [...publishedPosts, ...draftProjects].sort((a, b) => b.date - a.date),
+    [publishedPosts, draftProjects]
+  );
+
+  // Locked queue for Theater Mode — exact filtered/ordered published posts as seen in the grid.
+  // When set, TheaterMode disables buildQueue reshuffling/recommendation logic.
+  const profileQueue = useMemo(
+    () => publishedPosts.map((it) => it.post).filter((p): p is FeedPost => !!p),
+    [publishedPosts]
+  );
 
   const mockCount = isOwnProfile ? 0 : (creator?.postCount ?? 0);
-  const pubCount  = isOwnProfile ? unifiedPosts.length : mockCount;
+  const pubCount  = isOwnProfile ? publishedPosts.length : mockCount;
 
   // ── Stats from lib/stats.ts (own profile) or CREATOR_MAP (mock) ──────────
   const profileStats = useMemo(() => getTrendingData(
@@ -598,7 +622,8 @@ export default function ProfilePage() {
           onClose={() => setTheaterPost(null)}
           onRemix={(p) => handleStudioLoad(p)}
           onCreator={() => { setTheaterPost(null); router.push(`/profile/${theaterPost.user.handle}`); }}
-          allPosts={allUserPosts}
+          allPosts={profileQueue}
+          lockedQueue={profileQueue}
           onNavigate={(p) => setTheaterPost(p)}
         />
       )}
@@ -619,7 +644,7 @@ export default function ProfilePage() {
 
       <div className="flex-1 overflow-y-auto">
         {/* ── Cinematic 21:9 banner ──────────────────────────────────────────── */}
-        <div className="relative aspect-[21/9] w-full shrink-0 overflow-hidden"
+        <div className="relative h-[180px] w-full shrink-0 overflow-hidden"
           style={{ background: `linear-gradient(135deg, ${bannerBg} 0%, ${accent}28 55%, ${bannerBg} 100%)` }}>
           {/* diagonal grid */}
           <div className="absolute inset-0 opacity-[0.07]"
@@ -718,7 +743,7 @@ export default function ProfilePage() {
         {/* Tabs + View Mode Toggle */}
         <div className="flex items-center justify-between border-b border-white/8 px-6">
           <div className="flex">
-            {(["published", "drafts", "liked"] as const).map((t) => (
+            {((isOwnProfile ? ["published", "drafts", "liked"] : ["published", "liked"]) as Tab[]).map((t) => (
               <button key={t} onClick={() => setTab(t)}
                 className={`mr-4 border-b-2 pb-2.5 pt-1 text-[11px] font-semibold capitalize transition-colors ${tab === t ? "border-brand-accent text-white" : "border-transparent text-white/35 hover:text-white/60"}`}
               >{t}</button>
@@ -786,7 +811,7 @@ export default function ProfilePage() {
         <div className="px-6 py-5">
           {tab === "published" && (
             <>
-              {isOwnProfile && unifiedPosts.length === 0 && (
+              {isOwnProfile && publishedPosts.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <Globe size={28} className="mb-3 text-white/15" />
                   <p className="text-sm font-semibold text-white/30">No published projects yet</p>
@@ -796,9 +821,9 @@ export default function ProfilePage() {
                   </button>
                 </div>
               )}
-              {isOwnProfile && unifiedPosts.length > 0 && viewMode === "grid" && (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-                  {unifiedPosts.map((item, i) => (
+              {isOwnProfile && publishedPosts.length > 0 && viewMode === "grid" && (
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                  {publishedPosts.map((item, i) => (
                     <PostCard key={item.id} title={item.title} accentColor={item.accent} bgColor={item.bg} index={i}
                       videoUrl={item.post?.videoUrl}
                       post={item.post}
@@ -824,7 +849,7 @@ export default function ProfilePage() {
                 </div>
               )}
               {!isOwnProfile && (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                   {Array.from({ length: Math.min(mockCount, 10) }).map((_, i) => (
                     <PostCard key={i} title={`Edit #${i + 1}`} accentColor={accent} bgColor={bannerBg} index={i} onOpen={() => router.push("/")} />
                   ))}
@@ -832,12 +857,24 @@ export default function ProfilePage() {
               )}
             </>
           )}
-          {tab === "drafts" && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <Edit3 size={28} className="mb-3 text-white/15" />
-              <p className="text-sm font-semibold text-white/30">No drafts</p>
-              <p className="mt-1 text-[11px] text-white/20">Saved drafts will appear here.</p>
-            </div>
+          {tab === "drafts" && isOwnProfile && (
+            draftProjects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <Edit3 size={28} className="mb-3 text-white/15" />
+                <p className="text-sm font-semibold text-white/30">No drafts</p>
+                <p className="mt-1 text-[11px] text-white/20">Saved project folders will appear here — only you can see them.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                {draftProjects.map((item, i) => (
+                  <PostCard key={item.id} title={item.title} accentColor={item.accent} bgColor={item.bg} index={i}
+                    post={item.post}
+                    createdAt={item.date}
+                    onOpen={() => handleOpenPost(item)}
+                  />
+                ))}
+              </div>
+            )
           )}
           {tab === "liked" && (
             <div className="flex flex-col items-center justify-center py-16 text-center">
