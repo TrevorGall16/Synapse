@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { MediaBin } from "@/components/studio/media-bin";
 import { PreviewMonitor } from "@/components/studio/preview-monitor";
@@ -13,6 +14,7 @@ import { AudioInspector } from "@/components/studio/audio-inspector";
 import { AudioMixer } from "@/components/studio/audio-mixer";
 import { VolumeHud } from "@/components/studio/volume-hud";
 import { StudioTabs } from "@/components/studio/studio-tabs";
+import { FocusedBreadcrumb } from "@/components/studio/focused-breadcrumb";
 import { ProjectSettingsModal } from "@/components/studio/project-settings-modal";
 import { HistoryPanel } from "@/components/studio/history-panel";
 import { PresetPanel } from "@/components/studio/preset-panel";
@@ -43,6 +45,14 @@ function StudioSplash({ onCreateProject }: { onCreateProject: () => void }) {
 }
 
 export default function StudioPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Focused workspace mode (entry from dashboard)
+  const isFocused = searchParams.get("workspace") === "focused";
+  const isNewInit = searchParams.get("init") === "new";
+  const dashFilter = searchParams.get("dashFilter") || "";
+
   // projectStarted: true once the user explicitly clicks "Create New Project"
   // showSplash is false whenever: the user started a project OR any track already has clips
   // (the latter covers Remix navigation — loadProject populates tracks before route change)
@@ -50,6 +60,13 @@ export default function StudioPage() {
   const [showSettings, setShowSettings] = useState(false);
 
   const { isHydrating } = useMediaHydration();
+
+  const handleBackToDashboard = () => {
+    const params = new URLSearchParams();
+    if (dashFilter) params.set("filter", dashFilter);
+    const qs = params.toString();
+    router.push(`/studio/dashboard${qs ? `?${qs}` : ""}`);
+  };
 
   const leftTab = useProjectStore((s) => s.activeUISection);
   const setLeftTab = useProjectStore((s) => s.setActiveUISection);
@@ -65,6 +82,15 @@ export default function StudioPage() {
   useEffect(() => {
     if (!isHydrating && projectId) setProjectStarted(true);
   }, [isHydrating, projectId]);
+
+  // Auto-open project settings for new projects created from dashboard
+  useEffect(() => {
+    if (isNewInit && !isHydrating && projectId) {
+      setShowSettings(true);
+    }
+  // Only run once on mount when init=new is set
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNewInit, isHydrating]);
 
   // Silently re-hydrate stale media when switching tabs
   useEffect(() => {
@@ -96,7 +122,7 @@ export default function StudioPage() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#141414]">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white/50" />
-        <p className="text-xs font-semibold text-white/40">Waiting for Disk…</p>
+        <p className="text-xs font-semibold text-white/40">Waiting for Disk...</p>
       </div>
     );
   }
@@ -116,7 +142,11 @@ export default function StudioPage() {
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#1a1a1a] text-white">
       {showSettings && <ProjectSettingsModal onClose={() => setShowSettings(false)} />}
       <VolumeHud />
-      <StudioTabs />
+      {isFocused ? (
+        <FocusedBreadcrumb onNavigateDashboard={handleBackToDashboard} />
+      ) : (
+        <StudioTabs />
+      )}
       <div className="flex-1 overflow-hidden min-h-0">
       <Group orientation="vertical">
         {/* Top half: Media Pool/Inspector + Preview Monitor */}

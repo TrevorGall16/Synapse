@@ -30,7 +30,7 @@ function projectAccent(id: string): string {
   return ACCENTS[h % ACCENTS.length];
 }
 
-type FilterTab = "all" | "drafts" | "published";
+export type ProjectFilterTab = "all" | "drafts" | "published";
 
 // ── Status Badge ─────────────────────────────────────────────
 
@@ -83,7 +83,6 @@ function ProjectCard({ project, onOpen, onDelete, onRename }: CardProps) {
       data-testid={`project-card-${project.id}`}
       className="group relative flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[#1e1e1e] transition-all hover:border-white/20"
     >
-      {/* Thumbnail */}
       <button
         onClick={onOpen}
         className="relative w-full overflow-hidden bg-[#0d0d0d]"
@@ -113,7 +112,6 @@ function ProjectCard({ project, onOpen, onDelete, onRename }: CardProps) {
         </div>
       </button>
 
-      {/* Info panel */}
       <div className="flex flex-1 flex-col gap-2 p-3">
         {renaming ? (
           <div className="flex items-center gap-1">
@@ -124,7 +122,7 @@ function ProjectCard({ project, onOpen, onDelete, onRename }: CardProps) {
                 if (e.key === "Enter") submitRename();
                 if (e.key === "Escape") { setNameVal(project.name); setRenaming(false); }
               }}
-              className="flex-1 rounded border border-purple-500/40 bg-white/6 px-2 py-1 text-xs font-semibold text-white outline-none"
+              className="flex-1 rounded border border-brand-accent/40 bg-white/6 px-2 py-1 text-xs font-semibold text-white outline-none"
             />
             <button onClick={submitRename} className="rounded p-1 text-green-400 hover:bg-green-500/15"><Check size={11} /></button>
             <button onClick={() => { setNameVal(project.name); setRenaming(false); }} className="rounded p-1 text-white/30 hover:bg-white/8"><X size={11} /></button>
@@ -188,27 +186,55 @@ function ProjectCard({ project, onOpen, onDelete, onRename }: CardProps) {
 
 // ── Projects Tab ─────────────────────────────────────────────
 
-export function ProjectsTab() {
+interface ProjectsTabProps {
+  /** Static URL or function that builds editor route per project ID. Defaults to "/studio". */
+  editorRoute?: string;
+  editorRouteBuilder?: (projectId: string) => string;
+  /** Externally controlled filter tab (for state restoration). */
+  filter?: ProjectFilterTab;
+  /** Callback when filter changes. */
+  onFilterChange?: (tab: ProjectFilterTab) => void;
+}
+
+export function ProjectsTab({ editorRoute = "/studio", editorRouteBuilder, filter: externalFilter, onFilterChange }: ProjectsTabProps) {
   const router = useRouter();
-  const { projects, removeProject, updateProject } = useProjectsRegistry();
+  const { projects, removeProject, updateProject, addProject } = useProjectsRegistry();
   const openNewTab = useProjectStore((s) => s.openNewTab);
-  const [filter, setFilter] = useState<FilterTab>("all");
+  const [internalFilter, setInternalFilter] = useState<ProjectFilterTab>("all");
+
+  const filter = externalFilter ?? internalFilter;
+  const setFilter = onFilterChange ?? setInternalFilter;
+
+  const resolveRoute = useCallback((projectId: string) =>
+    editorRouteBuilder ? editorRouteBuilder(projectId) : editorRoute,
+  [editorRoute, editorRouteBuilder]);
 
   const handleNewProject = useCallback(async () => {
     await ensureFlushedBeforeNav();
     openNewTab();
-    router.push("/studio");
-  }, [openNewTab, router]);
+    const { projectId: newId, name, projectSettings } = useProjectStore.getState();
+    addProject({
+      id: newId,
+      name,
+      lastEdited: Date.now(),
+      width: projectSettings.width,
+      height: projectSettings.height,
+      fps: projectSettings.fps,
+      projectStatus: "draft",
+    });
+    router.push(resolveRoute(newId));
+  }, [openNewTab, router, resolveRoute, addProject]);
 
   const handleOpen = useCallback(async (project: ProjectSummary) => {
     await ensureFlushedBeforeNav();
     const store = useProjectStore.getState();
+    const route = resolveRoute(project.id);
 
-    if (project.id === store.projectId) { router.push("/studio"); return; }
+    if (project.id === store.projectId) { router.push(route); return; }
 
     if (store.savedProjects[project.id]) {
       store.switchTab(project.id);
-      router.push("/studio");
+      router.push(route);
       return;
     }
 
@@ -231,10 +257,10 @@ export function ProjectsTab() {
             });
           }
         }
-        router.push("/studio");
+        router.push(route);
       })
-      .catch(() => router.push("/studio"));
-  }, [router]);
+      .catch(() => router.push(route));
+  }, [router, resolveRoute]);
 
   const handleDelete = useCallback(async (project: ProjectSummary) => {
     if (!project.id) return;
@@ -262,10 +288,10 @@ export function ProjectsTab() {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      {/* Filter + New */}
-      <div className="flex shrink-0 items-center justify-between border-b border-white/8 px-5 py-2">
+      {/* Filter row */}
+      <div className="flex shrink-0 items-center border-b border-white/8 px-5 py-2">
         <div className="flex gap-1">
-          {(["all", "drafts", "published"] as FilterTab[]).map((tab) => (
+          {(["all", "drafts", "published"] as ProjectFilterTab[]).map((tab) => (
             <button
               key={tab}
               data-testid={`project-filter-${tab}`}
@@ -280,12 +306,6 @@ export function ProjectsTab() {
             </button>
           ))}
         </div>
-        <button
-          onClick={handleNewProject}
-          className="flex items-center gap-1.5 rounded-lg bg-purple-500/20 px-3 py-1.5 text-[11px] font-bold text-purple-300 transition-colors hover:bg-purple-500/30"
-        >
-          <Plus size={12} />New Project
-        </button>
       </div>
 
       {/* Grid */}
@@ -304,7 +324,7 @@ export function ProjectsTab() {
             {projects.length === 0 && (
               <button
                 onClick={handleNewProject}
-                className="flex items-center gap-2 rounded-lg bg-purple-500/20 px-4 py-2 text-xs font-bold text-purple-300 transition-colors hover:bg-purple-500/30"
+                className="flex items-center gap-2 rounded-lg bg-brand/20 px-4 py-2 text-xs font-bold text-brand-text transition-colors hover:bg-brand/30"
               >
                 <Plus size={13} />Create First Project
               </button>

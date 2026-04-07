@@ -3,29 +3,30 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-/** Brand-tokenised items get accent icon colour even when inactive. */
 interface NavItem {
   href: string;
   label: string;
   icon: string;
-  /** If true, icon always uses brand-accent colour. */
+  /** If true, icon uses brand-accent colour when inactive. */
   branded?: boolean;
+  /** Override: match these path prefixes for active state. */
+  activePrefixes?: string[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/",         label: "Home",     icon: "⌂" },
-  { href: "/explore",  label: "Explore",  icon: "◎", branded: true },
-  { href: "/upload",   label: "Upload",   icon: "⬆" },
-  { href: "/upload",   label: "Studio",   icon: "▶" },
-  { href: "/niche",    label: "Niche",    icon: "◈", branded: true },
-  { href: "/profile",  label: "Profile",  icon: "⟐" },
-  { href: "/login",    label: "Login",    icon: "⊳" },
+  { href: "/",                  label: "Home",    icon: "⌂" },
+  { href: "/browse",            label: "Browse",  icon: "◎", branded: true, activePrefixes: ["/browse", "/explore", "/niche"] },
+  { href: "/studio/dashboard",  label: "Studio",  icon: "▶", branded: true, activePrefixes: ["/studio", "/upload"] },
+  { href: "/profile/you",       label: "Profile", icon: "⟐", activePrefixes: ["/profile"] },
+  { href: "/login",             label: "Login",   icon: "⊳" },
 ];
 
-/** True when `pathname` belongs to `item.href` route segment. */
 function isRouteActive(pathname: string, item: NavItem): boolean {
-  // Both Upload and Studio point to /upload — always active when on /upload
-  if (item.href === "/upload") return pathname === "/upload" || pathname.startsWith("/upload/");
+  if (item.activePrefixes) {
+    return item.activePrefixes.some((p) =>
+      pathname === p || pathname.startsWith(p + "/"),
+    );
+  }
   if (item.href === "/") return pathname === "/";
   return pathname === item.href || pathname.startsWith(item.href + "/");
 }
