@@ -556,6 +556,7 @@ export default function ExplorePage() {
             onRemix={(p) => handleStudioLoad(p)}
             onCreator={(activePost) => { router.push(`/profile/${activePost.user.handle}`); setTheaterPost(null); }}
             allPosts={templates}
+            lockedQueue={templates}
             onNavigate={(p) => setTheaterPost(p)}
           />
         </div>

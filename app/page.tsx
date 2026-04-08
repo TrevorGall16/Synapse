@@ -427,6 +427,7 @@ export default function DiscoveryFeedPage() {
             scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
           }}
           allPosts={allPosts}
+          lockedQueue={filteredPosts}
           onNavigate={(p) => setTheaterPostId(p.id)}
         />
       )}

@@ -130,6 +130,7 @@ export default function NichePage() {
           onRemix={handleStudioLoad}
           onCreator={(activePost) => { router.push(`/profile/${activePost.user.handle}`); setTheaterPost(null); }}
           allPosts={filtered}
+          lockedQueue={filtered}
           onNavigate={setTheaterPost}
         />
       )}
