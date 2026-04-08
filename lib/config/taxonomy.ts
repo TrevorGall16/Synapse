@@ -60,14 +60,27 @@ export function isValidNicheCategory(v: string): v is NicheCategorySlug {
 
 /** Fixed controlled channel list — identical across upload, feed, search. */
 export const CHANNELS = [
-  "Blonde",
-  "Brunette",
   "Big Tits",
-  "Creampie",
   "Anal",
-  "Gangbang",
+  "Creampie",
   "Solo",
   "Dildo",
+  "Lesbian",
+  "Interracial",
+  "Amateur",
+  "Asian",
+  "Blonde",
+  "Latina",
+  "Ebony",
+  "PAWG",
+  "Shemale",
+  "Curvy",
+  "Feet",
+  "MILF",
+  "Gangbang",
+  "Busty",
+  "Femdom",
+  "BDSM",
 ] as const;
 
 export type Channel = (typeof CHANNELS)[number];
