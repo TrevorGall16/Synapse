@@ -79,6 +79,9 @@ export default function DiscoveryFeedPage() {
   const router = useRouter();
   const [theaterPostId, setTheaterPostId] = useState<string | null>(null);
   const [activeTag, setActiveTag]     = useState<string | null>(null);
+  /** Active Channel filter — sourced from CHANNELS master taxonomy.
+   *  Orthogonal to activeTag (free-form keyword filtering via search). */
+  const [activeChannel, setActiveChannel] = useState<string | null>(null);
   const [feedSort, setFeedSort]       = useState<"latest" | "popular" | "trending">("latest");
   const [timeWindow, setTimeWindow]   = useState<TimeWindow>(DEFAULT_WINDOW_FOR_SORT.latest);
   // Track which sort modes the user has explicitly tuned so we don't clobber
@@ -137,16 +140,27 @@ export default function DiscoveryFeedPage() {
   const followedSet = useMemo(() => new Set(followingList), [followingList]);
 
   const displayPosts = useMemo(() => {
-    // Tag filter: compare on normalized form so "#Glitch" and "glitch" match.
+    // Channel filter (single-select from CHANNELS) — matches FeedPost.channel.
+    // Falls back to tag-substring match for legacy seed content that pre-dates
+    // the channel field, so existing mocks still appear when a channel is active.
+    let base = allPosts;
+    if (activeChannel) {
+      const slug = activeChannel.toLowerCase();
+      base = base.filter((p) =>
+        p.channel === activeChannel ||
+        p.tags.some((t) => t.toLowerCase().replace(/^#+/, "") === slug),
+      );
+    }
+    // Tag filter: free-form keyword (search pill). Compare on normalized form.
     const nActive = activeTag ? normalizeTag(activeTag) : null;
-    const base = nActive
-      ? allPosts.filter((p) => p.tags.some((t) => normalizeTag(t) === nActive))
-      : allPosts;
+    if (nActive) {
+      base = base.filter((p) => p.tags.some((t) => normalizeTag(t) === nActive));
+    }
     // Latest in "all" window preserves the upstream chronological order so
     // newly-uploaded posts stay on top without needing createdAt on mocks.
     if (feedSort === "latest" && timeWindow === "all") return base;
     return rankByWindow(base, feedSort, timeWindow, { likeBoostIds: likedPostIds });
-  }, [activeTag, allPosts, feedSort, timeWindow, likedPostIds]);
+  }, [activeChannel, activeTag, allPosts, feedSort, timeWindow, likedPostIds]);
 
   // Search filter — deterministic tiered ranking (exact title > prefix > substring
   // > tags > description > creator). Within a tier, engagement + follow-boost
@@ -356,29 +370,24 @@ export default function DiscoveryFeedPage() {
             >{TIME_WINDOW_LABEL[w]}</button>
           ))}
           <div className="mx-1 w-px self-stretch bg-white/10" />
-          <Chip label="All" active={!activeTag} onClick={() => {
+          <Chip label="All" active={!activeChannel && !activeTag} onClick={() => {
+            setActiveChannel(null);
             setActiveTag(null);
             setSearchQuery("");
             window.history.replaceState(null, "", "/");
           }} />
-          {/* CHANNELS: fixed controlled list. Clicking a channel filters the
-              feed in place (stays on /) and records the slug in the URL so
-              deep-links round-trip. Free-form tag chips are rendered inside
-              individual posts and use global search instead. */}
+          {/* CHANNELS: fixed controlled list. Single-select — clicking a channel
+              filters the feed on post.channel (with a legacy tag-substring
+              fallback for pre-channel seeds). Deep-links round-trip via ?channel=. */}
           {CHANNELS.map((ch) => {
-            const tagForm = `#${ch}`;
-            const active = activeTag === tagForm;
+            const active = activeChannel === ch;
             return (
               <Chip key={ch} label={ch} active={active} onClick={() => {
-                const next = active ? null : tagForm;
-                setActiveTag(next);
-                if (next) {
-                  setSearchQuery("");
-                  window.history.replaceState(null, "", `/?channel=${channelSlug(ch)}`);
-                } else {
-                  setSearchQuery("");
-                  window.history.replaceState(null, "", "/");
-                }
+                const next = active ? null : ch;
+                setActiveChannel(next);
+                setActiveTag(null); // channel and tag filters are mutually exclusive in the pill row
+                setSearchQuery("");
+                window.history.replaceState(null, "", next ? `/?channel=${channelSlug(ch)}` : "/");
               }} />
             );
           })}

@@ -14,7 +14,7 @@ import { saveMediaToDB } from "@/lib/store/media-pool-db";
 import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
 import { ProjectsTab } from "@/components/studio/projects-tab";
 import type { MediaPoolItem } from "@/lib/store/types";
-import { NICHE_CATEGORIES } from "@/lib/config/taxonomy";
+import { NICHE_CATEGORIES, CHANNELS } from "@/lib/config/taxonomy";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -143,6 +143,9 @@ export default function UploadPage() {
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [category, setCategory] = useState("");
+  // Channel is a single-select bucket from the master content taxonomy.
+  // Orthogonal to `category` (visual niche style) and `tags` (free-form keywords).
+  const [channel, setChannel] = useState<string>("");
 
   // Toggles
   const [commentsEnabled, setCommentsEnabled] = useState(true);
@@ -291,6 +294,7 @@ export default function UploadPage() {
       authorUsername: profile.username,
       createdAt: Date.now(),
       category: (category || undefined) as import("@/lib/store/feed-store").FeedPost["category"],
+      channel: channel || undefined,
       comments_enabled: commentsEnabled,
     });
 
@@ -298,7 +302,7 @@ export default function UploadPage() {
     publishedIdRef.current = postId;
     setStageProgress(100);
     setStage("done");
-  }, [title, profile, tags, desc, file, featured, category, commentsEnabled, addPost]);
+  }, [title, profile, tags, desc, file, featured, category, channel, commentsEnabled, addPost]);
 
   // ── Open in Studio ────────────────────────────────────────────────────────
 
@@ -386,6 +390,8 @@ export default function UploadPage() {
           setTags={setTags}
           category={category}
           setCategory={setCategory}
+          channel={channel}
+          setChannel={setChannel}
           commentsEnabled={commentsEnabled}
           setCommentsEnabled={setCommentsEnabled}
           featured={featured}
@@ -430,6 +436,8 @@ interface UploadTabProps {
   setTags: React.Dispatch<React.SetStateAction<string[]>>;
   category: string;
   setCategory: (v: string) => void;
+  channel: string;
+  setChannel: (v: string) => void;
   commentsEnabled: boolean;
   setCommentsEnabled: (v: boolean) => void;
   featured: boolean;
@@ -453,7 +461,7 @@ function UploadTabContent(props: UploadTabProps) {
   const {
     file, fileRef, previewUrl, title, setTitle, desc, setDesc,
     tags, tagInput, setTagInput, tagLimitReached, commitTag, removeTag, setTags,
-    category, setCategory, commentsEnabled, setCommentsEnabled, featured, setFeatured,
+    category, setCategory, channel, setChannel, commentsEnabled, setCommentsEnabled, featured, setFeatured,
     thumbnails, thumbnailIdx, setThumbnailIdx,
     stage, isPublishing, canPublish, progressPct,
     handleFileChange, handleDrop, clearFile, handlePublish, handleOpenStudio, router,
@@ -617,7 +625,9 @@ function UploadTabContent(props: UploadTabProps) {
 
           {/* Tags (Chip Engine) — max 10 */}
           <div>
-            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Tags</label>
+            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">
+              Tags <span className="text-white/25 font-normal normal-case tracking-normal">· free-form keywords</span>
+            </label>
             <div className={`flex flex-wrap items-center gap-1.5 rounded-xl border bg-white/[0.04] px-3 py-2.5 transition-colors focus-within:bg-white/[0.06] ${
               tagLimitReached
                 ? "border-amber-500/30 focus-within:border-amber-500/40"
@@ -660,9 +670,27 @@ function UploadTabContent(props: UploadTabProps) {
             )}
           </div>
 
-          {/* Channel (Category) */}
+          {/* Channel — single-select from master content taxonomy.
+              Orthogonal to Tags (free-form) and Niche Style (visual category). */}
           <div>
-            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Channel</label>
+            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">
+              Channel <span className="text-white/25 font-normal normal-case tracking-normal">· single-select</span>
+            </label>
+            <select
+              value={channel}
+              onChange={(e) => setChannel(e.target.value)}
+              className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition-colors focus:border-brand-accent/40 focus:bg-white/[0.06] [&>option]:bg-[#1c1c1c]"
+            >
+              <option value="">None</option>
+              {CHANNELS.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Niche Style (visual category) */}
+          <div>
+            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Niche Style</label>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
