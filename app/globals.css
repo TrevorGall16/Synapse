@@ -25,6 +25,14 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* ── ⌘K hint chip ─────────────────────────────────────────────────────────
+   Hidden on coarse-pointer (touch) devices in addition to the Tailwind
+   sm:inline-flex breakpoint — a phone in landscape can hit ≥640px wide but
+   still has no keyboard. */
+@media (pointer: coarse) {
+  .synapse-kbd-chip { display: none !important; }
+}
+
 /* ── Follower scale-pop ───────────────────────────────────────────────────
    Re-triggered by remounting (e.g. key={followerDelta}) on any element that
    represents a "follow" action — counts, badges, buttons. Brand accent color
