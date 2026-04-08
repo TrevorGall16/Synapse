@@ -204,15 +204,6 @@ export function GlobalSearch({ posts = [] }: Props) {
             <X size={11} />
           </button>
         )}
-        {/* ⌘K hint — rendered as a proper <kbd> chip. Hidden on coarse
-             pointer devices (touch) AND narrow viewports; only shown to
-             users who actually have a keyboard. */}
-        <kbd
-          aria-hidden="true"
-          className="synapse-kbd-chip hidden shrink-0 items-center rounded border border-white/15 bg-white/[0.04] px-1.5 text-[10px] font-mono font-semibold leading-[1.4] tracking-wider text-white/55 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06)] sm:inline-flex"
-        >
-          ⌘K
-        </kbd>
       </div>
 
       {showDropdown && (
