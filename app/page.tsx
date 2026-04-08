@@ -15,6 +15,7 @@ import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
 import { normalizeTag } from "@/lib/mock-posts";
 import { rankPosts } from "@/lib/search-index";
 import { NICHE_TAGS as OFFICIAL_CATEGORIES } from "@/lib/config/taxonomy";
+import { rankByWindow, TIME_WINDOWS, TIME_WINDOW_LABEL, DEFAULT_WINDOW_FOR_SORT, type TimeWindow } from "@/lib/ranking";
 import { navigateToCreator } from "@/lib/nav/theater-nav";
 
 // ── Demo snapshot ─────────────────────────────────────────────────────────────
@@ -79,6 +80,20 @@ export default function DiscoveryFeedPage() {
   const [theaterPostId, setTheaterPostId] = useState<string | null>(null);
   const [activeTag, setActiveTag]     = useState<string | null>(null);
   const [feedSort, setFeedSort]       = useState<"latest" | "popular" | "trending">("latest");
+  const [timeWindow, setTimeWindow]   = useState<TimeWindow>(DEFAULT_WINDOW_FOR_SORT.latest);
+  // Track which sort modes the user has explicitly tuned so we don't clobber
+  // their window choice when they pill-hop between sorts.
+  const windowTouchedRef = useRef<Set<"latest" | "popular" | "trending">>(new Set());
+  const handleSortChange = useCallback((s: "latest" | "popular" | "trending") => {
+    setFeedSort(s);
+    if (!windowTouchedRef.current.has(s)) {
+      setTimeWindow(DEFAULT_WINDOW_FOR_SORT[s]);
+    }
+  }, []);
+  const handleWindowChange = useCallback((w: TimeWindow) => {
+    setTimeWindow(w);
+    windowTouchedRef.current.add(feedSort);
+  }, [feedSort]);
   const [toast, setToast]             = useState<string | null>(null);
 
   const [loadedPages, setLoadedPages]     = useState(1);
@@ -127,26 +142,11 @@ export default function DiscoveryFeedPage() {
     const base = nActive
       ? allPosts.filter((p) => p.tags.some((t) => normalizeTag(t) === nActive))
       : allPosts;
-    if (feedSort === "latest") return base;
-    if (feedSort === "popular") {
-      return [...base].sort((a, b) => {
-        const aL = a.likes + (likedPostIds.includes(a.id) ? 1 : 0);
-        const bL = b.likes + (likedPostIds.includes(b.id) ? 1 : 0);
-        return bL - aL;
-      });
-    }
-    // Trending: (likes + 1) / (hoursAgo + 2)^1.5
-    const now = Date.now();
-    return [...base].sort((a, b) => {
-      const aAge = a.createdAt ? (now - a.createdAt) / 3_600_000 : 48;
-      const bAge = b.createdAt ? (now - b.createdAt) / 3_600_000 : 48;
-      const aL   = a.likes + (likedPostIds.includes(a.id) ? 1 : 0);
-      const bL   = b.likes + (likedPostIds.includes(b.id) ? 1 : 0);
-      const aScore = (aL + 1) / Math.pow(aAge + 2, 1.5);
-      const bScore = (bL + 1) / Math.pow(bAge + 2, 1.5);
-      return bScore - aScore;
-    });
-  }, [activeTag, allPosts, feedSort, likedPostIds]);
+    // Latest in "all" window preserves the upstream chronological order so
+    // newly-uploaded posts stay on top without needing createdAt on mocks.
+    if (feedSort === "latest" && timeWindow === "all") return base;
+    return rankByWindow(base, feedSort, timeWindow, { likeBoostIds: likedPostIds });
+  }, [activeTag, allPosts, feedSort, timeWindow, likedPostIds]);
 
   // Search filter — deterministic tiered ranking (exact title > prefix > substring
   // > tags > description > creator). Within a tier, engagement + follow-boost
@@ -332,7 +332,7 @@ export default function DiscoveryFeedPage() {
         <div className="flex gap-1.5" style={{ width: "max-content" }}>
           {/* Sort pills — always visible at start */}
           {(["latest", "popular", "trending"] as const).map((s) => (
-            <button key={s} onClick={() => setFeedSort(s)}
+            <button key={s} onClick={() => handleSortChange(s)}
               className={`whitespace-nowrap rounded-full px-5 py-2 text-sm font-bold uppercase tracking-widest transition-colors ${
                 feedSort === s
                   ? s === "trending" ? "bg-orange-500/25 text-orange-200 ring-1 ring-orange-500/40"
@@ -341,6 +341,19 @@ export default function DiscoveryFeedPage() {
                   : "bg-white/5 text-white/40 hover:bg-white/12 hover:text-white/65"
               }`}
             >{s === "trending" ? "🔥 Trending" : s === "popular" ? "❤️ Popular" : "Latest"}</button>
+          ))}
+          {/* Time-window selector — only meaningful for popular/trending, but
+              always shown so users can scope latest too. */}
+          <div className="mx-1 w-px self-stretch bg-white/10" />
+          {TIME_WINDOWS.map((w) => (
+            <button key={w} onClick={() => handleWindowChange(w)}
+              aria-pressed={timeWindow === w}
+              className={`whitespace-nowrap rounded-full px-3 py-2 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                timeWindow === w
+                  ? "bg-white/18 text-white ring-1 ring-white/25"
+                  : "bg-white/[0.04] text-white/40 hover:bg-white/10 hover:text-white/70"
+              }`}
+            >{TIME_WINDOW_LABEL[w]}</button>
           ))}
           <div className="mx-1 w-px self-stretch bg-white/10" />
           <Chip label="All" active={!activeTag} onClick={() => {
