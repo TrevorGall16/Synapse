@@ -15,6 +15,7 @@ import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
 import { normalizeTag } from "@/lib/mock-posts";
 import { rankPosts } from "@/lib/search-index";
 import { NICHE_TAGS as OFFICIAL_CATEGORIES } from "@/lib/config/taxonomy";
+import { navigateToCreator } from "@/lib/nav/theater-nav";
 
 // ── Demo snapshot ─────────────────────────────────────────────────────────────
 function buildDemoSnapshot(id: string, title: string) {
@@ -412,14 +413,7 @@ export default function DiscoveryFeedPage() {
           post={theaterPost!}
           onClose={() => setTheaterPostId(null)}
           onRemix={(p) => { handleRemix(p); setTheaterPostId(null); }}
-          onCreator={(activePost) => {
-            // Navigate FIRST (synchronous router.push) so the URL lands on
-            // /profile/[handle] before TheaterMode unmounts — otherwise the
-            // theater's popstate-restore cleanup or a stale layout redirect
-            // can race us back to "/". State teardown happens after.
-            router.push(`/profile/${activePost.user.handle}`);
-            setTheaterPostId(null);
-          }}
+          onCreator={(activePost) => navigateToCreator(router, activePost, () => setTheaterPostId(null))}
           onHashtagClick={(tag) => {
             const normalised = tag.startsWith("#") ? tag : `#${tag}`;
             setTheaterPostId(null);

@@ -15,6 +15,7 @@ import { retainMedia } from "@/lib/store/media-pool-db";
 import { clipCssFilter, clipCssTransform } from "@/lib/utils/svg-filters";
 import { saveCustomPreset } from "@/lib/store/custom-presets-idb";
 import type { MediaPoolItem } from "@/lib/store/types";
+import { navigateToCreator } from "@/lib/nav/theater-nav";
 
 // ── Community preset library (mirrors preset-panel.tsx) ────────────────────────
 type PresetCategory = "blur" | "distortion" | "color" | "glitch";
@@ -554,7 +555,7 @@ export default function ExplorePage() {
             post={theaterPost}
             onClose={() => setTheaterPost(null)}
             onRemix={(p) => handleStudioLoad(p)}
-            onCreator={(activePost) => { router.push(`/profile/${activePost.user.handle}`); setTheaterPost(null); }}
+            onCreator={(activePost) => navigateToCreator(router, activePost, () => setTheaterPost(null))}
             allPosts={templates}
             lockedQueue={templates}
             onNavigate={(p) => setTheaterPost(p)}

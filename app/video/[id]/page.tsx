@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useCallback } from "react";
 import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 import { TheaterMode } from "@/components/feed/theater-mode";
+import { navigateToCreator } from "@/lib/nav/theater-nav";
 
 // ── Same mock posts as the discovery feed — keep in sync with app/page.tsx ──
 const MOCK_POSTS: FeedPost[] = [
@@ -41,9 +42,10 @@ export default function VideoPage() {
     router.push("/");
   }, [router]);
 
-  const handleCreator = useCallback((activePost: FeedPost) => {
-    router.push(`/profile/${activePost.user.handle}`);
-  }, [router]);
+  const handleCreator = useCallback(
+    (activePost: FeedPost) => navigateToCreator(router, activePost, () => router.push("/")),
+    [router],
+  );
 
   if (!post) {
     return (

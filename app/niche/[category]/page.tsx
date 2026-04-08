@@ -8,6 +8,7 @@ import { TheaterMode } from "@/components/feed/theater-mode";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { getRemixMode } from "@/lib/policy";
 import { NICHE_CATEGORY_BY_SLUG as CATEGORY_META, NICHE_CATEGORY_SLUGS, isValidNicheCategory as isValidCategory, type NicheCategorySlug as NicheCategory } from "@/lib/config/taxonomy";
+import { navigateToCreator } from "@/lib/nav/theater-nav";
 
 // ---------------------------------------------------------------------------
 // NicheCard — lazy-loads video only when inside (or near) the viewport
@@ -128,7 +129,7 @@ export default function NichePage() {
           post={theaterPost}
           onClose={() => setTheaterPost(null)}
           onRemix={handleStudioLoad}
-          onCreator={(activePost) => { router.push(`/profile/${activePost.user.handle}`); setTheaterPost(null); }}
+          onCreator={(activePost) => navigateToCreator(router, activePost, () => setTheaterPost(null))}
           allPosts={filtered}
           lockedQueue={filtered}
           onNavigate={setTheaterPost}

@@ -13,6 +13,7 @@ import { getTrendingData } from "@/lib/stats";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { canRemix, getRemixMode } from "@/lib/policy";
 import { validateSerializedProject, DISPLAY_NAME_MAX, BIO_MAX } from "@/lib/schema";
+import { navigateToCreator } from "@/lib/nav/theater-nav";
 
 // ── Mock creator profiles ─────────────────────────────────────────────────────
 const CREATOR_MAP: Record<string, { displayName: string; bio: string; hue: number; followers: number; following: number; postCount: number; totalLikes: number; remixes: number }> = {
@@ -641,11 +642,7 @@ export default function ProfilePage() {
           post={theaterPost}
           onClose={() => setTheaterPost(null)}
           onRemix={(p) => handleStudioLoad(p)}
-          onCreator={(activePost) => {
-            // Navigate first so routing wins over TheaterMode unmount cleanup.
-            router.push(`/profile/${activePost.user.handle}`);
-            setTheaterPost(null);
-          }}
+          onCreator={(activePost) => navigateToCreator(router, activePost, () => setTheaterPost(null))}
           allPosts={profileQueue}
           lockedQueue={profileQueue}
           onNavigate={(p) => setTheaterPost(p)}
