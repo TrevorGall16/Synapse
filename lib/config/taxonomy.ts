@@ -52,7 +52,7 @@ export function isValidNicheCategory(v: string): v is NicheCategorySlug {
  * display order for pill rows / quick-picks.
  */
 export const NICHE_TAGS = [
-  "#Blonde",
+  "#Big Tits",
   "#Brunette",
   "#Curvy",
   "#Latex",
