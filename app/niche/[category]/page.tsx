@@ -7,22 +7,7 @@ import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 import { TheaterMode } from "@/components/feed/theater-mode";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { getRemixMode } from "@/lib/policy";
-
-/** Valid category values — matches FeedPostSchema.category enum */
-const VALID_CATEGORIES = ["high-sensation", "aesthetic", "cinematic", "glitch", "slow-mo"] as const;
-type NicheCategory = (typeof VALID_CATEGORIES)[number];
-
-function isValidCategory(v: string): v is NicheCategory {
-  return (VALID_CATEGORIES as readonly string[]).includes(v);
-}
-
-const CATEGORY_META: Record<NicheCategory, { label: string; description: string; accent: string; tagAliases: string[] }> = {
-  "high-sensation": { label: "High Sensation", description: "Strobing, rapid-cut, beat-synced intensity.", accent: "#ec4899", tagAliases: ["#HighSensation", "#highsensation"] },
-  aesthetic:        { label: "Aesthetic",       description: "Dreamy palettes, soft grading, lo-fi vibes.", accent: "#a855f7", tagAliases: ["#Aesthetic", "#aesthetic"] },
-  cinematic:        { label: "Cinematic",       description: "Wide aspect, film grain, color science.",      accent: "#06b6d4", tagAliases: ["#Cinematic", "#cinematic"] },
-  glitch:           { label: "Glitch",          description: "Data-bent, pixel-sorted, RGB split chaos.",    accent: "#22c55e", tagAliases: ["#Glitch", "#glitch"] },
-  "slow-mo":        { label: "Slow Mo",         description: "Time-stretch, optical flow, high-fps glass.", accent: "#f59e0b", tagAliases: ["#SlowMo", "#slowmo", "#slow-mo"] },
-};
+import { NICHE_CATEGORY_BY_SLUG as CATEGORY_META, NICHE_CATEGORY_SLUGS, isValidNicheCategory as isValidCategory, type NicheCategorySlug as NicheCategory } from "@/lib/config/taxonomy";
 
 // ---------------------------------------------------------------------------
 // NicheCard — lazy-loads video only when inside (or near) the viewport
@@ -128,7 +113,7 @@ export default function NichePage() {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[#141414] text-center">
         <p className="text-sm font-bold text-white/40">Unknown category</p>
-        <p className="mt-1 text-[11px] text-white/25">Valid: {VALID_CATEGORIES.join(", ")}</p>
+        <p className="mt-1 text-[11px] text-white/25">Valid: {NICHE_CATEGORY_SLUGS.join(", ")}</p>
         <button onClick={() => router.push("/")} className="mt-4 rounded-lg bg-white/8 px-3 py-1.5 text-xs text-white/60 hover:bg-white/14">
           <ArrowLeft size={11} className="mr-1 inline" />Back to Feed
         </button>

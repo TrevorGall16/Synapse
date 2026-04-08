@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { Compass } from "lucide-react";
+import { NICHE_CATEGORIES as CATEGORIES } from "@/lib/config/taxonomy";
 
 // Lazy-load the heavy Explore page content (800+ lines)
 const ExploreContent = dynamic(() => import("@/app/explore/page"), {
@@ -14,16 +15,6 @@ const ExploreContent = dynamic(() => import("@/app/explore/page"), {
     </div>
   ),
 });
-
-// ── Niche categories (inlined — lightweight) ─────────────────
-
-const CATEGORIES = [
-  { slug: "high-sensation", label: "High Sensation", description: "Strobing, rapid-cut, beat-synced intensity.", accent: "#ec4899", bg: "#1a0818" },
-  { slug: "aesthetic",      label: "Aesthetic",       description: "Dreamy palettes, soft grading, lo-fi vibes.", accent: "#a855f7", bg: "#160a1a" },
-  { slug: "cinematic",      label: "Cinematic",       description: "Wide aspect, film grain, color science.",      accent: "#06b6d4", bg: "#071a1a" },
-  { slug: "glitch",         label: "Glitch",          description: "Data-bent, pixel-sorted, RGB split chaos.",    accent: "#22c55e", bg: "#051a0a" },
-  { slug: "slow-mo",        label: "Slow Mo",         description: "Time-stretch, optical flow, high-fps glass.", accent: "#f59e0b", bg: "#1a1100" },
-] as const;
 
 function CategoriesContent() {
   return (

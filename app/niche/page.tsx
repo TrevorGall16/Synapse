@@ -3,14 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-
-const CATEGORIES = [
-  { slug: "high-sensation", label: "High Sensation", description: "Strobing, rapid-cut, beat-synced intensity.", accent: "#ec4899", bg: "#1a0818" },
-  { slug: "aesthetic",      label: "Aesthetic",       description: "Dreamy palettes, soft grading, lo-fi vibes.", accent: "#a855f7", bg: "#160a1a" },
-  { slug: "cinematic",      label: "Cinematic",       description: "Wide aspect, film grain, color science.",      accent: "#06b6d4", bg: "#071a1a" },
-  { slug: "glitch",         label: "Glitch",          description: "Data-bent, pixel-sorted, RGB split chaos.",    accent: "#22c55e", bg: "#051a0a" },
-  { slug: "slow-mo",        label: "Slow Mo",         description: "Time-stretch, optical flow, high-fps glass.", accent: "#f59e0b", bg: "#1a1100" },
-] as const;
+import { NICHE_CATEGORIES as CATEGORIES } from "@/lib/config/taxonomy";
 
 export default function NicheIndexPage() {
   const router = useRouter();

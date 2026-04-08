@@ -14,6 +14,7 @@ import { saveMediaToDB } from "@/lib/store/media-pool-db";
 import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
 import { ProjectsTab } from "@/components/studio/projects-tab";
 import type { MediaPoolItem } from "@/lib/store/types";
+import { NICHE_CATEGORIES } from "@/lib/config/taxonomy";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -21,12 +22,8 @@ const ACCENTS = ["#7c3aed","#ec4899","#06b6d4","#22c55e","#f59e0b","#ef4444","#a
 const BGS     = ["#1a0a2e","#1a0818","#071a1a","#051a0a","#1a1100","#1a0500","#160a1a","#071018","#180e00"];
 
 const CATEGORIES: Array<{ value: string; label: string }> = [
-  { value: "",               label: "None" },
-  { value: "cinematic",      label: "Cinematic" },
-  { value: "glitch",         label: "Glitch" },
-  { value: "aesthetic",      label: "Aesthetic" },
-  { value: "slow-mo",        label: "Slow Mo" },
-  { value: "high-sensation", label: "High Sensation" },
+  { value: "", label: "None" },
+  ...NICHE_CATEGORIES.map((c) => ({ value: c.slug, label: c.label })),
 ];
 
 const MAX_TAGS = 10;

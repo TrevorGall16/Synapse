@@ -14,6 +14,7 @@ import { retainMedia } from "@/lib/store/media-pool-db";
 import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
 import { normalizeTag } from "@/lib/mock-posts";
 import { rankPosts } from "@/lib/search-index";
+import { NICHE_TAGS as OFFICIAL_CATEGORIES } from "@/lib/config/taxonomy";
 
 // ── Demo snapshot ─────────────────────────────────────────────────────────────
 function buildDemoSnapshot(id: string, title: string) {
@@ -41,8 +42,6 @@ const MOCK_POSTS: FeedPost[] = [
   { id: "8", user: { handle: "lo.form",     initial: "L", hue: 185 }, title: "Scan Line Retro Mix",       tags: ["#retrowave","#vhs"],      bg: "#071018", accent: "#38bdf8", duration: "1:20", likes: 1389, comments: 61,  featured: false },
   { id: "9", user: { handle: "bpmviz",      initial: "B", hue: 45  }, title: "Beat-Sync Flash Grid",      tags: ["#dnb","#reactive"],       bg: "#180e00", accent: "#fb923c", duration: "0:48", likes: 3027, comments: 184, featured: false },
 ];
-
-const OFFICIAL_CATEGORIES = ["#Blonde", "#Brunette", "#Curvy", "#Latex", "#HighSensation", "#Cinematic", "#Glitch", "#SlowMo", "#Aesthetic"];
 
 // ── Deterministic infinite-scroll generator ───────────────────────────────────
 function generateMorePosts(pageNum: number): FeedPost[] {

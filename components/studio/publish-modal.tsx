@@ -14,6 +14,7 @@ import { getAttributionLock } from "@/lib/store/attribution-idb";
 import { flushProjectToIDB } from "@/components/GlobalHydrator";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
+import { NICHE_TAGS } from "@/lib/config/taxonomy";
 import type { Track, ClipEvent, MediaPoolItem } from "@/lib/store/types";
 
 // Stable empty array reference — prevents Zustand getSnapshot infinite loop
@@ -353,7 +354,7 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
                 <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">Tags</span>
                 {/* Quick-pick presets */}
                 <div className="flex flex-wrap gap-1">
-                  {["#Blonde","#Brunette","#Curvy","#Latex","#HighSensation","#Cinematic","#Glitch","#SlowMo","#Aesthetic"].map((t) => (
+                  {NICHE_TAGS.map((t) => (
                     <button key={t} type="button"
                       onClick={() => setSelectedTags((prev) =>
                         prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
