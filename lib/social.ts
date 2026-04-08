@@ -39,8 +39,8 @@ export function formatFollowerCount(n: number, mode: "compact" | "exact" = "comp
 // ── Engagement / Hot badging ───────────────────────────────────────────────────
 
 /**
- * Engagement score for a single post. Mirrors (likes + weighted comments).
- * Keep this cheap — it runs inside render loops against whole feed pools.
+ * Legacy raw engagement score (likes + 4×comments). Kept for non-Hot
+ * consumers (leaderboards, etc). Hot badging uses getVelocityScore instead.
  */
 export function getEngagementScore(post: FeedPost): number {
   const likes = post.likes ?? 0;
@@ -48,28 +48,54 @@ export function getEngagementScore(post: FeedPost): number {
   return likes + comments * 4;
 }
 
+// Hot badging tunables ───────────────────────────────────────────────────────
+/** Minimum post age before it can be "Hot". Brand-new posts with a burst of
+ *  self-likes from the uploader shouldn't spike the badge. */
+const HOT_MIN_AGE_MS = 30 * 60 * 1000; // 30 minutes
+/** Floor denominator in hours, used so freshly-eligible posts don't divide
+ *  by a tiny number and dominate purely on recency. */
+const HOT_DENOM_FLOOR_H = 2;
+/** Absolute minimum velocity (engagement-per-hour) for a post to be Hot at
+ *  all. Prevents tiny pools from flagging any post with a single like. */
+const HOT_MIN_VELOCITY = 10;
+
 /**
- * Compute the top-decile engagement threshold for a pool. Posts whose
- * engagement score meets or exceeds this cut earn the "Hot" badge.
- *
- * Small pools (< 10 posts): the top 1 post qualifies.
- * Empty pools: returns Infinity so nothing is flagged.
+ * Velocity score = engagement per hour since publication, with a floor on
+ * the denominator to avoid runaway scores for posts ~minutes old.
+ * Posts without createdAt (legacy/mock) get a conservative stale velocity.
  */
-export function getHotThreshold(pool: readonly FeedPost[]): number {
-  if (pool.length === 0) return Number.POSITIVE_INFINITY;
-  const scores = pool.map(getEngagementScore).sort((a, b) => b - a);
-  const cutIndex = Math.max(0, Math.floor(scores.length * 0.1) - 1);
-  const idx = Math.min(cutIndex, scores.length - 1);
-  return scores[idx];
+export function getVelocityScore(post: FeedPost, now: number = Date.now()): number {
+  const engagement = getEngagementScore(post);
+  if (engagement <= 0) return 0;
+  if (typeof post.createdAt !== "number") {
+    // Unknown age → treat as 48h old so legacy high-like mocks don't auto-Hot.
+    return engagement / 48;
+  }
+  const ageMs = Math.max(0, now - post.createdAt);
+  if (ageMs < HOT_MIN_AGE_MS) return 0; // too new to qualify
+  const hours = Math.max(HOT_DENOM_FLOOR_H, ageMs / 3_600_000);
+  return engagement / hours;
 }
 
 /**
- * True if this post's engagement lands in the top ~10% of the supplied pool
- * (which should be the list currently rendered around it — feed grid,
- * niche grid, etc). A post with zero engagement is never hot.
+ * Top-decile velocity cut for a pool. Posts whose velocity meets or exceeds
+ * this AND clears HOT_MIN_VELOCITY earn Hot.
  */
-export function isHot(post: FeedPost, pool: readonly FeedPost[]): boolean {
-  const score = getEngagementScore(post);
-  if (score <= 0) return false;
-  return score >= getHotThreshold(pool);
+export function getHotThreshold(pool: readonly FeedPost[], now: number = Date.now()): number {
+  if (pool.length === 0) return Number.POSITIVE_INFINITY;
+  const scores = pool.map((p) => getVelocityScore(p, now)).sort((a, b) => b - a);
+  const cutIndex = Math.max(0, Math.floor(scores.length * 0.1) - 1);
+  const idx = Math.min(cutIndex, scores.length - 1);
+  return Math.max(scores[idx], HOT_MIN_VELOCITY);
+}
+
+/**
+ * Hot = high engagement velocity relative to the current pool, not raw totals.
+ * Old high-like-but-stale posts no longer glow just because they accumulated
+ * likes years ago; freshly-rising posts can surface quickly.
+ */
+export function isHot(post: FeedPost, pool: readonly FeedPost[], now: number = Date.now()): boolean {
+  const v = getVelocityScore(post, now);
+  if (v < HOT_MIN_VELOCITY) return false;
+  return v >= getHotThreshold(pool, now);
 }
