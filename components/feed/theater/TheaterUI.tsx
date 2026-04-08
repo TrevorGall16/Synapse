@@ -185,11 +185,11 @@ export function TheaterUI({
         </div>
       </button>
 
-      {/* Badges — top-left */}
+      {/* Badges — top-left. The "Hot" badge was removed from the full-screen
+          view: in-theater the viewer has already committed to this video, so
+          a decorative hot flag is noise. Hot/Trending now lives only on grid
+          cards and is computed per-pool via lib/social.isHot. */}
       <div className="absolute left-3 top-3 z-[40] flex items-center gap-1.5">
-        {post.featured && (
-          <span className="rounded-full bg-amber-400/90 px-2 py-0.5 text-[9px] font-bold uppercase text-black">Hot</span>
-        )}
         {post.duration !== "—" && (
           <span className="rounded-full bg-black/60 px-2 py-0.5 text-[9px] tabular-nums text-white/70 backdrop-blur-sm">
             {post.duration}

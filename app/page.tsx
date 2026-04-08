@@ -385,6 +385,7 @@ export default function DiscoveryFeedPage() {
               {filteredPosts.map((post) => (
                 <FeedPostCard
                   key={post.id} post={post}
+                  pool={filteredPosts}
                   onOpen={() => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
                   onRemix={() => handleRemix(post)}
                   onImport={() => handleImport(post)}

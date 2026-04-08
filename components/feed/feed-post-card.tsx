@@ -8,6 +8,7 @@ import { canRemix } from "@/lib/policy";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { buildTextStyle } from "@/lib/utils/preview-helpers";
 import { buildPostShareUrl } from "@/lib/utils/share";
+import { isHot } from "@/lib/social";
 
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
 
@@ -20,9 +21,12 @@ interface FeedPostCardProps {
   onImport?: () => void;
   /** Only show the delete control when explicitly true (Profile page only) */
   showDelete?: boolean;
+  /** Pool to score engagement against for the "Hot" badge. Defaults to empty
+   *  (no badge) — callers that render a grid should pass the rendered list. */
+  pool?: readonly FeedPost[];
 }
 
-export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImport, showDelete }: FeedPostCardProps) {
+export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImport, showDelete, pool }: FeedPostCardProps) {
   const currentUsername = useUserStore((s) => s.profile?.username);
   const likedPostIds = useFeedStore((s) => s.likedPostIds);
   const toggleLike   = useFeedStore((s) => s.toggleLike);
@@ -210,7 +214,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
         ))}
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80" />
 
-        {post.featured && (
+        {pool && isHot(post, pool) && (
           <span className="absolute left-2.5 top-2.5 flex items-center gap-0.5 rounded-full bg-amber-400/90 px-1.5 py-0.5 text-[8px] font-bold uppercase text-black">
             <Flame size={7} />Hot
           </span>
