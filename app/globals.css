@@ -25,6 +25,16 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* ── Follower scale-pop ───────────────────────────────────────────────────
+   Re-triggered by remounting (e.g. key={followerDelta}) on any element that
+   represents a "follow" action — counts, badges, buttons. Brand accent color
+   nudge during the peak so the change reads as an intentional UX beat. */
+@keyframes synapse-follower-pop {
+  0%   { transform: scale(1);    color: inherit; }
+  35%  { transform: scale(1.35); color: #a78bfa; }
+  100% { transform: scale(1);    color: inherit; }
+}
+
 .scrollbar-hidden {
   scrollbar-width: none;
 }

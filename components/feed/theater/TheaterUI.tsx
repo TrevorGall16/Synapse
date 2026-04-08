@@ -247,12 +247,17 @@ export function TheaterUI({
             <span className="text-lg font-bold text-white hover:underline" style={TX}>@{post.user.handle}</span>
             {!isOwn && (
               <button
+                key={String(following)}
                 onClick={(e) => { e.stopPropagation(); onFollowToggle(); }}
                 className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold backdrop-blur-sm transition-colors ${
                   following
                     ? "border-brand-accent/40 bg-brand/20 text-brand-muted"
                     : "border-white/25 bg-black/50 text-white/80 hover:bg-white/10"
                 }`}
+                style={{
+                  animation: "synapse-follower-pop 420ms cubic-bezier(0.22,1,0.36,1)",
+                  transformOrigin: "center",
+                }}
               >
                 <Users size={8} />{following ? "Following" : "Follow"}
               </button>

@@ -14,6 +14,7 @@ import { usePlaybackStore } from "@/lib/store/playback-store";
 import { canRemix, getRemixMode } from "@/lib/policy";
 import { validateSerializedProject, DISPLAY_NAME_MAX, BIO_MAX } from "@/lib/schema";
 import { navigateToCreator } from "@/lib/nav/theater-nav";
+import { formatFollowerCount } from "@/lib/social";
 
 // ── Mock creator profiles ─────────────────────────────────────────────────────
 const CREATOR_MAP: Record<string, { displayName: string; bio: string; hue: number; followers: number; following: number; postCount: number; totalLikes: number; remixes: number }> = {
@@ -763,19 +764,10 @@ export default function ProfilePage() {
                   transformOrigin: "center",
                 }}
               >
-                {followerDelta !== 0
-                  ? profile.followers.toLocaleString()
-                  : (profile.followers >= 1000 ? `${(profile.followers / 1000).toFixed(1)}k` : profile.followers)}
+                {formatFollowerCount(profile.followers, followerDelta !== 0 ? "exact" : "compact")}
               </span>
               <span className="text-[11px] text-white/40">Followers</span>
             </div>
-            <style jsx global>{`
-              @keyframes synapse-follower-pop {
-                0%   { transform: scale(1);   color: #fff; }
-                35%  { transform: scale(1.35); color: #a78bfa; }
-                100% { transform: scale(1);   color: #fff; }
-              }
-            `}</style>
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-bold text-white">{profile.following}</span>
               <span className="text-[11px] text-white/40">Following</span>
