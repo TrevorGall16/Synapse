@@ -42,8 +42,14 @@ export default function VideoPage() {
     router.push("/");
   }, [router]);
 
+  // IMPORTANT: closeTheater must be a NO-OP here.
+  //
+  // navigateToCreator() pushes `/profile/[handle]` then invokes closeTheater.
+  // On this page, closing Theater used to `router.push("/")`, which raced the
+  // profile push and landed users on Home instead. VideoPage unmounts as soon
+  // as the profile route commits, so no explicit teardown is required.
   const handleCreator = useCallback(
-    (activePost: FeedPost) => navigateToCreator(router, activePost, () => router.push("/")),
+    (activePost: FeedPost) => navigateToCreator(router, activePost, () => {}),
     [router],
   );
 

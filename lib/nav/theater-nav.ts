@@ -31,5 +31,13 @@ export function navigateToCreator(
   // Router push must happen BEFORE closeTheater so the URL transition commits
   // while TheaterMode is still in the tree. See file-header comment.
   router.push(`/profile/${post.user.handle}`);
-  closeTheater();
+  // closeTheater is expected to do STATE teardown only (e.g.
+  // setTheaterPostId(null)). Callers MUST NOT call router.push() from here —
+  // a second push races the profile push and has caused "→ /" regressions in
+  // the past (see /video/[id]/page.tsx history).
+  try {
+    closeTheater();
+  } catch {
+    /* swallow — caller teardown must not block profile navigation */
+  }
 }
