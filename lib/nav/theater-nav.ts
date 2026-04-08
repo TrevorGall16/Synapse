@@ -30,14 +30,22 @@ export function navigateToCreator(
 ): void {
   // Router push must happen BEFORE closeTheater so the URL transition commits
   // while TheaterMode is still in the tree. See file-header comment.
-  router.push(`/profile/${post.user.handle}`);
-  // closeTheater is expected to do STATE teardown only (e.g.
-  // setTheaterPostId(null)). Callers MUST NOT call router.push() from here —
-  // a second push races the profile push and has caused "→ /" regressions in
-  // the past (see /video/[id]/page.tsx history).
-  try {
-    closeTheater();
-  } catch {
-    /* swallow — caller teardown must not block profile navigation */
-  }
+  const href = `/profile/${post.user.handle}`;
+  router.push(href);
+  // Defer closeTheater to a microtask so the router transition commits first.
+  // Without this defer, TheaterMode's unmount cleanup runs synchronously and
+  // its URL-restore `history.replaceState(originalUrl)` fires while
+  // pathname is still "/video/..." — clobbering the pending profile push
+  // and leaving the user on Home. After the microtask, pathname is already
+  // "/profile/..." and the cleanup's startsWith("/video/") guard skips.
+  //
+  // Callers MUST NOT call router.push() from closeTheater — that races the
+  // profile push no matter what defer we use here.
+  queueMicrotask(() => {
+    try {
+      closeTheater();
+    } catch {
+      /* swallow — caller teardown must not block profile navigation */
+    }
+  });
 }
