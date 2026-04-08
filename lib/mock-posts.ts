@@ -38,16 +38,42 @@ export function dedupeTags(tags: readonly string[]): string[] {
 }
 
 // ── Static mock catalog — mirrors app/page.tsx and app/video/[id]/page.tsx ───
+//
+// createdAt distribution is intentional: every time-window pill
+// (Today / Week / Month / Year / All) must have visibly different
+// Popular & Trending orderings. Build-time snapshot: `createdAt` is
+// computed relative to module load so the demo feed always has "fresh"
+// content without backfilling fixtures on every dev server reload.
+const NOW = Date.now();
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+/** hoursAgo → absolute unix ms */
+const ago = (h: number) => NOW - h * HOUR;
+
 export const MOCK_POSTS: FeedPost[] = [
-  { id: "1", user: { handle: "aurora_vj",    initial: "A", hue: 270 }, title: "Strobing Bass Drop Edit",   tags: ["#techno","#hypnotic"],    bg: "#1a0a2e", accent: "#7c3aed", duration: "0:42", likes: 2847, comments: 142, featured: true  },
-  { id: "2", user: { handle: "neon_cut",     initial: "N", hue: 340 }, title: "RGB Glitch Cascade",        tags: ["#glitch","#edm"],         bg: "#1a0818", accent: "#ec4899", duration: "0:30", likes: 1923, comments: 88,  featured: false },
-  { id: "3", user: { handle: "spectral_x",  initial: "S", hue: 200 }, title: "Hypno Tunnel Loop",         tags: ["#psy","#loop"],           bg: "#071a1a", accent: "#06b6d4", duration: "1:04", likes: 3410, comments: 211, featured: false },
-  { id: "4", user: { handle: "hue.shift",   initial: "H", hue: 30  }, title: "Chromatic Aberration Pack", tags: ["#vfx","#bass"],           bg: "#1a1100", accent: "#f59e0b", duration: "0:55", likes: 891,  comments: 47,  featured: false },
-  { id: "5", user: { handle: "deep.freq",   initial: "D", hue: 150 }, title: "Pixel Sort Waveform",       tags: ["#experimental","#lo-fi"], bg: "#051a0a", accent: "#22c55e", duration: "0:37", likes: 2104, comments: 93,  featured: false },
-  { id: "6", user: { handle: "void_signal", initial: "V", hue: 0   }, title: "Infrared Strobe Cut",       tags: ["#industrial","#harsh"],   bg: "#1a0500", accent: "#ef4444", duration: "0:28", likes: 1650, comments: 72,  featured: false },
-  { id: "7", user: { handle: "prismatic",   initial: "P", hue: 300 }, title: "Kaleidoscope Crossfade",    tags: ["#ambient","#visual"],     bg: "#160a1a", accent: "#a855f7", duration: "2:10", likes: 4201, comments: 317, featured: true  },
-  { id: "8", user: { handle: "lo.form",     initial: "L", hue: 185 }, title: "Scan Line Retro Mix",       tags: ["#retrowave","#vhs"],      bg: "#071018", accent: "#38bdf8", duration: "1:20", likes: 1389, comments: 61,  featured: false },
-  { id: "9", user: { handle: "bpmviz",      initial: "B", hue: 45  }, title: "Beat-Sync Flash Grid",      tags: ["#dnb","#reactive"],       bg: "#180e00", accent: "#fb923c", duration: "0:48", likes: 3027, comments: 184, featured: false },
+  // ── Today (< 24h) ─────────────────────────────────────────────────────────
+  { id: "1", createdAt: ago(3),              user: { handle: "aurora_vj",    initial: "A", hue: 270 }, title: "Strobing Bass Drop Edit",   tags: ["#techno","#hypnotic"],    bg: "#1a0a2e", accent: "#7c3aed", duration: "0:42", likes: 412,  comments: 38,  featured: true  },
+  { id: "2", createdAt: ago(9),              user: { handle: "neon_cut",     initial: "N", hue: 340 }, title: "RGB Glitch Cascade",        tags: ["#glitch","#edm"],         bg: "#1a0818", accent: "#ec4899", duration: "0:30", likes: 186,  comments: 14,  featured: false },
+  { id: "10", createdAt: ago(18),            user: { handle: "bpmviz",       initial: "B", hue: 45  }, title: "Sub Bass Impact Cut",       tags: ["#dnb","#reactive"],       bg: "#180e00", accent: "#fb923c", duration: "0:22", likes: 97,   comments: 8,   featured: false },
+
+  // ── This Week (1–7 days) ──────────────────────────────────────────────────
+  { id: "3", createdAt: ago(2 * 24),         user: { handle: "spectral_x",   initial: "S", hue: 200 }, title: "Hypno Tunnel Loop",         tags: ["#psy","#loop"],           bg: "#071a1a", accent: "#06b6d4", duration: "1:04", likes: 1340, comments: 88,  featured: false },
+  { id: "4", createdAt: ago(4 * 24),         user: { handle: "hue.shift",    initial: "H", hue: 30  }, title: "Chromatic Aberration Pack", tags: ["#vfx","#bass"],           bg: "#1a1100", accent: "#f59e0b", duration: "0:55", likes: 721,  comments: 47,  featured: false },
+  { id: "11", createdAt: ago(6 * 24),        user: { handle: "lo.form",      initial: "L", hue: 185 }, title: "CRT Burn-In Mix",           tags: ["#retrowave","#vhs"],      bg: "#071018", accent: "#38bdf8", duration: "0:44", likes: 930,  comments: 52,  featured: false },
+
+  // ── This Month (8–30 days) ────────────────────────────────────────────────
+  { id: "5", createdAt: ago(12 * 24),        user: { handle: "deep.freq",    initial: "D", hue: 150 }, title: "Pixel Sort Waveform",       tags: ["#experimental","#lo-fi"], bg: "#051a0a", accent: "#22c55e", duration: "0:37", likes: 2104, comments: 93,  featured: false },
+  { id: "6", createdAt: ago(21 * 24),        user: { handle: "void_signal",  initial: "V", hue: 0   }, title: "Infrared Strobe Cut",       tags: ["#industrial","#harsh"],   bg: "#1a0500", accent: "#ef4444", duration: "0:28", likes: 1650, comments: 72,  featured: false },
+  { id: "12", createdAt: ago(28 * 24),       user: { handle: "neon_cut",     initial: "N", hue: 340 }, title: "Datamosh Intro",            tags: ["#glitch","#edit"],        bg: "#1a0818", accent: "#ec4899", duration: "0:33", likes: 1412, comments: 67,  featured: false },
+
+  // ── Older (90d – 11 months → Year window) ─────────────────────────────────
+  { id: "7", createdAt: ago(95 * 24),        user: { handle: "prismatic",    initial: "P", hue: 300 }, title: "Kaleidoscope Crossfade",    tags: ["#ambient","#visual"],     bg: "#160a1a", accent: "#a855f7", duration: "2:10", likes: 4201, comments: 317, featured: true  },
+  { id: "8", createdAt: ago(220 * 24),       user: { handle: "lo.form",      initial: "L", hue: 185 }, title: "Scan Line Retro Mix",       tags: ["#retrowave","#vhs"],      bg: "#071018", accent: "#38bdf8", duration: "1:20", likes: 3389, comments: 161, featured: false },
+  { id: "9", createdAt: ago(330 * 24),       user: { handle: "bpmviz",       initial: "B", hue: 45  }, title: "Beat-Sync Flash Grid",      tags: ["#dnb","#reactive"],       bg: "#180e00", accent: "#fb923c", duration: "0:48", likes: 5027, comments: 284, featured: false },
+
+  // ── Ancient (> 1 year → All Time only) ────────────────────────────────────
+  { id: "13", createdAt: ago(500 * 24),      user: { handle: "aurora_vj",    initial: "A", hue: 270 }, title: "Legacy Strobe Vol. 1",      tags: ["#techno","#classic"],     bg: "#1a0a2e", accent: "#7c3aed", duration: "1:12", likes: 8247, comments: 412, featured: false },
+  { id: "14", createdAt: ago(700 * 24),      user: { handle: "spectral_x",   initial: "S", hue: 200 }, title: "Origin Loop Archive",       tags: ["#psy","#archive"],        bg: "#071a1a", accent: "#06b6d4", duration: "0:58", likes: 9620, comments: 501, featured: true  },
 ];
 
 /** Look up a post by id in the static catalog — used by server layouts for
