@@ -46,37 +46,75 @@ export function isValidNicheCategory(v: string): v is NicheCategorySlug {
   return (NICHE_CATEGORY_SLUGS as readonly string[]).includes(v);
 }
 
-/**
- * Global niche tags used for filtering, publishing, and search. These are the
- * canonical user-facing hashtags. Order is intentional — used as the default
- * display order for pill rows / quick-picks.
- */
+// ── Channels vs Tags ─────────────────────────────────────────────────────────
+//
+// CHANNELS are a fixed, curated list of top-level buckets. They back the
+// Channel filter pills on the Discovery feed, the channel pages, and the
+// publish/upload category picker. Clicking a channel navigates to its
+// channel filter view.
+//
+// TAGS are free-form, per-video keywords. Clicking a tag runs a global
+// search for that keyword. Tags are NOT constrained to this list — anything
+// a creator types becomes a tag. The `NICHE_TAGS` array below is only the
+// "suggested / quick-pick" row shown in UI affordances.
+
+/** Fixed controlled channel list — identical across upload, feed, search. */
+export const CHANNELS = [
+  "Blonde",
+  "Brunette",
+  "Big Tits",
+  "Creampie",
+  "Anal",
+  "Gangbang",
+  "Solo",
+  "Dildo",
+] as const;
+
+export type Channel = (typeof CHANNELS)[number];
+
+const CHANNEL_SET = new Set<string>(CHANNELS.map((c) => c.toLowerCase()));
+
+/** True if a string (with or without `#`) matches a fixed channel. */
+export function isChannel(raw: string): raw is Channel {
+  const trimmed = raw.trim().replace(/^#+/, "").toLowerCase();
+  return CHANNEL_SET.has(trimmed);
+}
+
+/** URL-safe slug for a channel (spaces → "-", lowercased). */
+export function channelSlug(channel: Channel): string {
+  return channel.toLowerCase().replace(/\s+/g, "-");
+}
+
+/** Suggested free-form tags shown in publish/upload quick-pick rows. NOT a
+ *  closed set — creators can also type custom tags. */
 export const NICHE_TAGS = [
-  "#Big Tits",
-  "#Brunette",
-  "#Curvy",
-  "#Latex",
   "#HighSensation",
   "#Cinematic",
   "#Glitch",
   "#SlowMo",
   "#Aesthetic",
+  "#Curvy",
+  "#Latex",
 ] as const;
 
 export type NicheTag = (typeof NICHE_TAGS)[number];
-
-const NICHE_TAG_SET = new Set<string>(NICHE_TAGS.map((t) => t.toLowerCase()));
 
 /** Normalize a raw user-entered tag ("blonde" / "Blonde" / "#blonde") → "#Blonde". */
 export function normalizeTag(raw: string): string {
   const trimmed = raw.trim().replace(/^#+/, "");
   if (!trimmed) return "";
   const lower = `#${trimmed.toLowerCase()}`;
-  const canonical = NICHE_TAGS.find((t) => t.toLowerCase() === lower);
-  return canonical ?? `#${trimmed}`;
+  const canonicalSuggested = NICHE_TAGS.find((t) => t.toLowerCase() === lower);
+  if (canonicalSuggested) return canonicalSuggested;
+  const canonicalChannel = CHANNELS.find((c) => `#${c.toLowerCase()}` === lower);
+  if (canonicalChannel) return `#${canonicalChannel}`;
+  return `#${trimmed}`;
 }
 
-/** True if this tag is part of the global taxonomy. */
+/** True if a tag is a known suggestion (channel or quick-pick). Free-form
+ *  tags return false — that's fine, tags are open-set by design. */
 export function isValidTag(tag: string): boolean {
-  return NICHE_TAG_SET.has(tag.trim().toLowerCase());
+  const lower = tag.trim().replace(/^#+/, "").toLowerCase();
+  if (CHANNEL_SET.has(lower)) return true;
+  return NICHE_TAGS.some((t) => t.slice(1).toLowerCase() === lower);
 }

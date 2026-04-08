@@ -14,7 +14,7 @@ import { retainMedia } from "@/lib/store/media-pool-db";
 import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
 import { normalizeTag } from "@/lib/mock-posts";
 import { rankPosts } from "@/lib/search-index";
-import { NICHE_TAGS as OFFICIAL_CATEGORIES } from "@/lib/config/taxonomy";
+import { CHANNELS, channelSlug } from "@/lib/config/taxonomy";
 import { rankByWindow, TIME_WINDOWS, TIME_WINDOW_LABEL, DEFAULT_WINDOW_FOR_SORT, type TimeWindow } from "@/lib/ranking";
 import { navigateToCreator } from "@/lib/nav/theater-nav";
 
@@ -361,20 +361,27 @@ export default function DiscoveryFeedPage() {
             setSearchQuery("");
             window.history.replaceState(null, "", "/");
           }} />
-          {OFFICIAL_CATEGORIES.map((tag) => (
-            <Chip key={tag} label={tag} active={activeTag === tag} onClick={() => {
-              const next = activeTag === tag ? null : tag;
-              setActiveTag(next);
-              if (next) {
-                const term = next.replace(/^#/, "");
-                setSearchQuery(term);
-                window.history.replaceState(null, "", `/?search=${encodeURIComponent(term)}`);
-              } else {
-                setSearchQuery("");
-                window.history.replaceState(null, "", "/");
-              }
-            }} />
-          ))}
+          {/* CHANNELS: fixed controlled list. Clicking a channel filters the
+              feed in place (stays on /) and records the slug in the URL so
+              deep-links round-trip. Free-form tag chips are rendered inside
+              individual posts and use global search instead. */}
+          {CHANNELS.map((ch) => {
+            const tagForm = `#${ch}`;
+            const active = activeTag === tagForm;
+            return (
+              <Chip key={ch} label={ch} active={active} onClick={() => {
+                const next = active ? null : tagForm;
+                setActiveTag(next);
+                if (next) {
+                  setSearchQuery("");
+                  window.history.replaceState(null, "", `/?channel=${channelSlug(ch)}`);
+                } else {
+                  setSearchQuery("");
+                  window.history.replaceState(null, "", "/");
+                }
+              }} />
+            );
+          })}
         </div>
       </div>
 
