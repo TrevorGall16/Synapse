@@ -554,7 +554,7 @@ export default function ExplorePage() {
             post={theaterPost}
             onClose={() => setTheaterPost(null)}
             onRemix={(p) => handleStudioLoad(p)}
-            onCreator={() => { setTheaterPost(null); router.push(`/profile/${theaterPost.user.handle}`); }}
+            onCreator={(activePost) => { router.push(`/profile/${activePost.user.handle}`); setTheaterPost(null); }}
             allPosts={templates}
             onNavigate={(p) => setTheaterPost(p)}
           />

@@ -41,9 +41,9 @@ export default function VideoPage() {
     router.push("/");
   }, [router]);
 
-  const handleCreator = useCallback(() => {
-    if (post) router.push(`/profile/${post.user.handle}`);
-  }, [router, post]);
+  const handleCreator = useCallback((activePost: FeedPost) => {
+    router.push(`/profile/${activePost.user.handle}`);
+  }, [router]);
 
   if (!post) {
     return (

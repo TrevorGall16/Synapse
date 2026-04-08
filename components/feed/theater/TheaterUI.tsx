@@ -18,7 +18,7 @@ import {
 import type { FeedPost } from "@/lib/store/feed-store";
 import type { MediaPoolItem } from "@/lib/store/types";
 import { parseHashtags } from "@/lib/utils/hashtags";
-import { buildPostShareUrl } from "@/lib/utils/share";
+import { ShareSheet } from "../share-sheet";
 
 // ── Shared render helpers (duplicated from TheaterPlayer to avoid circular import) ──
 const fmtKLocal = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
@@ -99,8 +99,6 @@ export function TheaterUI({
 }: TheaterUIProps) {
   const [toast, setToast] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const sharePopRef = useRef<HTMLDivElement>(null);
   const blurRef = useRef<HTMLVideoElement>(null);
 
   // Sync blur video play/pause with main video state
@@ -125,56 +123,6 @@ export function TheaterUI({
     setToast(msg);
     setTimeout(() => setToast(null), 2000);
   };
-
-  useEffect(() => {
-    if (!shareOpen) return;
-    const onClickOutside = (e: MouseEvent) => {
-      if (sharePopRef.current && !sharePopRef.current.contains(e.target as Node)) {
-        setShareOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", onClickOutside);
-    return () => document.removeEventListener("pointerdown", onClickOutside);
-  }, [shareOpen]);
-
-  const handleCopyLink = useCallback(() => {
-    if (!post.id) { showToast("Cannot share — post has no ID"); setShareOpen(false); return; }
-    const url = buildPostShareUrl(post.id);
-    // Optimistic UI: flip the "✓ Copied" state immediately so the user sees
-    // feedback in the same frame as the click. Roll back only if the clipboard
-    // write actually rejects (rare — user denied permission / non-secure context).
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-    navigator.clipboard.writeText(url).catch(() => {
-      setCopied(false);
-      showToast("Failed to copy link");
-    });
-    setTimeout(() => setShareOpen(false), 800);
-  }, [post.id]);
-
-  const handleShareTwitter = useCallback(() => {
-    if (!post.id) { showToast("Cannot share — post has no ID"); setShareOpen(false); return; }
-    const url = buildPostShareUrl(post.id);
-    const text = `Check out "${post.title}" on Synapse`;
-    window.open(
-      `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-    setShareOpen(false);
-  }, [post.id, post.title]);
-
-  const handleShareWhatsApp = useCallback(() => {
-    if (!post.id) { showToast("Cannot share — post has no ID"); setShareOpen(false); return; }
-    const url = buildPostShareUrl(post.id);
-    const text = `${post.title} — ${url}`;
-    window.open(
-      `https://wa.me/?text=${encodeURIComponent(text)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-    setShareOpen(false);
-  }, [post.id, post.title]);
 
   return (
     <>
@@ -284,9 +232,10 @@ export function TheaterUI({
         <div
           role="button"
           tabIndex={0}
+          aria-label={`Open profile @${post.user.handle}`}
           onClick={(e) => { e.stopPropagation(); onCreator(); }}
           onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onCreator(); } }}
-          className="mb-2 flex cursor-pointer items-center gap-2.5"
+          className="group mb-2 flex cursor-pointer items-center gap-2.5"
         >
           <div
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white/25 transition-transform hover:scale-105 active:scale-95"
@@ -354,47 +303,26 @@ export function TheaterUI({
             <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.comments)}</span>
           </button>
         )}
-        {/* Share */}
-        <div className="relative" ref={sharePopRef}>
-          <button onClick={() => setShareOpen((v) => !v)} className="flex flex-col items-center gap-1">
+        {/* Share — uses the shared <ShareSheet> so behavior matches Profile. */}
+        <div className="relative">
+          <button
+            onClick={() => {
+              if (!post.id) { showToast("Cannot share — post has no ID"); return; }
+              setShareOpen((v) => !v);
+            }}
+            className="flex cursor-pointer flex-col items-center gap-1"
+          >
             <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/12">
               <Share2 size={20} className="text-white" />
             </div>
             <span className="text-[9px] font-semibold text-white" style={TX}>Share</span>
           </button>
-          {shareOpen && (
-            <div
-              className="absolute right-full mr-2 bottom-0 z-[60] min-w-[180px] overflow-hidden rounded-2xl border border-white/20 py-1.5 shadow-2xl"
-              style={{ background: "rgba(20,20,20,0.72)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)" }}
-              role="dialog"
-              aria-label="Share video"
-            >
-              <div className="px-3.5 pt-2 pb-1 text-[9px] font-bold uppercase tracking-widest text-white/35">Share</div>
-              <button
-                onClick={handleCopyLink}
-                className="flex w-full items-center justify-between gap-2 px-3.5 py-2 text-left text-[11px] font-semibold text-white/90 transition-colors hover:bg-white/10"
-              >
-                <span>Copy link</span>
-                {/* Optimistic feedback: the ✓ flips on instantly, even before the
-                    clipboard promise settles — the callback only bails on failure. */}
-                {copied
-                  ? <span className="text-emerald-400">✓ Copied</span>
-                  : <span className="text-white/30">⌘C</span>}
-              </button>
-              <button
-                onClick={handleShareTwitter}
-                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-semibold text-white/90 transition-colors hover:bg-white/10"
-              >
-                Share to X
-              </button>
-              <button
-                onClick={handleShareWhatsApp}
-                className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-semibold text-white/90 transition-colors hover:bg-white/10"
-              >
-                Share to WhatsApp
-              </button>
-            </div>
-          )}
+          <ShareSheet
+            target={{ kind: "post", id: post.id, title: post.title }}
+            open={shareOpen}
+            onClose={() => setShareOpen(false)}
+            positionClassName="absolute right-full mr-2 bottom-0"
+          />
         </div>
         {/* Edit (own posts) */}
         {isOwn && (

@@ -143,7 +143,7 @@ export default function NichePage() {
           post={theaterPost}
           onClose={() => setTheaterPost(null)}
           onRemix={handleStudioLoad}
-          onCreator={() => { setTheaterPost(null); router.push(`/profile/${theaterPost.user.handle}`); }}
+          onCreator={(activePost) => { router.push(`/profile/${activePost.user.handle}`); setTheaterPost(null); }}
           allPosts={filtered}
           onNavigate={setTheaterPost}
         />

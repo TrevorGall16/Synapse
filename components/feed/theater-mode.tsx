@@ -27,7 +27,13 @@ interface TheaterModeProps {
   post: FeedPost;
   onClose: () => void;
   onRemix: (post: FeedPost) => void;
-  onCreator: () => void;
+  /** Called when the creator avatar/name is tapped inside a Theater cell. The
+   *  ACTIVE post (the one visible in the viewport) is passed so callers can
+   *  route to the correct profile even after vertical scroll has moved past
+   *  the seed post. Invoked BEFORE any state teardown — callers must navigate
+   *  synchronously so the router transition happens while the overlay is still
+   *  mounted (prevents "/" fallback from a layout redirect). */
+  onCreator: (post: FeedPost) => void;
   onHashtagClick?: (tag: string) => void;
   allPosts?: FeedPost[];
   onNavigate?: (post: FeedPost) => void;
@@ -322,7 +328,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
                   isActive={activePostId === p.id}
                   cellRef={setCellRef(p.id)}
                   onRemix={onRemix}
-                  onCreator={onCreator}
+                  onCreator={() => onCreator(p)}
                   onHashtagClick={onHashtagClick ?? (() => {})}
                   globalMuted={muted}
                   isCommentsOpen={commentsOpen}

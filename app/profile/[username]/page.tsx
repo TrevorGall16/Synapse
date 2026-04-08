@@ -8,6 +8,7 @@ import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useProjectsRegistry } from "@/lib/store/projects-registry";
 import { TheaterMode } from "@/components/feed/theater-mode";
+import { ShareSheet } from "@/components/feed/share-sheet";
 import { getTrendingData } from "@/lib/stats";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { canRemix, getRemixMode } from "@/lib/policy";
@@ -442,9 +443,15 @@ export default function ProfilePage() {
   const username = Array.isArray(params.username) ? params.username[0] : (params.username ?? "you");
 
   const { profile: storeProfile, hasHydrated } = useUserStore();
+  const handleFromParams = Array.isArray(params.username) ? params.username[0] : (params.username ?? "");
   // Optimistic follower delta for this creator — bumped instantly when the
   // viewer hits Follow anywhere in the app. Falls back to 0 for untouched creators.
-  const followerDelta = useUserStore((s) => s.followerDeltas[Array.isArray(params.username) ? params.username[0] : (params.username ?? "")] ?? 0);
+  const followerDelta = useUserStore((s) => s.followerDeltas[handleFromParams] ?? 0);
+  // Reactive follow state — single source of truth for both TheaterUI and here.
+  const isFollowingCreator = useUserStore((s) => s.following.includes(handleFromParams));
+  const storeFollowCreator = useUserStore((s) => s.followCreator);
+  const storeUnfollowCreator = useUserStore((s) => s.unfollowCreator);
+  const [shareOpen, setShareOpen] = useState(false);
   const openProjectInTab = useProjectStore((s) => s.openProjectInTab);
   const loadProject      = useProjectStore((s) => s.loadProject);
   const allUserPosts     = useFeedStore((s) => s.userPosts);
@@ -623,12 +630,22 @@ export default function ProfilePage() {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
       {showEditProfile && <EditProfileModal onClose={() => setShowEdit(false)} />}
+      <ShareSheet
+        target={{ kind: "profile", handle: username, displayName: profile.displayName }}
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        withBackdrop
+      />
       {theaterPost && (
         <TheaterMode
           post={theaterPost}
           onClose={() => setTheaterPost(null)}
           onRemix={(p) => handleStudioLoad(p)}
-          onCreator={() => { setTheaterPost(null); router.push(`/profile/${theaterPost.user.handle}`); }}
+          onCreator={(activePost) => {
+            // Navigate first so routing wins over TheaterMode unmount cleanup.
+            router.push(`/profile/${activePost.user.handle}`);
+            setTheaterPost(null);
+          }}
           allPosts={profileQueue}
           lockedQueue={profileQueue}
           onNavigate={(p) => setTheaterPost(p)}
@@ -697,13 +714,26 @@ export default function ProfilePage() {
               </div>
             ) : (
               <div className="flex gap-2">
+                {/* Follow button — reads/writes exclusively from useUserStore
+                    so state stays synced with TheaterUI instantly. Hidden on
+                    isOwnProfile (handled by the outer ternary). */}
                 <button
-                  className="flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-[11px] font-bold text-white transition-all duration-200 hover:scale-[1.02] hover:bg-brand-accent">
-                  <Users size={11} />Follow
+                  onClick={() => {
+                    if (isFollowingCreator) storeUnfollowCreator(username);
+                    else                    storeFollowCreator(username);
+                  }}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold transition-all duration-200 hover:scale-[1.02] ${
+                    isFollowingCreator
+                      ? "border border-brand-accent/40 bg-brand/20 text-brand-muted hover:bg-brand/30"
+                      : "bg-brand text-white hover:bg-brand-accent"
+                  }`}
+                >
+                  <Users size={11} />{isFollowingCreator ? "Following" : "Follow"}
                 </button>
                 <button
-                  className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/60 transition-all duration-200 hover:scale-[1.02] hover:bg-white/14"
-                  onClick={() => { if (navigator.share) navigator.share({ title: profile.displayName, url: window.location.href }).catch(() => {}); else navigator.clipboard.writeText(window.location.href).catch(() => {}); }}>
+                  onClick={() => setShareOpen(true)}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/15 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/60 transition-all duration-200 hover:scale-[1.02] hover:bg-white/14"
+                >
                   <Share2 size={11} />Share
                 </button>
               </div>
@@ -722,9 +752,33 @@ export default function ProfilePage() {
           {/* ── Stats row ────────────────────────────────────────────────── */}
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white">{profile.followers >= 1000 ? `${(profile.followers / 1000).toFixed(1)}k` : profile.followers}</span>
+              {/* Follower count — switches to exact mode whenever the viewer
+                  has caused a non-zero delta, so the +1 is unambiguous even
+                  against a compacted "8.4k" baseline. `key={followerDelta}`
+                  remounts the span on every change so the scale-pop keyframe
+                  re-triggers each click. */}
+              <span
+                key={followerDelta}
+                className="text-sm font-bold text-white tabular-nums"
+                style={{
+                  animation: followerDelta !== 0 ? "synapse-follower-pop 420ms cubic-bezier(0.22,1,0.36,1)" : undefined,
+                  display: "inline-block",
+                  transformOrigin: "center",
+                }}
+              >
+                {followerDelta !== 0
+                  ? profile.followers.toLocaleString()
+                  : (profile.followers >= 1000 ? `${(profile.followers / 1000).toFixed(1)}k` : profile.followers)}
+              </span>
               <span className="text-[11px] text-white/40">Followers</span>
             </div>
+            <style jsx global>{`
+              @keyframes synapse-follower-pop {
+                0%   { transform: scale(1);   color: #fff; }
+                35%  { transform: scale(1.35); color: #a78bfa; }
+                100% { transform: scale(1);   color: #fff; }
+              }
+            `}</style>
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-bold text-white">{profile.following}</span>
               <span className="text-[11px] text-white/40">Following</span>

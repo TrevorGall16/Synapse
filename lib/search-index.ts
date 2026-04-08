@@ -143,11 +143,18 @@ export interface ScoredPost {
   tiebreak: number;
 }
 
+export type SortMode = "latest" | "popular" | "trending";
+
 export interface ScoreOpts {
   /** Creator handles the current viewer follows — adds a tiebreak bonus only. */
   followedHandles?: ReadonlySet<string>;
   /** Enable fuzzy matching on title / description / creator for longer queries. */
   fuzzy?: boolean;
+  /** Active sort mode — used STRICTLY as an intra-tier tiebreaker. Never crosses
+   *  a relevance tier boundary. If two posts share the same RELEVANCE_TIER, the
+   *  sort mode decides their order (latest → newest wins, popular → most likes,
+   *  trending → time-decayed engagement). */
+  sortMode?: SortMode;
 }
 
 /**
@@ -195,18 +202,50 @@ export function scorePost(
 
   if (tier === RELEVANCE_TIER.NONE) return { post, tier, tiebreak: 0 };
 
-  // Tiebreak: engagement + small follow boost + mild recency.
-  // Used ONLY to order posts that share a tier. Deliberately bounded so it
-  // can never cross a tier boundary.
-  const engagement = Math.log10(post.likes + 1);
+  // Tiebreak: driven by the active sortMode (latest | popular | trending) with
+  // a small follow boost layered on top. The outer sort compares tiers first
+  // (integer-spaced), so tiebreaks may be ANY magnitude without crossing a
+  // tier boundary — we deliberately use raw (un-compressed) scales here so
+  // that a 4.2k-like post decisively outranks a 3.4k-like post inside the
+  // same relevance tier. Previously log10() flattened that gap from 800 to
+  // ~0.09, which the follow boost could trivially overwhelm.
   const followed = opts.followedHandles && opts.followedHandles.has(post.user.handle);
-  const followBoost = followed ? 1.0 : 0;
-  let recency = 0;
-  if (post.createdAt) {
-    const hoursAgo = Math.max(1, (Date.now() - post.createdAt) / 3_600_000);
-    recency = 1 / Math.pow(hoursAgo + 2, 0.5);
+
+  const createdAt = post.createdAt ?? 0;
+  const hoursAgo = createdAt ? Math.max(1, (Date.now() - createdAt) / 3_600_000) : 48;
+  const likes = post.likes;
+
+  let tiebreak: number;
+  let followBoost: number;
+  switch (opts.sortMode) {
+    case "latest":
+      // Newest first — raw createdAt (ms) dwarfs any follow boost, which is
+      // intentional: sort mode intent > follow affinity.
+      tiebreak = createdAt || 0;
+      // Follow boost scaled to roughly "one hour of recency" so a followed
+      // creator edges out an otherwise-identical stranger but never beats a
+      // genuinely newer post.
+      followBoost = followed ? 3_600_000 : 0;
+      break;
+    case "popular":
+      // RAW likes. A 4.2k post beats a 3.4k post by 800 — decisive.
+      tiebreak = likes;
+      // Follow boost = ~200 likes worth. Enough to break true ties (same
+      // like count) but never enough to flip a meaningful engagement gap.
+      followBoost = followed ? 200 : 0;
+      break;
+    case "trending":
+      // Time-decayed raw engagement: likes / (hoursAgo+2)^1.5. Kept un-logged
+      // so larger like counts dominate within the same recency bucket.
+      tiebreak = likes / Math.pow(hoursAgo + 2, 1.5);
+      followBoost = followed ? 5 : 0;
+      break;
+    default:
+      // No sort mode specified — preserve previous (log-compressed) behavior.
+      tiebreak = Math.log10(likes + 1) + (createdAt ? 1 / Math.pow(hoursAgo + 2, 0.5) : 0);
+      followBoost = followed ? 1.0 : 0;
   }
-  const tiebreak = engagement + followBoost + recency;
+  tiebreak += followBoost;
 
   return { post, tier, tiebreak };
 }

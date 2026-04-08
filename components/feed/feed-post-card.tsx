@@ -231,7 +231,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
 
         {/* Default bottom info (fades on hover) */}
         <div className={`absolute bottom-0 left-0 right-0 p-3 transition-all duration-200 ${hovered ? "opacity-0 translate-y-1" : ""}`}>
-          <button onClick={(e) => { e.stopPropagation(); onCreator(); }} className="mb-1 flex items-center gap-1.5">
+          <button onClick={(e) => { e.stopPropagation(); onCreator(); }} className="mb-1 flex cursor-pointer items-center gap-1.5 hover:underline">
             <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ background: `hsl(${post.user.hue} 55% 30%)` }}>{post.user.initial}</div>
             <span className="text-[10px] font-medium text-white/70">@{post.user.handle}</span>
           </button>
@@ -245,7 +245,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
 
         {/* Hover overlay — actions slide up */}
         <div className={`absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/30 to-transparent p-3 transition-all duration-200 ${hovered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
-          <button onClick={(e) => { e.stopPropagation(); onCreator(); }} className="mb-1.5 flex items-center gap-1.5">
+          <button onClick={(e) => { e.stopPropagation(); onCreator(); }} className="mb-1.5 flex cursor-pointer items-center gap-1.5 hover:underline">
             <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ring-1 ring-white/20" style={{ background: `hsl(${post.user.hue} 55% 30%)` }}>{post.user.initial}</div>
             <span className="text-[10px] font-semibold text-white/80">@{post.user.handle}</span>
           </button>

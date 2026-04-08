@@ -166,8 +166,14 @@ export default function DiscoveryFeedPage() {
         return bF - aF;
       });
     }
-    return rankPosts(displayPosts, q, 200, { followedHandles: followedSet });
-  }, [displayPosts, searchQuery, followedSet]);
+    // Feed the active sort mode as an intra-tier tiebreaker so the pill
+    // selection (Latest / Popular / Trending) decides order within each
+    // relevance tier without ever crossing a tier boundary.
+    return rankPosts(displayPosts, q, 200, {
+      followedHandles: followedSet,
+      sortMode: feedSort,
+    });
+  }, [displayPosts, searchQuery, followedSet, feedSort]);
 
   // Hydrate search/tag filter from URL on mount — so external links
   // (e.g. from global search tag results, or a refresh) restore the filter state.
@@ -364,7 +370,16 @@ export default function DiscoveryFeedPage() {
         <div className="px-6 py-5">
           {activeTag && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-brand-text/80">{activeTag}</span></p>}
           {!activeTag && !searchQuery && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">Community Edits</p>}
-          {!activeTag && searchQuery && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-brand-text/80">{searchQuery}</span></p>}
+          {!activeTag && searchQuery && (
+            <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">
+              {filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-brand-text/80">{searchQuery}</span>
+              {/* Dev badge — verifies the ranking engine is receiving the
+                  active sortMode. Remove once search sort is fully trusted. */}
+              <span className="ml-2 rounded-full bg-brand/20 px-1.5 py-0.5 text-[9px] font-bold text-brand-text ring-1 ring-brand/40">
+                Sort: {feedSort.charAt(0).toUpperCase() + feedSort.slice(1)}
+              </span>
+            </p>
+          )}
           {filteredPosts.length > 0 ? (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
               {filteredPosts.map((post) => (
@@ -398,7 +413,14 @@ export default function DiscoveryFeedPage() {
           post={theaterPost!}
           onClose={() => setTheaterPostId(null)}
           onRemix={(p) => { handleRemix(p); setTheaterPostId(null); }}
-          onCreator={() => { router.push(`/profile/${theaterPost!.user.handle}`); setTheaterPostId(null); }}
+          onCreator={(activePost) => {
+            // Navigate FIRST (synchronous router.push) so the URL lands on
+            // /profile/[handle] before TheaterMode unmounts — otherwise the
+            // theater's popstate-restore cleanup or a stale layout redirect
+            // can race us back to "/". State teardown happens after.
+            router.push(`/profile/${activePost.user.handle}`);
+            setTheaterPostId(null);
+          }}
           onHashtagClick={(tag) => {
             const normalised = tag.startsWith("#") ? tag : `#${tag}`;
             setTheaterPostId(null);
