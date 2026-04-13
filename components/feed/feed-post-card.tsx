@@ -185,9 +185,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
         <video ref={videoRef} src={firstClipSrc || undefined}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
           style={{
-            ...(hovered && firstClipFilter    ? { filter:    firstClipFilter    } : {}),
-            ...(hovered && firstClipTransform ? { transform: firstClipTransform } : {}),
-            ...(hovered && firstClipAnimation ? { animation: firstClipAnimation } : {}),
+            ...(hovered && firstClipTransform ? { transform: firstClipTransform, transformOrigin: "center center" } : {}),
           }}
           muted loop playsInline preload="metadata"
           onError={() => {
@@ -257,6 +255,11 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           {post.remixedFromHandle && (
             <div className="mb-1">
               <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}{post.rootParentHandle && <> • Original by @{post.rootParentHandle}</>}</span>
+            </div>
+          )}
+          {post.channels && post.channels.length > 0 && (
+            <div className="mb-1 flex flex-wrap gap-1">
+              {post.channels.map((ch) => <span key={ch} className="rounded-full border border-purple-500/25 bg-purple-500/15 px-1.5 py-px text-[8px] font-semibold text-purple-200">{ch}</span>)}
             </div>
           )}
           <div className="mb-2 flex flex-wrap gap-1">

@@ -14,17 +14,12 @@ import { saveMediaToDB } from "@/lib/store/media-pool-db";
 import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
 import { ProjectsTab } from "@/components/studio/projects-tab";
 import type { MediaPoolItem } from "@/lib/store/types";
-import { NICHE_CATEGORIES, CHANNELS } from "@/lib/config/taxonomy";
+import { CHANNELS } from "@/lib/config/taxonomy";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const ACCENTS = ["#7c3aed","#ec4899","#06b6d4","#22c55e","#f59e0b","#ef4444","#a855f7","#38bdf8","#fb923c"];
 const BGS     = ["#1a0a2e","#1a0818","#071a1a","#051a0a","#1a1100","#1a0500","#160a1a","#071018","#180e00"];
-
-const CATEGORIES: Array<{ value: string; label: string }> = [
-  { value: "", label: "None" },
-  ...NICHE_CATEGORIES.map((c) => ({ value: c.slug, label: c.label })),
-];
 
 const MAX_TAGS = 10;
 
@@ -142,10 +137,8 @@ export default function UploadPage() {
   const [desc, setDesc] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
-  const [category, setCategory] = useState("");
-  // Channel is a single-select bucket from the master content taxonomy.
-  // Orthogonal to `category` (visual niche style) and `tags` (free-form keywords).
-  const [channel, setChannel] = useState<string>("");
+  // Channels are multi-select buckets (max 4) from the master content taxonomy.
+  const [channels, setChannels] = useState<string[]>([]);
 
   // Toggles
   const [commentsEnabled, setCommentsEnabled] = useState(true);
@@ -293,8 +286,7 @@ export default function UploadPage() {
       videoUrl: file ? URL.createObjectURL(file) : undefined,
       authorUsername: profile.username,
       createdAt: Date.now(),
-      category: (category || undefined) as import("@/lib/store/feed-store").FeedPost["category"],
-      channel: channel || undefined,
+      channels: channels.length > 0 ? channels : undefined,
       comments_enabled: commentsEnabled,
     });
 
@@ -302,7 +294,7 @@ export default function UploadPage() {
     publishedIdRef.current = postId;
     setStageProgress(100);
     setStage("done");
-  }, [title, profile, tags, desc, file, featured, category, channel, commentsEnabled, addPost]);
+  }, [title, profile, tags, desc, file, featured, channels, commentsEnabled, addPost]);
 
   // ── Open in Studio ────────────────────────────────────────────────────────
 
@@ -388,10 +380,8 @@ export default function UploadPage() {
           commitTag={commitTag}
           removeTag={removeTag}
           setTags={setTags}
-          category={category}
-          setCategory={setCategory}
-          channel={channel}
-          setChannel={setChannel}
+          channels={channels}
+          setChannels={setChannels}
           commentsEnabled={commentsEnabled}
           setCommentsEnabled={setCommentsEnabled}
           featured={featured}
@@ -434,10 +424,8 @@ interface UploadTabProps {
   commitTag: (raw: string) => void;
   removeTag: (tag: string) => void;
   setTags: React.Dispatch<React.SetStateAction<string[]>>;
-  category: string;
-  setCategory: (v: string) => void;
-  channel: string;
-  setChannel: (v: string) => void;
+  channels: string[];
+  setChannels: React.Dispatch<React.SetStateAction<string[]>>;
   commentsEnabled: boolean;
   setCommentsEnabled: (v: boolean) => void;
   featured: boolean;
@@ -461,7 +449,7 @@ function UploadTabContent(props: UploadTabProps) {
   const {
     file, fileRef, previewUrl, title, setTitle, desc, setDesc,
     tags, tagInput, setTagInput, tagLimitReached, commitTag, removeTag, setTags,
-    category, setCategory, channel, setChannel, commentsEnabled, setCommentsEnabled, featured, setFeatured,
+    channels, setChannels, commentsEnabled, setCommentsEnabled, featured, setFeatured,
     thumbnails, thumbnailIdx, setThumbnailIdx,
     stage, isPublishing, canPublish, progressPct,
     handleFileChange, handleDrop, clearFile, handlePublish, handleOpenStudio, router,
@@ -670,37 +658,39 @@ function UploadTabContent(props: UploadTabProps) {
             )}
           </div>
 
-          {/* Channel — single-select from master content taxonomy.
-              Orthogonal to Tags (free-form) and Niche Style (visual category). */}
+          {/* Channels — multi-select (max 4) from master content taxonomy */}
           <div>
             <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">
-              Channel <span className="text-white/25 font-normal normal-case tracking-normal">· single-select</span>
+              Channels <span className="text-white/25 font-normal normal-case tracking-normal">· up to 4</span>
             </label>
-            <select
-              value={channel}
-              onChange={(e) => setChannel(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition-colors focus:border-brand-accent/40 focus:bg-white/[0.06] [&>option]:bg-[#1c1c1c]"
-            >
-              <option value="">None</option>
-              {CHANNELS.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+            <div className="flex flex-wrap gap-1.5">
+              {CHANNELS.map((c) => {
+                const selected = channels.includes(c);
+                const atMax = channels.length >= 4 && !selected;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    disabled={atMax}
+                    onClick={() => setChannels((prev) => selected ? prev.filter((x) => x !== c) : [...prev, c])}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                      selected
+                        ? "bg-brand/25 text-brand-text ring-1 ring-brand-accent/40"
+                        : atMax
+                          ? "text-white/15 cursor-not-allowed"
+                          : "text-white/45 hover:text-white/70 hover:bg-white/[0.06]"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+            {channels.length >= 4 && (
+              <p className="mt-1.5 text-[10px] font-medium text-amber-400/80">Maximum 4 channels selected.</p>
+            )}
           </div>
 
-          {/* Niche Style (visual category) */}
-          <div>
-            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-white/35">Niche Style</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition-colors focus:border-brand-accent/40 focus:bg-white/[0.06] [&>option]:bg-[#1c1c1c]"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </select>
-          </div>
 
           {/* Divider */}
           <div className="border-t border-white/8" />

@@ -14,7 +14,7 @@ import { getAttributionLock } from "@/lib/store/attribution-idb";
 import { flushProjectToIDB } from "@/components/GlobalHydrator";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
-import { NICHE_TAGS } from "@/lib/config/taxonomy";
+import { CHANNELS } from "@/lib/config/taxonomy";
 import type { Track, ClipEvent, MediaPoolItem } from "@/lib/store/types";
 
 // Stable empty array reference — prevents Zustand getSnapshot infinite loop
@@ -120,8 +120,8 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagInput, setTagInput]       = useState("");
   const [allowRemix, setAllowRemix]   = useState(false);
+  const [channels, setChannels]       = useState<string[]>([]);
   const [scope, setScope]             = useState<"timeline" | "selection">("timeline");
-  const [videoCategory, setVideoCategory] = useState<"high-sensation" | "aesthetic" | "cinematic" | "glitch" | "slow-mo" | undefined>(undefined);
   const [published, setPublished]     = useState(false);
   const [publishedId, setPublishedId] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -287,7 +287,7 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
       rootParentId: safeRootParentId,
       rootParentHandle: safeRootParentHandle,
       createdAt: Date.now(),
-      category: videoCategory,
+      channels: channels.length > 0 ? channels : undefined,
     });
 
     // Compute impact score: clipCount×150 + effectCount×350 + durationSecs×10
@@ -352,22 +352,7 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
               {/* ── Tag Cloud ─────────────────────────────────────────────── */}
               <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/3 p-3">
                 <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">Tags</span>
-                {/* Quick-pick presets */}
-                <div className="flex flex-wrap gap-1">
-                  {NICHE_TAGS.map((t) => (
-                    <button key={t} type="button"
-                      onClick={() => setSelectedTags((prev) =>
-                        prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
-                      )}
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors ${
-                        selectedTags.includes(t)
-                          ? "bg-purple-500/30 text-purple-200 ring-1 ring-purple-500/50"
-                          : "bg-white/6 text-white/45 hover:bg-white/12 hover:text-white/75"
-                      }`}
-                    >{t}</button>
-                  ))}
-                </div>
-                {/* Custom tag input */}
+                {/* Freeform tag input */}
                 <input
                   value={tagInput}
                   onChange={(e) => setTagInput(e.target.value)}
@@ -529,22 +514,37 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
                     </span>{" "}your edit.
                   </p>
 
-                  {/* Niche category (optional) */}
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">Niche <span className="normal-case text-white/20">(optional)</span></span>
-                    <div className="flex flex-wrap gap-1">
-                      {([undefined, "high-sensation", "aesthetic", "cinematic", "glitch", "slow-mo"] as const).map((c) => (
-                        <button key={c ?? "none"} type="button" onClick={() => setVideoCategory(c)}
-                          className={`rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize transition-colors ${
-                            videoCategory === c ? "bg-purple-500/28 text-purple-200 ring-1 ring-purple-500/40" : "text-white/40 hover:text-white/70"
-                          }`}>
-                          {c ? c.replace("-", " ") : "None"}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 </>
               )}
+
+              {/* Channels — multi-select (max 4) from master content taxonomy */}
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-white/40">
+                  Channels <span className="normal-case text-white/20">· up to 4</span>
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {CHANNELS.map((c) => {
+                    const selected = channels.includes(c);
+                    const atMax = channels.length >= 4 && !selected;
+                    return (
+                      <button key={c} type="button" disabled={atMax}
+                        onClick={() => setChannels((prev) => selected ? prev.filter((x) => x !== c) : [...prev, c])}
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors ${
+                          selected
+                            ? "bg-purple-500/28 text-purple-200 ring-1 ring-purple-500/40"
+                            : atMax
+                              ? "text-white/15 cursor-not-allowed"
+                              : "text-white/40 hover:text-white/70"
+                        }`}>
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
+                {channels.length >= 4 && (
+                  <p className="text-[9px] font-medium text-amber-400/80">Maximum 4 channels selected.</p>
+                )}
+              </div>
 
               <button onClick={handlePublish} disabled={!title.trim()}
                 className="mt-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white transition-all disabled:opacity-35"

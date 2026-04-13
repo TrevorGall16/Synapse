@@ -328,7 +328,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
                   isActive={activePostId === p.id}
                   cellRef={setCellRef(p.id)}
                   onRemix={onRemix}
-                  onCreator={() => onCreator(p)}
+                  onCreator={() => { hasPushedRef.current = false; onCreator(p); }}
                   onHashtagClick={onHashtagClick ?? (() => {})}
                   globalMuted={muted}
                   isCommentsOpen={commentsOpen}

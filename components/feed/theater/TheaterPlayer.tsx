@@ -66,6 +66,7 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   const effectClipsRef    = useRef<ClipEvent[]>([]);
   const textClipsRef      = useRef<ClipEvent[]>([]);
   const activeAnimRef     = useRef<string | null>(null);
+  const tunnelRef         = useRef<HTMLDivElement>(null);
   /** Set to true by the gesture useLayoutEffect so the boot useEffect skips its reset */
   const gesturePlayedRef  = useRef(false);
   const isScrubbingRef    = useRef(false);
@@ -262,20 +263,56 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           if (!efx) {
             v.style.filter = ""; v.style.transform = "";
             if (activeAnimRef.current !== null) { v.style.animation = ""; activeAnimRef.current = null; }
+            if (tunnelRef.current) tunnelRef.current.style.display = "none";
           } else if (efx.renderedCss && !efx.fxParams) {
             v.style.filter = efx.renderedCss.filter; v.style.transform = efx.renderedCss.transform;
             if (activeAnimRef.current !== efx.id) { v.style.animation = efx.renderedCss.animation ?? ""; activeAnimRef.current = efx.id; }
+            if (tunnelRef.current) tunnelRef.current.style.display = "none";
           } else {
             const efxP = efx.fxParams ?? {};
             if (String(efxP.effectType) === "hypno-tunnel") {
               const intensity = Number(efxP.intensity ?? 50) / 100;
-              const phase = (ts % 2000) / 2000;
-              v.style.filter = `hue-rotate(${Math.round(phase * 360)}deg) saturate(${(1 + intensity * 3).toFixed(2)}) contrast(${(1 + intensity * 1.5).toFixed(2)})`;
-              v.style.transform = `scale(${(1 + intensity * 0.2 + Math.sin(phase * Math.PI * 2) * intensity * 0.05).toFixed(3)}) rotate(${((phase * 2 - 1) * intensity * 8).toFixed(1)}deg)`;
+              const levelScale = (efx.level ?? 100) / 100;
+              // Only apply per-clip color correction (B/C/S/HR) if explicitly set —
+              // do NOT apply the old CSS hue/saturate/contrast approximation, which
+              // doubled the filter when the radial-gradient overlay is also present.
+              const ccParts: string[] = [];
+              const ccBr = Number(efxP.brightness ?? 100);
+              const ccCo = Number(efxP.contrast ?? 100);
+              const ccSa = Number(efxP.saturate ?? 100);
+              const ccHr = Number(efxP.hueRotate ?? 0);
+              if (ccBr !== 100) ccParts.push(`brightness(${(ccBr / 100 * levelScale + (1 - levelScale)).toFixed(2)})`);
+              if (ccCo !== 100) ccParts.push(`contrast(${(ccCo / 100 * levelScale + (1 - levelScale)).toFixed(2)})`);
+              if (ccSa !== 100) ccParts.push(`saturate(${(ccSa / 100 * levelScale + (1 - levelScale)).toFixed(2)})`);
+              if (ccHr !== 0)   ccParts.push(`hue-rotate(${ccHr * levelScale}deg)`);
+              v.style.filter = ccParts.join(" ") || "";
+              v.style.transform = "";
+              // Radial-gradient tunnel overlay — matches Studio PreviewVideoLayer
+              const td = tunnelRef.current;
+              if (td) {
+                const tSpeed = Number(efxP.tunnelSpeed ?? Number(efxP.speed ?? 50));
+                const tCount = Number(efxP.tunnelCount ?? 10);
+                const tOpacity = Number(efxP.tunnelOpacity ?? 50) / 100 * levelScale;
+                const tRotation = Number(efxP.tunnelRotation ?? 0);
+                const elapsed = (ph - efx.startTime) / 1_000_000;
+                const baseSpacing = Math.max(5, 200 / tCount);
+                const spacing = baseSpacing + Math.sin(elapsed * tSpeed * 0.1) * (baseSpacing * 0.4);
+                const ringWidth = Math.max(1, baseSpacing * 0.3 * intensity);
+                // Animate gradient center-point in a circular orbit instead of
+                // rotating the container (which would show square corners).
+                const angle = ((tRotation + elapsed * tSpeed * 2) * Math.PI) / 180;
+                const orbitR = 3; // % of element size — subtle drift
+                const cx = 50 + Math.cos(angle) * orbitR;
+                const cy = 50 + Math.sin(angle) * orbitR;
+                td.style.display = "block";
+                td.style.background = `repeating-radial-gradient(circle at ${cx.toFixed(1)}% ${cy.toFixed(1)}%, transparent 0px, transparent ${spacing}px, rgba(255,255,255,${tOpacity}) ${spacing}px, rgba(255,255,255,${tOpacity}) ${spacing + ringWidth}px)`;
+                td.style.transform = "translate(-50%, -50%)";
+              }
             } else {
               v.style.filter = clipCssFilter(efxP); v.style.transform = clipCssTransform(efxP);
               const anim = clipCssAnimation(efxP);
               if (activeAnimRef.current !== efx.id) { v.style.animation = anim; activeAnimRef.current = efx.id; }
+              if (tunnelRef.current) tunnelRef.current.style.display = "none";
             }
           }
           void activeEfxId;
@@ -569,6 +606,25 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           style={{ ...presetVideoStyle, animationPlayState: isPlaying ? "running" : "paused", willChange: "transform" }}
           className={`absolute inset-0 z-[10] h-full w-full object-contain transition-opacity duration-150 ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
         />
+
+        {/* Hypno-tunnel radial overlay — z-[12]: above video, below text & UI.
+            Oversized 300%×300% circle with borderRadius:50% so rotation never
+            shows square corners — matches Studio PreviewVideoLayer approach. */}
+        <div className="pointer-events-none absolute inset-0 z-[12] overflow-hidden">
+          <div
+            ref={tunnelRef}
+            style={{
+              display: "none",
+              position: "absolute",
+              width: "300%", height: "300%",
+              top: "50%", left: "50%",
+              transform: "translate(-50%, -50%)",
+              transformOrigin: "center center",
+              borderRadius: "50%",
+              mixBlendMode: "screen",
+            }}
+          />
+        </div>
 
         {/* Text overlays — z-[15]: above video, below UI chrome. Reads phRef directly. */}
         {textClipsRef.current

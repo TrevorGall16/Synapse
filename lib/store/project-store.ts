@@ -4,6 +4,7 @@ import type { Track, TrackType, MediaPoolItem, Marker, ClipEvent, PanCropData, P
 import { usePlaybackStore } from "./playback-store";
 import { hydrateMediaPool } from "./media-pool-db";
 import { saveAttributionLock } from "./attribution-idb";
+import { useProjectsRegistry } from "./projects-registry";
 import { flushProjectToIDB } from "@/lib/store/flush-registry";
 import { useSaveBarrierStore } from "@/lib/store/save-barrier-store";
 import {
@@ -257,6 +258,30 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
       const newProj: SerializedProject = { projectId: incomingId, name: snap.name ?? "Untitled", tracks: tracksDeep, mediaPool: mediaPoolDeep, markers: [], duration: snap.duration, projectSettings: snap.projectSettings, parentProjectId: snap.parentProjectId ?? snap.projectId, remixedFromHandle: snap.remixedFromHandle, rootParentId, rootParentHandle, historyPast: [], historyFuture: [] };
       return { ...newProj, savedProjects: { ...s.savedProjects, [s.projectId]: serializeActive(s) }, openProjectIds: [...ids, incomingId], selectedClipIds: [], inspectingClipId: null };
     });
+
+    // Persist to projects-registry so the remix appears in Dashboard immediately.
+    // Uses getState() to avoid a React hook dependency — this runs outside React.
+    const { addProject: addToRegistry, projects: existingProjects } = useProjectsRegistry.getState();
+    if (!existingProjects.some((p) => p.id === incomingId)) {
+      // Deduplicate name: if "Remix: Foo" already exists, try "Remix: Foo (2)", etc.
+      let registryName = snap.name ?? "Untitled";
+      const existingNames = new Set(existingProjects.map((p) => p.name));
+      if (existingNames.has(registryName)) {
+        let i = 2;
+        while (existingNames.has(`${registryName} (${i})`)) i++;
+        registryName = `${registryName} (${i})`;
+      }
+      addToRegistry({
+        id: incomingId,
+        name: registryName,
+        lastEdited: Date.now(),
+        width: snap.projectSettings.width,
+        height: snap.projectSettings.height,
+        fps: snap.projectSettings.fps,
+        projectStatus: "draft",
+        parentProjectId: snap.parentProjectId,
+      });
+    }
 
     // Async: always re-hydrate the new tab's media pool from IDB.
     // "Always" is correct here: blob URLs in the incoming snap may be from a prior session

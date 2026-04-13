@@ -314,7 +314,7 @@ export const FeedPostSchema = z.object({
   demoStartTime: z.number().nonnegative().optional(),
   demoDuration:  z.number().positive().optional(),
   category:      z.enum(["high-sensation", "aesthetic", "cinematic", "glitch", "slow-mo"]).optional(),
-  channel:       z.string().min(1).max(32).optional(),
+  channels:      z.array(z.string().min(1).max(32)).max(4).optional(),
 }).strip();
 
 // ── Collection (Workspace grouping for Profile) ─────────────────────────────

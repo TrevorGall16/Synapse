@@ -229,12 +229,11 @@ export function TheaterUI({
       {/* Info overlay — bottom-left */}
       <div className="absolute bottom-8 left-4 right-20 z-[40] pr-2">
         {/* Author row — avatar & name are clickable */}
-        <div
-          role="button"
-          tabIndex={0}
+        <a
+          href={`/profile/${post.user.handle}`}
           aria-label={`Open profile @${post.user.handle}`}
-          onClick={(e) => { e.stopPropagation(); onCreator(); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onCreator(); } }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onCreator(); }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); onCreator(); } }}
           className="group mb-2 flex cursor-pointer items-center gap-2.5"
         >
           <div
@@ -263,7 +262,7 @@ export function TheaterUI({
               </button>
             )}
           </div>
-        </div>
+        </a>
         <h2 className="mb-1.5 line-clamp-2 text-xl font-bold leading-snug text-white" style={TX}>
           {post.title}
         </h2>
@@ -271,6 +270,20 @@ export function TheaterUI({
           <p className="mb-2 line-clamp-2 text-base leading-relaxed text-white/90" style={TX}>
             {parseHashtags(post.description, onHashtagClick)}
           </p>
+        )}
+        {/* Channel chips */}
+        {post.channels && post.channels.length > 0 && (
+          <div className="mb-1.5 flex flex-wrap gap-1.5">
+            {post.channels.map((ch) => (
+              <span
+                key={ch}
+                className="rounded-full border border-purple-500/30 bg-purple-500/15 px-2.5 py-0.5 text-xs font-semibold text-purple-200 backdrop-blur-sm"
+                style={TX}
+              >
+                {ch}
+              </span>
+            ))}
+          </div>
         )}
         <div className="flex flex-wrap gap-1.5">
           {post.tags.map((t) => (

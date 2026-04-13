@@ -82,19 +82,31 @@ export default function DiscoveryFeedPage() {
   /** Active Channel filter — sourced from CHANNELS master taxonomy.
    *  Orthogonal to activeTag (free-form keyword filtering via search). */
   const [activeChannel, setActiveChannel] = useState<string | null>(null);
-  const [feedSort, setFeedSort]       = useState<"latest" | "popular" | "trending">("latest");
-  const [timeWindow, setTimeWindow]   = useState<TimeWindow>(DEFAULT_WINDOW_FOR_SORT.latest);
+  // Persist sort/window to localStorage so returning users keep their choice.
+  // First-time sessions default to Trending + Today.
+  const [feedSort, setFeedSort] = useState<"latest" | "popular" | "trending">(() => {
+    if (typeof window === "undefined") return "trending";
+    return (localStorage.getItem("synapse-feed-sort") as "latest" | "popular" | "trending") || "trending";
+  });
+  const [timeWindow, setTimeWindow] = useState<TimeWindow>(() => {
+    if (typeof window === "undefined") return "today";
+    return (localStorage.getItem("synapse-feed-window") as TimeWindow) || "today";
+  });
   // Track which sort modes the user has explicitly tuned so we don't clobber
   // their window choice when they pill-hop between sorts.
   const windowTouchedRef = useRef<Set<"latest" | "popular" | "trending">>(new Set());
   const handleSortChange = useCallback((s: "latest" | "popular" | "trending") => {
     setFeedSort(s);
+    localStorage.setItem("synapse-feed-sort", s);
     if (!windowTouchedRef.current.has(s)) {
-      setTimeWindow(DEFAULT_WINDOW_FOR_SORT[s]);
+      const w = DEFAULT_WINDOW_FOR_SORT[s];
+      setTimeWindow(w);
+      localStorage.setItem("synapse-feed-window", w);
     }
   }, []);
   const handleWindowChange = useCallback((w: TimeWindow) => {
     setTimeWindow(w);
+    localStorage.setItem("synapse-feed-window", w);
     windowTouchedRef.current.add(feedSort);
   }, [feedSort]);
   const [toast, setToast]             = useState<string | null>(null);
@@ -140,14 +152,14 @@ export default function DiscoveryFeedPage() {
   const followedSet = useMemo(() => new Set(followingList), [followingList]);
 
   const displayPosts = useMemo(() => {
-    // Channel filter (single-select from CHANNELS) — matches FeedPost.channel.
+    // Channel filter — matches any entry in FeedPost.channels[].
     // Falls back to tag-substring match for legacy seed content that pre-dates
-    // the channel field, so existing mocks still appear when a channel is active.
+    // the channels field, so existing mocks still appear when a channel is active.
     let base = allPosts;
     if (activeChannel) {
       const slug = activeChannel.toLowerCase();
       base = base.filter((p) =>
-        p.channel === activeChannel ||
+        p.channels?.includes(activeChannel) ||
         p.tags.some((t) => t.toLowerCase().replace(/^#+/, "") === slug),
       );
     }
@@ -376,9 +388,9 @@ export default function DiscoveryFeedPage() {
             setSearchQuery("");
             window.history.replaceState(null, "", "/");
           }} />
-          {/* CHANNELS: fixed controlled list. Single-select — clicking a channel
-              filters the feed on post.channel (with a legacy tag-substring
-              fallback for pre-channel seeds). Deep-links round-trip via ?channel=. */}
+          {/* CHANNELS: fixed controlled list — clicking a channel filters the
+              feed on post.channels[] (with a legacy tag-substring fallback
+              for pre-channel seeds). Deep-links round-trip via ?channel=. */}
           {CHANNELS.map((ch) => {
             const active = activeChannel === ch;
             return (

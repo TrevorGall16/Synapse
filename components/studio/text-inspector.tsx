@@ -27,7 +27,7 @@ export function TextInspector() {
 
   const media = mediaPool.find((m) => m.id === clip.sourceId);
   const name = media?.name ?? "Text Clip";
-  const onParam = (key: string, value: unknown) => updateClipFxParams(clip!.id, { [key]: value });
+  const onParam = (key: string, value: unknown) => updateClipFxParams(clip!.id, { [key]: value }, "merge");
 
   const content = String(clip.fxParams?.content ?? "");
   const fontSize = Number(clip.fxParams?.fontSize ?? 48);

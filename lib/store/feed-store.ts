@@ -58,9 +58,9 @@ export interface FeedPost {
   demoDuration?: number;
   /** Visual style niche — used for the niche/* pages and explore grouping. */
   category?: "high-sensation" | "aesthetic" | "cinematic" | "glitch" | "slow-mo";
-  /** Content channel — single-select bucket from lib/config/taxonomy.CHANNELS.
+  /** Content channels — multi-select (max 4) from lib/config/taxonomy.CHANNELS.
    *  Orthogonal to `category` (visual style) and `tags` (free-form keywords). */
-  channel?: string;
+  channels?: string[];
   /** Creator toggle — when false, comments are disabled on this post */
   comments_enabled?: boolean;
 }

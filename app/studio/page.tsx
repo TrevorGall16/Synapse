@@ -48,8 +48,11 @@ export default function StudioPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Focused workspace mode (entry from dashboard)
-  const isFocused = searchParams.get("workspace") === "focused";
+  // Focused workspace mode: explicit param from dashboard, OR when the studio
+  // is opened from an external entry (remix, link) without the dashboard context.
+  // The multi-tab strip only shows when navigating FROM the dashboard.
+  const fromDashboard = searchParams.get("from") === "dashboard";
+  const isFocused = searchParams.get("workspace") === "focused" || !fromDashboard;
   const isNewInit = searchParams.get("init") === "new";
   const dashFilter = searchParams.get("dashFilter") || "";
 
