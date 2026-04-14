@@ -1,4 +1,5 @@
 import type { ClipEvent, PanCropData } from "@/lib/store/types";
+import { buildHypnoOverlayStyle } from "./hypno-overlay";
 
 // ── FX Mask shape — a typed view over the fxMask field stored in fxParams ──
 // Uses Pick to stay in sync with PanCropData's mask coordinate convention
@@ -138,7 +139,9 @@ export interface FxResult {
   pixelateId?: string;
   chromaticId?: string;
   mirrorTransform?: string;
-  hypnoTunnel?: { spacing: number; width: number; opacity: number; rotation: number };
+  /** Hypno-tunnel overlay: pre-built gradient `background` string from
+   *  `lib/utils/hypno-overlay` — shared with Theater for parity. */
+  hypnoTunnel?: { background: string };
 }
 
 export function buildFxFilter(clips: ClipEvent[], playheadPosition: number): FxResult {
@@ -238,14 +241,10 @@ export function buildFxFilter(clips: ClipEvent[], playheadPosition: number): FxR
 
       case "hypno-tunnel": {
         const elapsed = (playheadPosition - c.startTime) / MICROS_PER_SECOND;
-        const tSpeed = Number(c.fxParams?.tunnelSpeed ?? speed);
-        const tCount = Number(c.fxParams?.tunnelCount ?? 10);
-        const tOpacity = Number(c.fxParams?.tunnelOpacity ?? 50) / 100 * levelScale;
-        const tRotation = Number(c.fxParams?.tunnelRotation ?? 0);
-        const baseSpacing = Math.max(5, 200 / tCount);
-        const spacing = baseSpacing + Math.sin(elapsed * tSpeed * 0.1) * (baseSpacing * 0.4);
-        const ringWidth = Math.max(1, baseSpacing * 0.3 * intensity);
-        hypnoTunnel = { spacing, width: ringWidth, opacity: tOpacity, rotation: tRotation + elapsed * tSpeed * 2 };
+        const style = buildHypnoOverlayStyle({
+          fxParams: c.fxParams, level: c.level ?? 100, elapsedSeconds: elapsed,
+        });
+        hypnoTunnel = { background: style.background };
         break;
       }
     }

@@ -15,6 +15,7 @@ import { flushProjectToIDB } from "@/components/GlobalHydrator";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
 import { CHANNELS } from "@/lib/config/taxonomy";
+import { trimTracksToSelection } from "@/lib/utils/publish-trim";
 import type { Track, ClipEvent, MediaPoolItem } from "@/lib/store/types";
 
 // Stable empty array reference — prevents Zustand getSnapshot infinite loop
@@ -241,14 +242,14 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
     const pb = usePlaybackStore.getState();
     const useRuler = scope === "selection" && pb.selectionStart != null && pb.selectionEnd != null && pb.selectionEnd > pb.selectionStart;
     const duration = useRuler ? pb.selectionEnd! - pb.selectionStart! : allClipsDuration;
-    // Normalize clip startTimes so selection always begins at t=0
+    // Normalize clip startTimes so selection always begins at t=0.
+    // Straddling clips must be head/tail-trimmed (mediaOffset + duration), not
+    // just rebased — otherwise the snapshot plays the full source clip window
+    // shifted in time ("time slip"). See lib/utils/publish-trim.ts.
     const selOffset = useRuler ? pb.selectionStart! : 0;
-    const publishTracks = selOffset === 0 ? tracks : tracks.map((t) => ({
-      ...t,
-      clips: t.clips
-        .filter((c) => c.startTime < selOffset + duration && c.startTime + c.duration > selOffset)
-        .map((c) => ({ ...c, startTime: Math.max(0, c.startTime - selOffset) })),
-    }));
+    const publishTracks = useRuler
+      ? trimTracksToSelection(tracks, selOffset, duration)
+      : tracks;
     const id  = crypto.randomUUID();
     const idx = (username.charCodeAt(0) + title.charCodeAt(0)) % ACCENTS.length;
     const tags = selectedTags.length > 0 ? selectedTags : ["#synapse"];

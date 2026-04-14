@@ -180,29 +180,24 @@ export function PreviewVideoLayer({
         />
 
         {/* Hypno-tunnel overlay — only on active (non-preroll) layers.
-            Gradient center orbits in a circle for ring motion — no container
-            rotation that would show square corners. */}
-        {!isPreroll && hypnoTunnel && (() => {
-          const angle = (hypnoTunnel.rotation * Math.PI) / 180;
-          const orbitR = 3;
-          const cx = 50 + Math.cos(angle) * orbitR;
-          const cy = 50 + Math.sin(angle) * orbitR;
-          return (
-            <div
-              className="pointer-events-none absolute"
-              style={{
-                width: "300%", height: "300%",
-                top: "50%", left: "50%",
-                transform: "translate(-50%, -50%)",
-                transformOrigin: "center center",
-                borderRadius: "50%",
-                background: `repeating-radial-gradient(circle at ${cx.toFixed(1)}% ${cy.toFixed(1)}%, transparent 0px, transparent ${hypnoTunnel.spacing}px, rgba(255,255,255,${hypnoTunnel.opacity}) ${hypnoTunnel.spacing}px, rgba(255,255,255,${hypnoTunnel.opacity}) ${hypnoTunnel.spacing + hypnoTunnel.width}px)`,
-                mixBlendMode: "screen",
-                clipPath: tunnelClipPath,
-              }}
-            />
-          );
-        })()}
+            Background string is built by lib/utils/hypno-overlay, the shared
+            source of truth with Theater. True-center anchoring comes from the
+            fixed translate(-50%,-50%); the orbit moves the gradient center. */}
+        {!isPreroll && hypnoTunnel && (
+          <div
+            className="pointer-events-none absolute"
+            style={{
+              width: "300%", height: "300%",
+              top: "50%", left: "50%",
+              transform: "translate(-50%, -50%)",
+              transformOrigin: "center center",
+              borderRadius: "50%",
+              background: hypnoTunnel.background,
+              mixBlendMode: "screen",
+              clipPath: tunnelClipPath,
+            }}
+          />
+        )}
       </div>
     </div>
   );

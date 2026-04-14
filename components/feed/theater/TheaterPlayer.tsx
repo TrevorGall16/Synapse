@@ -25,6 +25,7 @@ import { useFeedStore } from "@/lib/store/feed-store";
 import { followCreator as idbFollow, unfollowCreator as idbUnfollow } from "@/lib/store/social-idb";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { buildTextStyle } from "@/lib/utils/preview-helpers";
+import { buildHypnoOverlayStyle } from "@/lib/utils/hypno-overlay";
 import { canRemix } from "@/lib/policy";
 import { consumeTheaterGesture, markInteracted } from "../theater-gesture";
 import { registerTickCallback, unregisterTickCallback } from "@/lib/store/global-ticker";
@@ -271,11 +272,10 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           } else {
             const efxP = efx.fxParams ?? {};
             if (String(efxP.effectType) === "hypno-tunnel") {
-              const intensity = Number(efxP.intensity ?? 50) / 100;
               const levelScale = (efx.level ?? 100) / 100;
-              // Only apply per-clip color correction (B/C/S/HR) if explicitly set —
-              // do NOT apply the old CSS hue/saturate/contrast approximation, which
-              // doubled the filter when the radial-gradient overlay is also present.
+              // Per-clip color correction (B/C/S/HR) only applies when explicitly set.
+              // The radial-gradient overlay is the whole effect; layering the old
+              // CSS hue/saturate approximation on top of it caused double-tinting.
               const ccParts: string[] = [];
               const ccBr = Number(efxP.brightness ?? 100);
               const ccCo = Number(efxP.contrast ?? 100);
@@ -287,25 +287,16 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
               if (ccHr !== 0)   ccParts.push(`hue-rotate(${ccHr * levelScale}deg)`);
               v.style.filter = ccParts.join(" ") || "";
               v.style.transform = "";
-              // Radial-gradient tunnel overlay — matches Studio PreviewVideoLayer
+              // Radial-gradient tunnel overlay — shared math with Studio.
               const td = tunnelRef.current;
               if (td) {
-                const tSpeed = Number(efxP.tunnelSpeed ?? Number(efxP.speed ?? 50));
-                const tCount = Number(efxP.tunnelCount ?? 10);
-                const tOpacity = Number(efxP.tunnelOpacity ?? 50) / 100 * levelScale;
-                const tRotation = Number(efxP.tunnelRotation ?? 0);
                 const elapsed = (ph - efx.startTime) / 1_000_000;
-                const baseSpacing = Math.max(5, 200 / tCount);
-                const spacing = baseSpacing + Math.sin(elapsed * tSpeed * 0.1) * (baseSpacing * 0.4);
-                const ringWidth = Math.max(1, baseSpacing * 0.3 * intensity);
-                // Animate gradient center-point in a circular orbit instead of
-                // rotating the container (which would show square corners).
-                const angle = ((tRotation + elapsed * tSpeed * 2) * Math.PI) / 180;
-                const orbitR = 3; // % of element size — subtle drift
-                const cx = 50 + Math.cos(angle) * orbitR;
-                const cy = 50 + Math.sin(angle) * orbitR;
+                const hypno = buildHypnoOverlayStyle({
+                  fxParams: efxP, level: efx.level ?? 100, elapsedSeconds: elapsed,
+                });
                 td.style.display = "block";
-                td.style.background = `repeating-radial-gradient(circle at ${cx.toFixed(1)}% ${cy.toFixed(1)}%, transparent 0px, transparent ${spacing}px, rgba(255,255,255,${tOpacity}) ${spacing}px, rgba(255,255,255,${tOpacity}) ${spacing + ringWidth}px)`;
+                td.style.background = hypno.background;
+                // True-center anchoring — must not drift with rotation.
                 td.style.transform = "translate(-50%, -50%)";
               }
             } else {

@@ -5,7 +5,7 @@ import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBra
 import { type FeedPost, isBlobUrl, useFeedStore, FALLBACK_VIDEO_URL } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { canRemix } from "@/lib/policy";
-import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
+import { clipCssTransform } from "@/lib/utils/svg-filters";
 import { buildTextStyle } from "@/lib/utils/preview-helpers";
 import { buildPostShareUrl } from "@/lib/utils/share";
 import { isHot } from "@/lib/social";
@@ -43,10 +43,14 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   const sharePopRef = useRef<HTMLDivElement>(null);
   const isBlob = isBlobUrl(post.videoUrl);
 
-  // First clip's source URL + seek offset — handles gaps at project start
-  const { firstClipSrc, firstClipOffset, firstClipFilter, firstClipTransform, firstClipAnimation } = useMemo(() => {
+  // First clip's source URL + seek offset — handles gaps at project start.
+  // Hover must NOT apply color/animation filters — transforms only, so a static
+  // card thumbnail never drifts hue/brightness from its published frame. If a
+  // parity-safe effect preview is needed, build it off the static preview
+  // frame (not on hover) and render it identically to the Theater output.
+  const { firstClipSrc, firstClipOffset, firstClipTransform } = useMemo(() => {
     const snap = post.projectSnapshot;
-    if (!snap) return { firstClipSrc: post.videoUrl, firstClipOffset: 0.001, firstClipFilter: "", firstClipTransform: "", firstClipAnimation: "" };
+    if (!snap) return { firstClipSrc: post.videoUrl, firstClipOffset: 0.001, firstClipTransform: "" };
     const pool = snap.mediaPool ?? [];
     const fc = snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips).sort((a, b) => a.startTime - b.startTime)[0];
     // Merge embedded (remix baking) + separate effect tracks (original / user-added post-remix)
@@ -58,16 +62,11 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
       ? effectPool.find((c) => c.startTime < fc.startTime + fc.duration && c.startTime + c.duration > fc.startTime && !c.fxParams?.effectDisabled)
       : undefined;
     const efxFxParams = efx?.fxParams ?? {};
-    // Use pre-rendered CSS if available (published clips with stripped fxParams)
-    const firstClipFilter    = efx ? (efx.renderedCss?.filter    ?? clipCssFilter(efxFxParams))    : "";
     const firstClipTransform = efx ? (efx.renderedCss?.transform ?? clipCssTransform(efxFxParams)) : "";
-    const firstClipAnimation = efx ? (efx.renderedCss?.animation ?? clipCssAnimation(efxFxParams)) : "";
     return {
       firstClipSrc: fc ? (pool.find((m) => m.id === fc.sourceId)?.previewUrl ?? post.videoUrl) : post.videoUrl,
       firstClipOffset: fc ? Math.max(0.001, (fc.mediaOffset ?? 0) / 1_000_000) : 0.001,
-      firstClipFilter,
       firstClipTransform,
-      firstClipAnimation,
     };
   }, [post.projectSnapshot, post.videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
