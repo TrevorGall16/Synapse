@@ -125,6 +125,72 @@ describe("buildFxFilter — deterministic 5-effect parity fixture", () => {
   });
 });
 
+describe("multi-effect stacking — Hue + Blur + Glitch + Strobe on one clip", () => {
+  /**
+   * LOCK: published posts must render the full effect chain, not just the first.
+   * Regression root cause: Theater used `.find()` to pick a single active effect,
+   * so a stack of 4 effects rendered as 1. This test pins the contract that
+   * `buildFxFilter` composes EVERY active effect into one FxResult.
+   */
+  const baseRange = { startTime: 0, duration: 10_000_000, mediaOffset: 0, level: 100 };
+  const clips: ClipEvent[] = [
+    fxClip({ id: "h", trackId: "fx1", ...baseRange,
+      fxParams: { effectType: "hue-rotate", speed: 60, intensity: 50, hueRotate: 0 } }),
+    fxClip({ id: "b", trackId: "fx2", ...baseRange,
+      fxParams: { effectType: "blur", blurAmount: 6, intensity: 50 } }),
+    fxClip({ id: "g", trackId: "fx3", ...baseRange,
+      fxParams: { effectType: "glitch", displacement: 30, speed: 50, intensity: 60 } }),
+    fxClip({ id: "s", trackId: "fx4", ...baseRange,
+      fxParams: { effectType: "strobe", speed: 50, intensity: 60, strobeDutyCycle: 50 } }),
+  ];
+
+  it("filter string contains hue-rotate, blur, and a brightness term from the stack", () => {
+    const r = buildFxFilter(clips, 1_000_000);
+    expect(r.filter).not.toBe("none");
+    expect(r.filter).toMatch(/hue-rotate\(-?\d+(?:\.\d+)?deg\)/);
+    expect(r.filter).toMatch(/blur\(\d+(?:\.\d+)?px\)/);
+    // Strobe always emits brightness(...) (on-phase or brightness(0)); glitch may
+    // also add one. At least one brightness term MUST be present — asserting
+    // "first match wins" would have failed here and surfaces the regression.
+    expect(r.filter).toMatch(/brightness\(/);
+  });
+
+  it("glitchTransform is populated alongside the filter chain (transform + filter coexist)", () => {
+    const r = buildFxFilter(clips, 1_000_000);
+    expect(r.glitchTransform).toBeDefined();
+    expect(r.glitchTransform).toMatch(/^translateX\(-?\d+(?:\.\d+)?px\)$/);
+  });
+
+  it("hue-rotate still animates within the 4-effect stack (speed-driven term changes across frames)", () => {
+    // If earlier effects short-circuited the loop, the hue term would be frozen.
+    // Pin the full-chain contract: hue-rotate's animated degrees value changes
+    // between frames even with three other effects stacked on top.
+    const a = buildFxFilter(clips, 0);
+    const b = buildFxFilter(clips, 2_000_000);
+    const hueA = /hue-rotate\((-?\d+(?:\.\d+)?)deg\)/.exec(a.filter)?.[1];
+    const hueB = /hue-rotate\((-?\d+(?:\.\d+)?)deg\)/.exec(b.filter)?.[1];
+    expect(hueA).toBeDefined();
+    expect(hueB).toBeDefined();
+    expect(hueA).not.toBe(hueB);
+  });
+
+  it("dropping hue, blur, or strobe each shrinks the filter chain; dropping glitch drops glitchTransform", () => {
+    // The stack is additive. Each clip must contribute, else we'd regress back to
+    // "first-match wins" silently. Glitch's `filter` contribution is probabilistic
+    // (flicker fires ~30% of the time), so we assert its transform instead.
+    const full = buildFxFilter(clips, 1_000_000);
+    const dropHue = buildFxFilter([clips[1], clips[2], clips[3]], 1_000_000);
+    const dropBlur = buildFxFilter([clips[0], clips[2], clips[3]], 1_000_000);
+    const dropStrobe = buildFxFilter([clips[0], clips[1], clips[2]], 1_000_000);
+    const dropGlitch = buildFxFilter([clips[0], clips[1], clips[3]], 1_000_000);
+    expect(dropHue.filter.length).toBeLessThan(full.filter.length);
+    expect(dropBlur.filter.length).toBeLessThan(full.filter.length);
+    expect(dropStrobe.filter.length).toBeLessThan(full.filter.length);
+    expect(dropGlitch.glitchTransform).toBeUndefined();
+    expect(full.glitchTransform).toBeDefined();
+  });
+});
+
 describe("publish → playback payload preservation", () => {
   it("a hue-rotate clip with fxParams survives a JSON snapshot round-trip (no fxParams loss)", () => {
     // Snapshots go through IDB as JSON (Synapse .5MB cap) — must not mutate

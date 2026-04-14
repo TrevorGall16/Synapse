@@ -6,7 +6,9 @@ import { type FeedPost, isBlobUrl, useFeedStore, FALLBACK_VIDEO_URL } from "@/li
 import { useUserStore } from "@/lib/store/user-store";
 import { canRemix } from "@/lib/policy";
 import { clipCssTransform } from "@/lib/utils/svg-filters";
-import { buildTextStyle } from "@/lib/utils/preview-helpers";
+import { buildTextStyle, buildFxFilter } from "@/lib/utils/preview-helpers";
+import { registerTickCallback, unregisterTickCallback } from "@/lib/store/global-ticker";
+import type { ClipEvent } from "@/lib/store/types";
 import { buildPostShareUrl } from "@/lib/utils/share";
 import { isHot } from "@/lib/social";
 
@@ -44,29 +46,41 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   const isBlob = isBlobUrl(post.videoUrl);
 
   // First clip's source URL + seek offset — handles gaps at project start.
-  // Hover must NOT apply color/animation filters — transforms only, so a static
-  // card thumbnail never drifts hue/brightness from its published frame. If a
-  // parity-safe effect preview is needed, build it off the static preview
-  // frame (not on hover) and render it identically to the Theater output.
-  const { firstClipSrc, firstClipOffset, firstClipTransform } = useMemo(() => {
+  // Static thumbnail (un-hovered) NEVER applies color/animation filters so the
+  // card frame is byte-identical to its published thumbnail. On hover we drive
+  // `buildFxFilter` via the GlobalTicker — same helper Studio/Theater use — so
+  // motion effects (hue-rotate, strobe, glitch, etc.) preview with zero drift.
+  const { firstClipSrc, firstClipOffset, firstClipTransform, firstClipStart, firstClipMediaOffsetUs, activeEffectClips } = useMemo(() => {
+    const empty = {
+      firstClipSrc: post.videoUrl, firstClipOffset: 0.001, firstClipTransform: "",
+      firstClipStart: 0, firstClipMediaOffsetUs: 0, activeEffectClips: [] as ClipEvent[],
+    };
     const snap = post.projectSnapshot;
-    if (!snap) return { firstClipSrc: post.videoUrl, firstClipOffset: 0.001, firstClipTransform: "" };
+    if (!snap) return empty;
     const pool = snap.mediaPool ?? [];
     const fc = snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips).sort((a, b) => a.startTime - b.startTime)[0];
-    // Merge embedded (remix baking) + separate effect tracks (original / user-added post-remix)
-    const effectPool = [
-      ...(fc?.embeddedEffectClips ?? []),
+    if (!fc) return empty;
+    // Merge embedded (remix baking) + separate effect tracks (original / user-added post-remix).
+    const effectPool: ClipEvent[] = [
+      ...(fc.embeddedEffectClips ?? []),
       ...snap.tracks.filter((t) => t.type === "effect").flatMap((t) => t.clips),
     ];
-    const efx = fc
-      ? effectPool.find((c) => c.startTime < fc.startTime + fc.duration && c.startTime + c.duration > fc.startTime && !c.fxParams?.effectDisabled)
-      : undefined;
-    const efxFxParams = efx?.fxParams ?? {};
-    const firstClipTransform = efx ? (efx.renderedCss?.transform ?? clipCssTransform(efxFxParams)) : "";
+    // Every overlapping, enabled effect — stacking is authoritative (matches Theater).
+    const active = effectPool.filter((c) =>
+      c.startTime < fc.startTime + fc.duration &&
+      c.startTime + c.duration > fc.startTime &&
+      !c.fxParams?.effectDisabled,
+    );
+    const firstEfx = active[0];
+    const firstEfxFxParams = firstEfx?.fxParams ?? {};
+    const firstClipTransform = firstEfx ? (firstEfx.renderedCss?.transform ?? clipCssTransform(firstEfxFxParams)) : "";
     return {
-      firstClipSrc: fc ? (pool.find((m) => m.id === fc.sourceId)?.previewUrl ?? post.videoUrl) : post.videoUrl,
-      firstClipOffset: fc ? Math.max(0.001, (fc.mediaOffset ?? 0) / 1_000_000) : 0.001,
+      firstClipSrc: pool.find((m) => m.id === fc.sourceId)?.previewUrl ?? post.videoUrl,
+      firstClipOffset: Math.max(0.001, (fc.mediaOffset ?? 0) / 1_000_000),
       firstClipTransform,
+      firstClipStart: fc.startTime,
+      firstClipMediaOffsetUs: fc.mediaOffset ?? 0,
+      activeEffectClips: active,
     };
   }, [post.projectSnapshot, post.videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -96,6 +110,36 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     v.addEventListener("loadedmetadata", onMeta);
     return () => v.removeEventListener("loadedmetadata", onMeta);
   }, [firstClipSrc, firstClipOffset]);
+
+  // Hover FX preview — drive `buildFxFilter` per tick using the SHARED helper
+  // that Studio and Theater use, so animated effects (hue-rotate speed, strobe,
+  // glitch, flash) preview with byte-identical math. Only runs while hovered;
+  // styles are cleared on exit to preserve static-thumbnail color purity.
+  useEffect(() => {
+    if (!hovered || activeEffectClips.length === 0) return;
+    const v = videoRef.current;
+    if (!v) return;
+    const baseTransform = firstClipTransform;
+    const id = registerTickCallback(() => {
+      // Translate video's media time → timeline microseconds so buildFxFilter
+      // evaluates the effect at the *same* playhead Theater would compute.
+      const timelineUs = firstClipStart + (v.currentTime * 1_000_000 - firstClipMediaOffsetUs);
+      const fx = buildFxFilter(activeEffectClips, timelineUs);
+      v.style.filter = fx.filter === "none" ? "" : fx.filter;
+      const transformParts: string[] = [];
+      if (baseTransform) transformParts.push(baseTransform);
+      if (fx.mirrorTransform) transformParts.push(fx.mirrorTransform);
+      if (fx.glitchTransform) transformParts.push(fx.glitchTransform);
+      v.style.transform = transformParts.join(" ");
+    });
+    return () => {
+      unregisterTickCallback(id);
+      // Clear FX styles on hover exit — the static thumbnail must look identical
+      // to the published preview frame (no lingering color drift, no transform).
+      v.style.filter = "";
+      v.style.transform = "";
+    };
+  }, [hovered, activeEffectClips, firstClipStart, firstClipMediaOffsetUs, firstClipTransform]);
 
   useEffect(() => {
     if (!shareOpen) return;
@@ -183,9 +227,10 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
         {/* Video */}
         <video ref={videoRef} src={firstClipSrc || undefined}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
-          style={{
-            ...(hovered && firstClipTransform ? { transform: firstClipTransform, transformOrigin: "center center" } : {}),
-          }}
+          // The hover tick loop owns `filter` and `transform` while hovered and
+          // clears them on exit. Do not set them inline here or React re-renders
+          // will clobber per-tick FX values.
+          style={{ transformOrigin: "center center" }}
           muted loop playsInline preload="metadata"
           onError={() => {
             const v = videoRef.current;

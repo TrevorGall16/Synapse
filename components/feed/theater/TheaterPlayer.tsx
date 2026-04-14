@@ -75,6 +75,14 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   const tunnelRef         = useRef<HTMLDivElement>(null);
   /** Set to true by the gesture useLayoutEffect so the boot useEffect skips its reset */
   const gesturePlayedRef  = useRef(false);
+  /**
+   * Tracks the post we've already done the full boot flow for. Hydration flipping
+   * `hydratedPool` null→value used to retrigger the boot useEffect and reset
+   * `v.src` — the visible symptom was a black flash + duplicated "Initial Seek"
+   * log per post load. We now only re-boot when the post.id changes OR the
+   * first clip's resolved URL genuinely changed (not just became defined).
+   */
+  const bootedForPostRef  = useRef<{ postId: string; firstClipId: string | null; firstClipUrl: string | null } | null>(null);
   const isScrubbingRef    = useRef(false);
   const wasPlayingBeforeScrubRef = useRef(false);
   const idleTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -105,13 +113,15 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    console.debug("[theater] cell mount", { postId: post.id });
     return () => {
+      console.debug("[theater] cell unmount", { postId: post.id });
       mountedRef.current = false;
       // Unregister GlobalTicker callbacks on unmount to prevent stale tick access
       if (tickIdRef.current !== null)     { unregisterTickCallback(tickIdRef.current);     tickIdRef.current     = null; }
       if (animTickIdRef.current !== null) { unregisterTickCallback(animTickIdRef.current); animTickIdRef.current = null; }
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Optimistic follow toggle — zustand update is synchronous so the button,
   // follower count, and feed relevance boost all apply within the same frame.
@@ -244,6 +254,7 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
       v.currentTime = seekTarget;
     };
     v.addEventListener("loadedmetadata", onMeta);
+    console.debug("[theater] v.src reset", { postId: post.id, src: clipUrl, reason: "syncClip-cross-clip" });
     v.src = clipUrl; v.load();
   }, [globalMuted]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -292,36 +303,64 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           }
         }
         syncClip(phRef.current);
-        // Effect clips: sync CSS filter/transform/animation
-        let activeEfxId: string | null = null;
+        // Effect clips: sync CSS filter/transform/animation.
+        // LOCK: multi-effect stacking. The active-effect set is EVERY clip whose
+        // time range covers `ph` — not the first match. Short-circuiting with
+        // `.find()` was the root cause of "published posts only show the first
+        // effect" regression.
         if (v) {
           const ph = phRef.current;
-          const efx = effectClipsRef.current.find((c) => (c.renderedCss || !c.fxParams?.effectDisabled) && ph >= c.startTime && ph < c.startTime + c.duration);
-          activeEfxId = efx?.id ?? null;
-          if (!efx) {
+          const activeEfx = effectClipsRef.current.filter((c) => {
+            if (ph < c.startTime || ph >= c.startTime + c.duration) return false;
+            if (c.renderedCss) return true;
+            return !!c.fxParams && !c.fxParams.effectDisabled;
+          });
+          if (activeEfx.length === 0) {
             v.style.filter = ""; v.style.transform = "";
             if (activeAnimRef.current !== null) { v.style.animation = ""; activeAnimRef.current = null; }
             if (tunnelRef.current) tunnelRef.current.style.display = "none";
-          } else if (efx.renderedCss && !efx.fxParams) {
-            v.style.filter = efx.renderedCss.filter; v.style.transform = efx.renderedCss.transform;
-            if (activeAnimRef.current !== efx.id) { v.style.animation = efx.renderedCss.animation ?? ""; activeAnimRef.current = efx.id; }
-            if (tunnelRef.current) tunnelRef.current.style.display = "none";
           } else {
-            // LOCK: Studio/Theater effect parity.
-            // Route through the SAME buildFxFilter used by Studio's PreviewMonitor so
-            // animated effects (hue-rotate speed, strobe, glitch, flash) produce
-            // identical per-frame output. The old path used clipCssFilter, which
-            // reads only the static `hueRotate` degree and ignores `speed` — the
-            // "effect visible in Studio but missing in Theater" regression.
-            const fx = buildFxFilter([efx], ph);
-            v.style.filter = fx.filter !== "none" ? fx.filter : "";
+            // Split into authoritative fxParams clips (run through buildFxFilter —
+            // stacks internally) and stripped-recipe renderedCss clips (remix
+            // bakes). Stack both streams onto the video element.
+            const withParams = activeEfx.filter((c) => c.fxParams && !c.fxParams.effectDisabled);
+            const renderedOnly = activeEfx.filter((c) => c.renderedCss && !c.fxParams);
+
+            // LOCK: Studio/Theater effect parity. Same buildFxFilter call as
+            // PreviewMonitor; cumulative stacking is driven by the for-loop
+            // inside buildFxFilter over ALL active clips, not just the first.
+            const fx = buildFxFilter(withParams, ph);
+
+            const filterParts: string[] = [];
+            if (fx.filter !== "none") filterParts.push(fx.filter);
+            for (const r of renderedOnly) {
+              if (r.renderedCss?.filter) filterParts.push(r.renderedCss.filter);
+            }
+            v.style.filter = filterParts.join(" ");
+
             const transformParts: string[] = [];
             if (fx.mirrorTransform) transformParts.push(fx.mirrorTransform);
             if (fx.glitchTransform) transformParts.push(fx.glitchTransform);
+            for (const r of renderedOnly) {
+              if (r.renderedCss?.transform) transformParts.push(r.renderedCss.transform);
+            }
             v.style.transform = transformParts.join(" ");
-            // buildFxFilter drives strobe/glitch per-frame via the GlobalTicker now
-            // (matching Studio), so the CSS @keyframes animation is cleared.
-            if (activeAnimRef.current !== null) { v.style.animation = ""; activeAnimRef.current = null; }
+
+            // CSS @keyframes can only be stacked via animation-name list; for the
+            // remix-baked renderedCss path the authored animation string already
+            // encodes the chain. Use the first one with an animation; buildFxFilter
+            // drives strobe/glitch for authored (fxParams) clips per-frame.
+            const animSource = renderedOnly.find((r) => r.renderedCss?.animation);
+            if (animSource) {
+              if (activeAnimRef.current !== animSource.id) {
+                v.style.animation = animSource.renderedCss!.animation ?? "";
+                activeAnimRef.current = animSource.id;
+              }
+            } else if (activeAnimRef.current !== null) {
+              v.style.animation = "";
+              activeAnimRef.current = null;
+            }
+
             const td = tunnelRef.current;
             if (fx.hypnoTunnel && td) {
               td.style.display = "block";
@@ -331,7 +370,6 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
               td.style.display = "none";
             }
           }
-          void activeEfxId;
         }
       }
     }
@@ -507,6 +545,24 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
     if (!isHydrated && !!post.projectSnapshot?.mediaPool?.length) return;
     const clips = clipsRef.current;
     const v = videoRef.current;
+    // LOCK: black-flash / double "Initial Seek" fix.
+    // Skip the entire boot when we've already booted for this post AND the
+    // first clip's URL is unchanged. The old guard used loadedClipRef — but
+    // loadedClipRef gets cleared by this effect's own reset on the previous
+    // run, so on re-entry it was null and the guard didn't fire, causing a
+    // needless v.src reset (→ decoder teardown → black frame → second
+    // "Initial Seek" log).
+    const firstClip = clips[0];
+    const booted = bootedForPostRef.current;
+    if (
+      booted
+      && booted.postId === post.id
+      && firstClip
+      && booted.firstClipId === firstClip.id
+      && booted.firstClipUrl === firstClip.url
+    ) {
+      return;
+    }
     if (clips.length > 0 && loadedClipRef.current !== null) {
       const alreadyLoading = clips.find((c) => c.id === loadedClipRef.current);
       if (alreadyLoading && alreadyLoading.url === loadedClipUrlRef.current) return;
@@ -520,11 +576,12 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
     if (clips.length > 0 && v) {
       const clip = clips[0];
       loadedClipRef.current = clip.id; loadedClipUrlRef.current = clip.url; v.muted = true;
+      bootedForPostRef.current = { postId: post.id, firstClipId: clip.id, firstClipUrl: clip.url };
       const onMeta = () => {
         v.removeEventListener("loadedmetadata", onMeta);
         if (loadedClipRef.current !== clip.id) return;
         const startS = Math.max(0, (initPh - clip.startTime + (clip.mediaOffset ?? 0)) / 1_000_000);
-        console.log("Initial Seek:", startS, { initPh, clipStart: clip.startTime, mediaOffset: clip.mediaOffset ?? 0 });
+        console.debug("[theater] initial seek", { postId: post.id, startS, initPh, clipStart: clip.startTime, mediaOffset: clip.mediaOffset ?? 0 });
         v.currentTime = startS;
         const onSeeked = () => {
           v.removeEventListener("seeked", onSeeked);
@@ -539,7 +596,9 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
         };
         v.addEventListener("seeked", onSeeked);
       };
-      v.addEventListener("loadedmetadata", onMeta); v.src = clip.url; v.load();
+      v.addEventListener("loadedmetadata", onMeta);
+      console.debug("[theater] v.src reset", { postId: post.id, src: clip.url, reason: "boot-snapshot" });
+      v.src = clip.url; v.load();
     } else if (post.videoUrl && v) {
       if (!isPlayingRef.current) {
         if (mountedRef.current) setVideoVisible(true);
@@ -548,7 +607,14 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           .then(() => { if (!mountedRef.current) return; setIsPlaying(true); setShowPlayOverlay(false); })
           .catch(() => { if (mountedRef.current) setShowPlayOverlay(true); });
       }
-    } else { setVideoVisible(false); if (v) { v.pause(); v.src = ""; } }
+    } else {
+      setVideoVisible(false);
+      if (v) {
+        v.pause();
+        if (v.src !== "") console.debug("[theater] v.src reset", { postId: post.id, src: "", reason: "boot-no-clips" });
+        v.src = "";
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post.id, hydratedPool, isHydrated]);
 
