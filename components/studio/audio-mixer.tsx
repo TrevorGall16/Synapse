@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useGlobalTick } from "@/lib/hooks/use-global-tick";
 import { useProjectStore } from "@/lib/store/project-store";
 import { usePlaybackStore } from "@/lib/store/playback-store";
@@ -160,9 +160,9 @@ function PeakMeter({ volume }: { volume: number }) {
   const barRef = useRef<HTMLDivElement>(null);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const isPlayingRef = useRef(isPlaying);
-  isPlayingRef.current = isPlaying;
   const volumeRef = useRef(volume);
-  volumeRef.current = volume;
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { volumeRef.current = volume; }, [volume]);
 
   useGlobalTick(() => {
     const bar = barRef.current;

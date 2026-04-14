@@ -27,9 +27,10 @@ import { registerTickCallback, unregisterTickCallback, type TickCallback } from 
  */
 export function useGlobalTick(callback: TickCallback): void {
   // Keep a stable ref so the registered closure always sees the latest callback
-  // without needing to re-register on every render.
+  // without needing to re-register on every render. The assignment runs in an
+  // effect (not render) to satisfy react-hooks/refs.
   const cbRef = useRef<TickCallback>(callback);
-  cbRef.current = callback;
+  useEffect(() => { cbRef.current = callback; }, [callback]);
 
   useEffect(() => {
     const id = registerTickCallback((ts) => cbRef.current(ts));
