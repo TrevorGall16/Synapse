@@ -270,7 +270,7 @@ export function PresetPanel() {
             <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
               <BookMarked size={28} className="text-white/15" />
               <p className="text-[10px] font-semibold text-white/30">No saved presets yet</p>
-              <p className="text-[9px] text-white/20">Use "Save to Library" on any preset in the Explore page.</p>
+              <p className="text-[9px] text-white/20">Use &ldquo;Save to Library&rdquo; on any preset in the Explore page.</p>
             </div>
           ) : (
             <div className="px-3 pt-3">

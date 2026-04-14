@@ -6,7 +6,7 @@
 const OPFS_REQUEST_TIMEOUT_MS = 30_000;
 
 let _worker: Worker | null = null;
-let _pendingRequests = new Map<
+const _pendingRequests = new Map<
   string,
   { resolve: (v: unknown) => void; reject: (e: Error) => void }
 >();

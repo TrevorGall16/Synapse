@@ -14,7 +14,6 @@ export function useProxyMeta(ids: string[]): {
   const [proxyMap, setProxyMap] = useState<Record<string, ProxyMeta>>({});
 
   // Stable string key — rebuild when IDs list changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const idsKey = ids.join(",");
 
   const refresh = useCallback(async () => {
