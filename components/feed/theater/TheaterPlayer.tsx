@@ -26,6 +26,12 @@ import { followCreator as idbFollow, unfollowCreator as idbUnfollow } from "@/li
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
 import { buildTextStyle } from "@/lib/utils/preview-helpers";
 import { buildHypnoOverlayStyle } from "@/lib/utils/hypno-overlay";
+import {
+  computeSeekTarget,
+  timelineUsFromMedia,
+  mediaSecFromTimeline,
+  isOutsideDemoWindow,
+} from "@/lib/utils/theater-seek";
 import { canRemix } from "@/lib/policy";
 import { consumeTheaterGesture, markInteracted } from "../theater-gesture";
 import { registerTickCallback, unregisterTickCallback } from "@/lib/store/global-ticker";
@@ -230,21 +236,37 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   // Registered with GlobalTicker — no self-referential requestAnimationFrame call.
 
   const tick = useCallback((ts: number) => {
+    // LOCK: Theater seek parity (paused vs playing).
+    // Scrub must be the sole authority on phRef while the user is dragging —
+    // otherwise the tick that fires between pointerdown and the isPlaying
+    // state flush will clobber the just-seeked position back to 0:00.
+    if (isScrubbingRef.current) { lastTsRef.current = ts; return; }
     if (lastTsRef.current > 0) {
       const dur = Math.max(totalDurRef.current, 2_000_000);
       if (dur > 0) {
         const v = videoRef.current;
         const startUs  = post.demoStartTime || 0;
         const demoDurUs = post.demoDuration || 1_000_000;
-        const endUs    = startUs + demoDurUs;
         if (post.projectSnapshot && v) {
-          const playheadUs = Math.round(v.currentTime * 1_000_000);
-          if (playheadUs < startUs || playheadUs >= endUs - 50_000) {
-            console.warn("!!! LOOP TRIGGERED !!!", { playheadUs, startUs, endUs, vidTime: v.currentTime });
-            v.currentTime = startUs / 1_000_000;
+          // Convert media currentTime → TIMELINE microseconds via the active clip's
+          // mediaOffset. Reading v.currentTime directly and treating it as timeline
+          // space was the root cause of the 0:00 reset regression for Ruler Selection
+          // publishes (clips where mediaOffset > 0).
+          const activeClip =
+            clipsRef.current.find((c) => c.id === loadedClipRef.current) ??
+            clipsRef.current.find((c) => {
+              const ph = Math.round(v.currentTime * 1_000_000);
+              return ph >= (c.mediaOffset ?? 0) && ph < (c.mediaOffset ?? 0) + c.duration;
+            }) ??
+            null;
+          let timelineUs = timelineUsFromMedia(activeClip, v.currentTime);
+          if (isOutsideDemoWindow(timelineUs, startUs, demoDurUs)) {
+            const resetSec = mediaSecFromTimeline(activeClip, startUs);
+            v.currentTime = resetSec;
+            timelineUs = startUs;
           }
-          phRef.current = Math.round(v.currentTime * 1_000_000);
-          const relativeUs = phRef.current - startUs;
+          phRef.current = timelineUs;
+          const relativeUs = timelineUs - startUs;
           setProgress(Math.max(0, Math.min(100, (relativeUs / demoDurUs) * 100)));
         } else {
           phRef.current = (phRef.current + Math.min(ts - lastTsRef.current, 100) * 1000) % dur;
@@ -386,34 +408,30 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
     } else { setIsPlaying((p) => !p); }
   }, []);
 
+  // LOCK: Theater seek parity (paused vs playing).
+  // All seek math goes through the shared `computeSeekTarget` helper so paused
+  // and playing states produce byte-identical output — any branching on
+  // isPlaying here would reintroduce the drift bug.
   const seekFromPointer = useCallback((clientX: number, el: HTMLDivElement) => {
     const rect = el.getBoundingClientRect();
-    if (rect.width <= 0) return;
-
-    const x = Math.min(rect.width, Math.max(0, clientX - rect.left));
-    const ratio = x / rect.width;
-
     const v = videoRef.current;
     if (!v) return;
 
     if (clipsRef.current.length > 0) {
       const startUs = post.demoStartTime ?? 0;
       const demoDurUs = post.demoDuration ?? totalDurRef.current;
-      const targetUs = Math.round(startUs + ratio * demoDurUs);
+      const target = computeSeekTarget(clientX, rect, startUs, demoDurUs, clipsRef.current);
+      if (!target) return;
 
-      phRef.current = targetUs;
-      setProgress(ratio * 100);
+      phRef.current = target.timelineUs;
+      setProgress(target.ratio * 100);
 
-      const targetClip = clipsRef.current.find(
-        (c) => targetUs >= c.startTime && targetUs < c.startTime + c.duration
-      );
-
-      if (targetClip) {
-        const mediaSec = (targetUs - targetClip.startTime + (targetClip.mediaOffset ?? 0)) / 1_000_000;
-        v.currentTime = mediaSec;
-      }
-      syncClip(targetUs);
+      if (target.targetClip) v.currentTime = target.mediaSec;
+      syncClip(target.timelineUs);
     } else {
+      if (rect.width <= 0) return;
+      const x = Math.min(rect.width, Math.max(0, clientX - rect.left));
+      const ratio = x / rect.width;
       const dur = Number.isFinite(v.duration) ? v.duration : 0;
       if (dur <= 0) return;
       v.currentTime = ratio * dur;

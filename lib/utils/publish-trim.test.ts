@@ -87,6 +87,24 @@ describe("trimTracksToSelection", () => {
     expect(out.clips.map((c) => c.id)).toEqual(["inside"]);
   });
 
+  // Explicit fixture from P0-2 acceptance criteria:
+  //   Source clip: 0-20s (mediaOffset=0, duration=20s)
+  //   Ruler selection: 4-11s (offset=4s, duration=7s)
+  //   Published clip MUST be { startTime: 0, mediaOffset: 4_000_000, duration: 7_000_000 }
+  // Any deviation here means the published video will play the wrong window —
+  // either starting from the source origin or running past the user's selection.
+  it("4-11s selection of a 0-20s source → startTime=0 mediaOffset=4_000_000 duration=7_000_000", () => {
+    const source = makeTrack([
+      makeClip({ id: "source", startTime: 0, duration: 20_000_000, mediaOffset: 0 }),
+    ]);
+    const [out] = trimTracksToSelection([source], 4_000_000, 7_000_000);
+    expect(out.clips).toHaveLength(1);
+    const [published] = out.clips;
+    expect(published.startTime).toBe(0);
+    expect(published.mediaOffset).toBe(4_000_000);
+    expect(published.duration).toBe(7_000_000);
+  });
+
   it("trims straddling clips instead of passing them through unchanged", () => {
     const t = makeTrack([
       makeClip({ id: "head", startTime: 3_000_000, duration: 5_000_000 }),

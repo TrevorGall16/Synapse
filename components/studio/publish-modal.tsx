@@ -256,6 +256,21 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
 
     const finalTracks = consolidateEffectTracks(publishTracks);
 
+    // Dev-only debug snapshot — lets us verify the 0-20s/4-11s export invariant
+    // without digging into the feed store after navigation. Acceptance criteria:
+    // source [0,20s), selection [4s,11s) → published clip must be
+    // { startTime: 0, mediaOffset: 4_000_000, duration: 7_000_000 }. See
+    // lib/utils/publish-trim.test.ts for the fixture.
+    if (process.env.NODE_ENV !== "production") {
+      const videoClips = finalTracks.filter((t) => t.type === "video").flatMap((t) => t.clips);
+      console.debug("[publish] export window snapshot", {
+        useRuler, selOffset, duration, demoStartTime: 0, demoDuration: duration,
+        videoClips: videoClips.map((c) => ({
+          id: c.id, startTime: c.startTime, mediaOffset: c.mediaOffset, duration: c.duration,
+        })),
+      });
+    }
+
     // Read attribution lock from IDB — authoritative over in-memory store values
     const lock = await getAttributionLock(currentProjectId).catch(() => null);
     const safeRemixedFromHandle = lock?.remixedFromHandle ?? effectiveHandle;

@@ -369,12 +369,16 @@ export function TheaterUI({
         </button>
       </div>
 
-      {/* Scrubber — pointer-captured for smooth drag-scrub */}
+      {/* Scrubber — pointer-captured for smooth drag-scrub.
+          LOCK: Theater seek parity (paused vs playing). The synthetic click that
+          follows pointerdown/up must NOT bubble to the cell's togglePlay handler;
+          otherwise the user gets a seek + an unintended pause on the same gesture. */}
       <div
         onPointerDown={(e) => { e.stopPropagation(); onSeekPointerDown(e); }}
         onPointerMove={(e) => { e.stopPropagation(); onSeekPointerMove(e); }}
         onPointerUp={(e) => { e.stopPropagation(); onSeekPointerUp(e); }}
         onPointerCancel={(e) => { e.stopPropagation(); onSeekPointerCancel(e); }}
+        onClick={(e) => e.stopPropagation()}
         className={`absolute bottom-0 left-0 right-0 z-[50] h-2 cursor-pointer touch-none bg-white/15 hover:h-3 transition-all duration-300 ${isIdle && isPlaying ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"}`}
       >
         <div className="pointer-events-none h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: post.accent }} />
