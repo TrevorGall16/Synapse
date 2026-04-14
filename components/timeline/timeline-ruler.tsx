@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useCallback, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { getGridInterval } from "@/lib/utils/grid";
@@ -50,9 +50,30 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
 
   const tickInterval = getGridInterval(pixelsPerSecond);
   const totalSeconds = duration / 1_000_000;
-  const container = scrollContainerRef.current;
-  const scrollLeft = container?.scrollLeft ?? 0;
-  const viewWidth = container?.clientWidth ?? totalWidth;
+
+  // Subscribe to scroll + resize on the external scroll container so tick
+  // virtualization reacts without reading the ref during render. Storing the
+  // metrics in state keeps the render body pure (react-hooks/refs).
+  const [metrics, setMetrics] = useState({ scrollLeft: 0, viewWidth: 0 });
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const update = () => setMetrics({
+      scrollLeft: container.scrollLeft,
+      viewWidth: container.clientWidth,
+    });
+    update();
+    container.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(container);
+    return () => {
+      container.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [scrollContainerRef]);
+
+  const { scrollLeft, viewWidth: measuredViewWidth } = metrics;
+  const viewWidth = measuredViewWidth || totalWidth;
   const startSec = Math.max(0, Math.floor(scrollLeft / pixelsPerSecond / tickInterval) * tickInterval);
   const endSec = Math.min(totalSeconds, (scrollLeft + viewWidth) / pixelsPerSecond + tickInterval);
 
