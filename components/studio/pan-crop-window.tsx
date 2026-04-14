@@ -19,6 +19,7 @@ function isInsidePolygon(px: number, py: number, pts: { x: number; y: number }[]
 }
 
 export function PanCropWindow() {
+  // ── Hooks (must run unconditionally, per rules-of-hooks) ─────────────────
   const inspectingClipId = useProjectStore((s) => s.inspectingClipId);
   const tracks = useProjectStore((s) => s.tracks);
   const updateClipPanCrop = useProjectStore((s) => s.updateClipPanCrop);
@@ -32,7 +33,11 @@ export function PanCropWindow() {
   // null = editing the live maskPoints; number = editing masks[N] (click-to-re-edit)
   const [activeMaskLayerIdx, setActiveMaskLayerIdx] = useState<number | null>(null);
   const maskDragStart = useRef({ x: 0, y: 0 });
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0, pcX: 0, pcY: 0 });
 
+  // ── Derived state (no hooks) ─────────────────────────────────────────────
   const isFxMaskMode = !!fxMaskEditingClipId;
   const activeClipId = isFxMaskMode ? fxMaskEditingClipId : inspectingClipId;
 
@@ -44,22 +49,16 @@ export function PanCropWindow() {
     }
   }
 
-  if (!clip) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center bg-[#1a1a1a] p-4">
-        <span className="text-xs text-white/30">
-          {isFxMaskMode ? "FX clip not found" : "Select a video clip to edit Pan/Crop"}
-        </span>
-      </div>
-    );
-  }
+  const pc: PanCropData = clip
+    ? (isFxMaskMode
+        ? ((clip.fxParams?.fxMask as PanCropData | undefined) ?? DEFAULT_PC)
+        : (clip.panCrop ?? DEFAULT_PC))
+    : DEFAULT_PC;
 
-  const pc = isFxMaskMode
-    ? ((clip.fxParams?.fxMask as PanCropData | undefined) ?? DEFAULT_PC)
-    : (clip.panCrop ?? DEFAULT_PC);
-
-  const onPC = (updates: Partial<PanCropData>) =>
-    isFxMaskMode ? updateFxMask(clip!.id, updates) : updateClipPanCrop(clip!.id, updates);
+  const onPC = (updates: Partial<PanCropData>) => {
+    if (!clip) return;
+    return isFxMaskMode ? updateFxMask(clip.id, updates) : updateClipPanCrop(clip.id, updates);
+  };
 
   const maskType = pc.maskType ?? "none";
   const maskX = pc.maskX ?? 50;
@@ -101,11 +100,6 @@ export function PanCropWindow() {
     setPolygonClosed(false);
     setDraggingVertex(null);
   };
-
-  // ── Interactive canvas ────────────────────────────────────────────────────
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
-  const dragStart = useRef({ x: 0, y: 0, pcX: 0, pcY: 0 });
 
   const onCanvasPointerDown = useCallback((e: React.PointerEvent) => {
     if (maskType === "polygon") {
@@ -237,6 +231,17 @@ export function PanCropWindow() {
     : polygonClosed && activePoints.length >= 3
     ? "Save & New"
     : "+ New Mask";
+
+  // Placeholder render when no clip is selected — all hooks above already ran.
+  if (!clip) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center bg-[#1a1a1a] p-4">
+        <span className="text-xs text-white/30">
+          {isFxMaskMode ? "FX clip not found" : "Select a video clip to edit Pan/Crop"}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-[400px] flex-col bg-[#1a1a1a]">
