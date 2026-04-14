@@ -250,8 +250,11 @@ export class AuditPage {
 // ── Fixture extension ────────────────────────────────────────────────────────────
 
 export const test = base.extend<{ auditPage: AuditPage }>({
-  auditPage: async ({ page }, use) => {
-    await use(new AuditPage(page));
+  // `use` is Playwright's fixture injection callback — not a React hook.
+  // Rename to `provide` so the react-hooks/rules-of-hooks rule can't confuse
+  // it with a custom hook (any name starting with `use` triggers the rule).
+  auditPage: async ({ page }, provide) => {
+    await provide(new AuditPage(page));
   },
 });
 
