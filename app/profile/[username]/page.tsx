@@ -548,21 +548,6 @@ export default function ProfilePage() {
     return allUserPosts.filter((p) => p.remixedFromHandle === myHandle || p.remixedFromHandle === "you").length;
   }, [allUserPosts, isOwnProfile, username, currentUser.username]);
 
-  // ── Loading gate — AFTER all hook declarations ────────────────────────────
-  if (isOwnProfile && (!storeProfile || !hasHydrated) && !forceRender) return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
-      <div className="flex-1 flex items-center justify-center">
-        <span className="text-[11px] text-white/25">Loading profile…</span>
-      </div>
-    </div>
-  );
-
-  // ── Regular functions (not hooks) ─────────────────────────────────────────
-  const cleanupOffline = () => {
-    const { removePost: rp } = useFeedStore.getState();
-    offlinePosts.forEach((p) => rp(p.id));
-  };
-
   const handleBatchDelete = useCallback(async () => {
     // Action-path guard — executes even if UI state is tampered via DevTools.
     if (!isOwnProfile) {
@@ -596,6 +581,21 @@ export default function ProfilePage() {
       return next;
     });
   }, []);
+
+  // ── Loading gate — AFTER all hook declarations ────────────────────────────
+  if (isOwnProfile && (!storeProfile || !hasHydrated) && !forceRender) return (
+    <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
+      <div className="flex-1 flex items-center justify-center">
+        <span className="text-[11px] text-white/25">Loading profile…</span>
+      </div>
+    </div>
+  );
+
+  // ── Regular functions (not hooks) ─────────────────────────────────────────
+  const cleanupOffline = () => {
+    const { removePost: rp } = useFeedStore.getState();
+    offlinePosts.forEach((p) => rp(p.id));
+  };
 
   const handleOpenPost = (item: typeof unifiedPosts[0]) => {
     if (item.type === "feed" && item.post) {
