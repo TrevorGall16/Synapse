@@ -263,10 +263,26 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
     // lib/utils/publish-trim.test.ts for the fixture.
     if (process.env.NODE_ENV !== "production") {
       const videoClips = finalTracks.filter((t) => t.type === "video").flatMap((t) => t.clips);
+      const effectClips = [
+        ...finalTracks.filter((t) => t.type === "effect").flatMap((t) => t.clips),
+        ...videoClips.flatMap((c) => c.embeddedEffectClips ?? []),
+      ];
       console.debug("[publish] export window snapshot", {
         useRuler, selOffset, duration, demoStartTime: 0, demoDuration: duration,
         videoClips: videoClips.map((c) => ({
           id: c.id, startTime: c.startTime, mediaOffset: c.mediaOffset, duration: c.duration,
+        })),
+        // Effect-clip trace: proves which fxParams/effectType actually hit the feed.
+        // Mirrors the Theater "[theater] load" snapshot so regressions between the
+        // two sides show up as a textual diff in the dev console.
+        effectClips: effectClips.map((c) => ({
+          id: c.id,
+          effectType: c.fxParams?.effectType ?? (c.renderedCss ? "<renderedCss>" : null),
+          intensity: c.fxParams?.intensity,
+          speed: c.fxParams?.speed,
+          hueRotate: c.fxParams?.hueRotate,
+          blurAmount: c.fxParams?.blurAmount,
+          hasRenderedCss: !!c.renderedCss,
         })),
       });
     }

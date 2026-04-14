@@ -24,8 +24,7 @@ import { useUserStore } from "@/lib/store/user-store";
 import { useFeedStore } from "@/lib/store/feed-store";
 import { followCreator as idbFollow, unfollowCreator as idbUnfollow } from "@/lib/store/social-idb";
 import { clipCssFilter, clipCssTransform, clipCssAnimation } from "@/lib/utils/svg-filters";
-import { buildTextStyle } from "@/lib/utils/preview-helpers";
-import { buildHypnoOverlayStyle } from "@/lib/utils/hypno-overlay";
+import { buildTextStyle, buildFxFilter } from "@/lib/utils/preview-helpers";
 import {
   computeSeekTarget,
   timelineUsFromMedia,
@@ -155,6 +154,22 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
     textClipsRef.current = snap
       ? [...snap.tracks.filter((t) => t.type === "text").flatMap((t) => t.clips), ...videoClips.flatMap((c) => c.embeddedTextClips ?? [])]
       : [];
+    // Dev trace — mirrors [publish] snapshot. Compare side-by-side to surface any
+    // fxParams shape drift between publish-time and Theater load.
+    if (process.env.NODE_ENV !== "production" && snap) {
+      console.debug("[theater] load effect snapshot", {
+        postId: post.id,
+        effectClips: effectClipsRef.current.map((c) => ({
+          id: c.id,
+          effectType: c.fxParams?.effectType ?? (c.renderedCss ? "<renderedCss>" : null),
+          intensity: c.fxParams?.intensity,
+          speed: c.fxParams?.speed,
+          hueRotate: c.fxParams?.hueRotate,
+          blurAmount: c.fxParams?.blurAmount,
+          hasRenderedCss: !!c.renderedCss,
+        })),
+      });
+    }
   }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const snapshotClips = useMemo(() => {
@@ -292,40 +307,28 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
             if (activeAnimRef.current !== efx.id) { v.style.animation = efx.renderedCss.animation ?? ""; activeAnimRef.current = efx.id; }
             if (tunnelRef.current) tunnelRef.current.style.display = "none";
           } else {
-            const efxP = efx.fxParams ?? {};
-            if (String(efxP.effectType) === "hypno-tunnel") {
-              const levelScale = (efx.level ?? 100) / 100;
-              // Per-clip color correction (B/C/S/HR) only applies when explicitly set.
-              // The radial-gradient overlay is the whole effect; layering the old
-              // CSS hue/saturate approximation on top of it caused double-tinting.
-              const ccParts: string[] = [];
-              const ccBr = Number(efxP.brightness ?? 100);
-              const ccCo = Number(efxP.contrast ?? 100);
-              const ccSa = Number(efxP.saturate ?? 100);
-              const ccHr = Number(efxP.hueRotate ?? 0);
-              if (ccBr !== 100) ccParts.push(`brightness(${(ccBr / 100 * levelScale + (1 - levelScale)).toFixed(2)})`);
-              if (ccCo !== 100) ccParts.push(`contrast(${(ccCo / 100 * levelScale + (1 - levelScale)).toFixed(2)})`);
-              if (ccSa !== 100) ccParts.push(`saturate(${(ccSa / 100 * levelScale + (1 - levelScale)).toFixed(2)})`);
-              if (ccHr !== 0)   ccParts.push(`hue-rotate(${ccHr * levelScale}deg)`);
-              v.style.filter = ccParts.join(" ") || "";
-              v.style.transform = "";
-              // Radial-gradient tunnel overlay — shared math with Studio.
-              const td = tunnelRef.current;
-              if (td) {
-                const elapsed = (ph - efx.startTime) / 1_000_000;
-                const hypno = buildHypnoOverlayStyle({
-                  fxParams: efxP, level: efx.level ?? 100, elapsedSeconds: elapsed,
-                });
-                td.style.display = "block";
-                td.style.background = hypno.background;
-                // True-center anchoring — must not drift with rotation.
-                td.style.transform = "translate(-50%, -50%)";
-              }
-            } else {
-              v.style.filter = clipCssFilter(efxP); v.style.transform = clipCssTransform(efxP);
-              const anim = clipCssAnimation(efxP);
-              if (activeAnimRef.current !== efx.id) { v.style.animation = anim; activeAnimRef.current = efx.id; }
-              if (tunnelRef.current) tunnelRef.current.style.display = "none";
+            // LOCK: Studio/Theater effect parity.
+            // Route through the SAME buildFxFilter used by Studio's PreviewMonitor so
+            // animated effects (hue-rotate speed, strobe, glitch, flash) produce
+            // identical per-frame output. The old path used clipCssFilter, which
+            // reads only the static `hueRotate` degree and ignores `speed` — the
+            // "effect visible in Studio but missing in Theater" regression.
+            const fx = buildFxFilter([efx], ph);
+            v.style.filter = fx.filter !== "none" ? fx.filter : "";
+            const transformParts: string[] = [];
+            if (fx.mirrorTransform) transformParts.push(fx.mirrorTransform);
+            if (fx.glitchTransform) transformParts.push(fx.glitchTransform);
+            v.style.transform = transformParts.join(" ");
+            // buildFxFilter drives strobe/glitch per-frame via the GlobalTicker now
+            // (matching Studio), so the CSS @keyframes animation is cleared.
+            if (activeAnimRef.current !== null) { v.style.animation = ""; activeAnimRef.current = null; }
+            const td = tunnelRef.current;
+            if (fx.hypnoTunnel && td) {
+              td.style.display = "block";
+              td.style.background = fx.hypnoTunnel.background;
+              td.style.transform = "translate(-50%, -50%)";
+            } else if (td) {
+              td.style.display = "none";
             }
           }
           void activeEfxId;
@@ -412,7 +415,14 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   // All seek math goes through the shared `computeSeekTarget` helper so paused
   // and playing states produce byte-identical output — any branching on
   // isPlaying here would reintroduce the drift bug.
-  const seekFromPointer = useCallback((clientX: number, el: HTMLDivElement) => {
+  //
+  // `commit=false` — pointer-move path. Update the visible frame within the
+  //   currently loaded clip only. Do NOT call syncClip: it can reload v.src at
+  //   clip boundaries, which appears to the user as a rhythmic stall mid-drag.
+  // `commit=true`  — pointerup/cancel path. Single authoritative syncClip so
+  //   the correct source + correct currentTime are both latched before playback
+  //   resumes. This is the only moment the scrub path is allowed to reload src.
+  const seekFromPointer = useCallback((clientX: number, el: HTMLDivElement, commit: boolean) => {
     const rect = el.getBoundingClientRect();
     const v = videoRef.current;
     if (!v) return;
@@ -426,8 +436,14 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
       phRef.current = target.timelineUs;
       setProgress(target.ratio * 100);
 
-      if (target.targetClip) v.currentTime = target.mediaSec;
-      syncClip(target.timelineUs);
+      // Visual feedback: only seek the video element when the pointer is over
+      // the clip whose src is already loaded. Cross-clip targets wait for the
+      // authoritative commit below.
+      if (target.targetClip && target.targetClip.id === loadedClipRef.current) {
+        v.currentTime = target.mediaSec;
+      }
+
+      if (commit) syncClip(target.timelineUs);
     } else {
       if (rect.width <= 0) return;
       const x = Math.min(rect.width, Math.max(0, clientX - rect.left));
@@ -447,16 +463,18 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
     if (v && !v.paused) v.pause();
     setIsPlaying(false);
     e.currentTarget.setPointerCapture(e.pointerId);
-    seekFromPointer(e.clientX, e.currentTarget);
+    seekFromPointer(e.clientX, e.currentTarget, false);
   }, [seekFromPointer]);
 
   const onSeekPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!isScrubbingRef.current) return;
-    seekFromPointer(e.clientX, e.currentTarget);
+    seekFromPointer(e.clientX, e.currentTarget, false);
   }, [seekFromPointer]);
 
   const onSeekPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (isScrubbingRef.current) seekFromPointer(e.clientX, e.currentTarget);
+    // One authoritative commit at pointer-up — latches correct src + currentTime
+    // before playback resumes, without the mid-drag src reloads that cause stalls.
+    if (isScrubbingRef.current) seekFromPointer(e.clientX, e.currentTarget, true);
     isScrubbingRef.current = false;
     e.currentTarget.releasePointerCapture(e.pointerId);
     // Resume playback only if it was playing before the scrub began
@@ -469,6 +487,9 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   }, [seekFromPointer]);
 
   const onSeekPointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // Cancel still needs an authoritative sync at the last known pointer position
+    // so the player doesn't resume against a half-seeked frame.
+    if (isScrubbingRef.current) seekFromPointer(e.clientX, e.currentTarget, true);
     isScrubbingRef.current = false;
     e.currentTarget.releasePointerCapture(e.pointerId);
     if (wasPlayingBeforeScrubRef.current) {
@@ -477,7 +498,7 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
       setIsPlaying(true);
     }
     wasPlayingBeforeScrubRef.current = false;
-  }, []);
+  }, [seekFromPointer]);
 
   // ── Boot: load first clip or simple videoUrl ───────────────────────────────
 
