@@ -277,6 +277,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       const deltaMicros = newStart - dragOriginMicros.current;
       for (const m of groupedElsRef.current) {
         const siblingPx = timeMicrosToTimelinePx(m.originMicros + deltaMicros, pixelsPerSecond);
+        // eslint-disable-next-line react-hooks/immutability -- Why: m.el is a DOM node owned by React's rendered output; this is a per-frame imperative style write (same pattern as clipRef.current.style.transform above), not a mutation of React state. The rule misfires on loop-through-ref writes even though single-access writes are fine.
         m.el.style.transform = `translate3d(${siblingPx}px, 0, 0)`;
       }
       // 2. Snap indicator — direct DOM, same frame
@@ -306,6 +307,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
         e.currentTarget.releasePointerCapture(e.pointerId);
         // Restore transitions on grouped siblings
         for (const m of groupedElsRef.current) {
+          // eslint-disable-next-line react-hooks/immutability -- Why: DOM-style write on element owned by React; see onPointerMove for rationale.
           m.el.style.transition = m.prevTransition ?? "";
         }
         groupedElsRef.current = [];
@@ -364,6 +366,7 @@ export function ClipEventBlock({ clip, trackId, pixelsPerSecond, trackColor, tra
       }
       for (const m of groupedElsRef.current) {
         const sibPx = timeMicrosToTimelinePx(m.originMicros, pixelsPerSecond);
+        // eslint-disable-next-line react-hooks/immutability -- Why: DOM-style writes on element owned by React; see onPointerMove for rationale.
         m.el.style.transform = `translate3d(${sibPx}px, 0, 0)`;
         m.el.style.transition = m.prevTransition ?? "";
       }
