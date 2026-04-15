@@ -340,7 +340,7 @@ export default function ExplorePage() {
     router.push("/studio");
   };
 
-  const handleSavePreset = async (preset: CommunityPreset, authorHandle?: string) => {
+  const handleSavePreset = useCallback(async (preset: CommunityPreset, authorHandle?: string) => {
     await saveCustomPreset({
       id: crypto.randomUUID(),
       label: preset.label,
@@ -352,13 +352,13 @@ export default function ExplorePage() {
     }).catch(console.warn);
     setToast("Saved to Library");
     setTimeout(() => setToast(null), 2500);
-  };
+  }, []);
 
-  const handleShowcaseSave = async () => {
+  const handleShowcaseSave = useCallback(async () => {
     if (!showcase) return;
     await handleSavePreset(showcase.preset, showcase.post?.user.handle);
     setShowcase(null);
-  };
+  }, [showcase, handleSavePreset]);
 
   const filteredPresets = presetCat === "all"
     ? COMMUNITY_PRESETS

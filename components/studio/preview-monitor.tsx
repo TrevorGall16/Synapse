@@ -387,11 +387,6 @@ export function PreviewMonitor() {
   // ── SVG defs ──────────────────────────────────────────────
   const svgDefs = useMemo(() => collectSvgDefs(activeEffectClips), [activeEffectClips]);
 
-  // Stable key for panCrop-only changes — avoids featheredMaskDefs recompute on opacity updates
-  const featheredMaskKey = useMemo(() =>
-    layersWithOpacity.map((l) => `${l.clip.id}:${JSON.stringify(l.clip.panCrop)}`).join(","),
-  [layersWithOpacity]);
-
   const featheredMaskDefs = useMemo(() => {
     const defs: string[] = [];
     for (const layer of layersWithOpacity) {
@@ -403,13 +398,12 @@ export function PreviewMonitor() {
       }));
     }
     return defs.join("\n");
-  }, [featheredMaskKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [layersWithOpacity]);
 
   const combinedSvgDefs = [svgDefs, featheredMaskDefs].filter(Boolean).join("\n");
 
   const hypnoTunnel = useMemo(() => buildFxFilter(activeEffectClips, playheadPosition).hypnoTunnel ?? undefined, [activeEffectClips, playheadPosition]);
-  // tunnelClipPath depends only on mask geometry, not playhead position — use fxKey to avoid per-frame recompute
-  const tunnelClipPath = useMemo(() => computeTunnelClipPath(activeEffectClips), [fxKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tunnelClipPath = useMemo(() => computeTunnelClipPath(activeEffectClips), [activeEffectClips]);
 
   return (
     <div className="flex h-full flex-col border-t border-white/20 bg-[#1a1a1a]">

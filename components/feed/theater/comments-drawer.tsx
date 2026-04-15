@@ -56,8 +56,17 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Single shared timestamp ticker at drawer level — no per-comment intervals
-  const [tick, setTick] = useState(Date.now());
+  // Single shared timestamp ticker at drawer level — no per-comment intervals.
+  // Initialized to 0 so the render stays pure; seeded from Date.now() on the
+  // microtask after mount (off the effect body) and refreshed every 30s while
+  // open. Sub-millisecond seed delay is imperceptible for relative-time
+  // labels ("2m ago") which are the only consumers.
+  const [tick, setTick] = useState<number>(0);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.resolve().then(() => { if (!cancelled) setTick(Date.now()); });
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     if (!isOpen) return;
     const id = setInterval(() => setTick(Date.now()), 30_000);

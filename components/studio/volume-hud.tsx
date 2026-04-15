@@ -9,11 +9,16 @@ export function VolumeHud() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const prevRef = useRef(masterVolume);
 
+  // Why: subscribes to external masterVolume changes (zustand store) to flash
+  // a transient HUD. The initial-mount guard ensures this only fires on real
+  // volume deltas, and the timeout coalesces rapid changes — no cascade.
+  // setVisible is the UI-sync primitive for this external signal.
   useEffect(() => {
     // Skip the initial mount
     if (prevRef.current === masterVolume) return;
     prevRef.current = masterVolume;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVisible(true);
     clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => setVisible(false), 1500);
