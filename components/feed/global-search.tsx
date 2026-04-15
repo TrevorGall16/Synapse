@@ -31,6 +31,13 @@ export function GlobalSearch({ posts = [] }: Props) {
   const wrapRef  = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [hi, setHi]     = useState(0);
+  // Reset highlight whenever searchQuery changes — store prev value in state so
+  // the reset happens during render, not in an effect (avoids cascading renders).
+  const [prevQuery, setPrevQuery] = useState(searchQuery);
+  if (prevQuery !== searchQuery) {
+    setPrevQuery(searchQuery);
+    setHi(0);
+  }
 
   const clear = useCallback(() => {
     setSearchQuery("");
@@ -116,9 +123,6 @@ export function GlobalSearch({ posts = [] }: Props) {
       flat: [...videoRes, ...creatorRes, ...tagRes],
     };
   }, [index, posts, searchQuery]);
-
-  // Reset highlight whenever results change.
-  useEffect(() => { setHi(0); }, [searchQuery]);
 
   const navigate = useCallback((r: Result) => {
     setOpen(false);

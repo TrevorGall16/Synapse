@@ -19,12 +19,12 @@ export function FocusedBreadcrumb({ onNavigateDashboard }: FocusedBreadcrumbProp
   const [editValue, setEditValue] = useState(name);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Seed editValue when entering edit mode is handled in the onClick that sets
+  // editing=true (see below). The effect below only runs the DOM side-effect
+  // (select text) — no setState — so it no longer trips set-state-in-effect.
   useEffect(() => {
-    if (editing) {
-      setEditValue(name);
-      inputRef.current?.select();
-    }
-  }, [editing, name]);
+    if (editing) inputRef.current?.select();
+  }, [editing]);
 
   const commitRename = () => {
     const trimmed = editValue.trim();
@@ -60,7 +60,10 @@ export function FocusedBreadcrumb({ onNavigateDashboard }: FocusedBreadcrumbProp
         />
       ) : (
         <button
-          onClick={() => setEditing(true)}
+          onClick={() => {
+            setEditValue(name);
+            setEditing(true);
+          }}
           className="group flex items-center gap-1.5 rounded px-1.5 py-0.5 transition-colors hover:bg-white/8"
         >
           <span className="text-[11px] font-semibold text-white/80">{name}</span>

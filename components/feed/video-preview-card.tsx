@@ -77,6 +77,13 @@ export function VideoPreviewCard({
   const inViewRef       = useRef(false);
 
   const [hasError, setHasError] = useState(false);
+  // Reset hasError when the source url changes — prev-value-in-render pattern
+  // avoids a setState-in-effect cascade (see React docs: "Resetting state when a prop changes").
+  const [prevUrl, setPrevUrl] = useState(url);
+  if (prevUrl !== url) {
+    setPrevUrl(url);
+    setHasError(false);
+  }
 
   // ── Rule 3: frame-accurate loop via GlobalTicker ─────────────────────────
   // Runs at ~16ms (60fps) — far more precise than onTimeUpdate's ~250ms.
@@ -116,7 +123,6 @@ export function VideoPreviewCard({
 
   // ── Error handler ─────────────────────────────────────────────────────────
   const handleError = useCallback(() => setHasError(true), []);
-  useEffect(() => { setHasError(false); }, [url]);
 
   // ── IntersectionObserver (shared pool, Rule 1) ───────────────────────────
   // The observeViewport callback fires as a native browser callback — NOT

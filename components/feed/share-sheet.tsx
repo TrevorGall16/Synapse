@@ -59,6 +59,17 @@ export function ShareSheet({ target, open, onClose, positionClassName, withBackd
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  // Reset copied/errorMsg whenever the sheet re-opens. Prev-value-in-render pattern
+  // avoids a setState-in-effect cascade and runs synchronously with the open toggle.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
+    if (open) {
+      setCopied(false);
+      setErrorMsg(null);
+    }
+  }
+
   // Click-outside close (only when we're not rendering our own backdrop —
   // the backdrop already handles dismissal).
   useEffect(() => {
@@ -77,9 +88,6 @@ export function ShareSheet({ target, open, onClose, positionClassName, withBackd
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
-
-  // Reset copied state whenever the sheet re-opens.
-  useEffect(() => { if (open) { setCopied(false); setErrorMsg(null); } }, [open]);
 
   const handleCopy = useCallback(() => {
     const url = buildShareUrl(target);

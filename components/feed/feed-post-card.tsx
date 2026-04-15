@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useMemo, useEffect, useCallback } from "react";
+import { useRef, useState, useMemo, useEffect, useCallback, useSyncExternalStore } from "react";
 import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch, Download } from "lucide-react";
 import { type FeedPost, isBlobUrl, useFeedStore, FALLBACK_VIDEO_URL } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
@@ -37,8 +37,13 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   const [hovered, setHovered] = useState(false);
   const [mediaOffline, setMediaOffline] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // Gate client-only renders to prevent SSR/hydration mismatch from Math.sin() bar heights
-  const [mounted, setMounted] = useState(false);
+  // Gate client-only renders to prevent SSR/hydration mismatch from Math.sin() bar heights.
+  // useSyncExternalStore flips true after hydration without a setState-in-effect.
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const [toast, setToast] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -100,8 +105,6 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
       .map((c) => buildTextStyle(c, phMicros))
       .filter((r): r is NonNullable<ReturnType<typeof buildTextStyle>> => r !== null);
   }, [post.projectSnapshot, firstClipOffset]);
-
-  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     const v = videoRef.current;

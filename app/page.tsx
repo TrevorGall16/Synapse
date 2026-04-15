@@ -203,6 +203,10 @@ export default function DiscoveryFeedPage() {
 
   // Hydrate search/tag filter from URL on mount — so external links
   // (e.g. from global search tag results, or a refresh) restore the filter state.
+  /* eslint-disable react-hooks/set-state-in-effect -- Why: one-shot mount hydration
+     from window.location.search (external browser API, unavailable during SSR).
+     setSearchQuery is a store setter we don't own; lazy useState init can't reach it.
+     No cascade risk: empty dep array, runs exactly once after hydration. */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const s = params.get("search");
@@ -215,6 +219,7 @@ export default function DiscoveryFeedPage() {
       setSearchQuery(s);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Infinite scroll — load more when sentinel enters viewport
   useEffect(() => {
