@@ -73,8 +73,13 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
   const observerRef             = useRef<IntersectionObserver | null>(null);
 
   // Rebuild queue when seed post changes — skipped entirely when locked.
+  // Why: subscribes to seed-post changes to rebuild the derived play queue.
+  // setQueue is the UI-sync here; `buildQueue` is pure and the dep list is
+  // deliberately narrow (post.id only — allPosts deltas don't re-shuffle an
+  // open session, scroll-append handles those). No cascade risk.
   useEffect(() => {
     if (isLocked) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setQueue(buildQueue(post, allPosts));
   }, [post.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -94,6 +99,10 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
 
   // When the active cell changes (scroll), hydrate it + its immediate neighbors.
   // Progressive: ids accumulate, so cells never unmount mid-session.
+  // Why: subscribes to IntersectionObserver-driven activePostId changes. The
+  // setState inside ensureHydrated is idempotent (returns prev when nothing
+  // new, short-circuiting the render) so there is no cascade — each scroll
+  // transition adds at most 3 ids once, then no-ops on re-entry.
   useEffect(() => {
     if (!activePostId) return;
     const idx = queue.findIndex((p) => p.id === activePostId);
@@ -101,6 +110,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     const ids = [activePostId];
     if (queue[idx - 1]) ids.push(queue[idx - 1].id);
     if (queue[idx + 1]) ids.push(queue[idx + 1].id);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     ensureHydrated(ids);
   }, [activePostId, queue, ensureHydrated]);
 

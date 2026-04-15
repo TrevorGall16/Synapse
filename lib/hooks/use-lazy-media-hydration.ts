@@ -20,20 +20,16 @@ export function useLazyMediaUrl(
   previewUrl: string | undefined,
 ): { ref: React.RefObject<HTMLDivElement | null>; url: string | null } {
   const nodeRef = useRef<HTMLDivElement>(null);
-  const [url, setUrl] = useState<string | null>(() => {
-    // Immediately use non-blob URLs (remote / data URI)
-    if (previewUrl && !previewUrl.startsWith("blob:")) return previewUrl;
-    return null;
-  });
+  // Only tracks IDB-reconstructed blob URLs. Non-blob URLs flow through the
+  // derived return below — no effect-setState needed.
+  const [hydratedUrl, setHydratedUrl] = useState<string | null>(null);
+
+  const isBlobSource = !previewUrl || previewUrl.startsWith("blob:");
 
   useEffect(() => {
     if (!mediaId) return;
-
-    // Non-blob URLs need no IDB lookup
-    if (previewUrl && !previewUrl.startsWith("blob:")) {
-      setUrl(previewUrl);
-      return;
-    }
+    // Non-blob URLs are returned directly below; skip the IO watcher entirely.
+    if (!isBlobSource) return;
 
     let cancelled = false;
     const obs = new IntersectionObserver(
@@ -41,7 +37,7 @@ export function useLazyMediaUrl(
         if (!entry.isIntersecting) return;
         obs.disconnect();
         refreshMediaUrl(mediaId).then((fresh) => {
-          if (!cancelled && fresh) setUrl(fresh);
+          if (!cancelled && fresh) setHydratedUrl(fresh);
         }).catch(() => {});
       },
       { rootMargin: "200px" },
@@ -49,7 +45,8 @@ export function useLazyMediaUrl(
 
     if (nodeRef.current) obs.observe(nodeRef.current);
     return () => { cancelled = true; obs.disconnect(); };
-  }, [mediaId, previewUrl]);
+  }, [mediaId, isBlobSource]);
 
+  const url = !isBlobSource ? (previewUrl as string) : hydratedUrl;
   return { ref: nodeRef, url };
 }

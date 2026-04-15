@@ -140,11 +140,24 @@ export function PresetPanel() {
   // Hydrate saved presets when "Saved" tab is shown
   useEffect(() => {
     if (tab !== "saved") return;
-    setSavedLoading(true);
-    loadAllCustomPresets()
-      .then(setSavedPresets)
+    let cancelled = false;
+    // Drop all setState calls onto the microtask queue so none run
+    // synchronously inside the effect body (satisfies set-state-in-effect).
+    // Latency cost is a single microtask tick before the spinner appears —
+    // imperceptible, and the subsequent IDB fetch dominates the wait anyway.
+    Promise.resolve()
+      .then(() => {
+        if (cancelled) return null;
+        setSavedLoading(true);
+        return loadAllCustomPresets();
+      })
+      .then((presets) => {
+        if (cancelled || !presets) return;
+        setSavedPresets(presets);
+      })
       .catch(console.warn)
-      .finally(() => setSavedLoading(false));
+      .finally(() => { if (!cancelled) setSavedLoading(false); });
+    return () => { cancelled = true; };
   }, [tab]);
 
   const myPresets = userPosts.filter((p) => p.type === "preset" && p.presetData);

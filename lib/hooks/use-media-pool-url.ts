@@ -29,33 +29,22 @@ export function useMediaPoolUrl(clipId: string): { url: string | null } {
 
   // Track whether the URL we hold was created locally (needs revocation on cleanup).
   const ownedBlobRef = useRef<string | null>(null);
-  const [url, setUrl] = useState<string | null>(() => {
-    // Safe to return a non-blob URL immediately — no hydration concerns.
-    if (storePreviewUrl && !storePreviewUrl.startsWith("blob:")) {
-      return storePreviewUrl;
-    }
-    // Blob URLs from the store are alive in this session — use them directly.
-    if (storePreviewUrl?.startsWith("blob:")) return storePreviewUrl;
-    return null;
-  });
+  // Only tracks IDB-reconstructed URLs. Store-owned URLs flow through the
+  // derived return below — no effect-setState needed for the common case.
+  const [hydratedUrl, setHydratedUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!clipId) return;
+    // Store already has a live URL — rendered directly; skip IDB.
+    if (storePreviewUrl) return;
 
-    // If the store already has a live URL, use it — no IDB needed.
-    if (storePreviewUrl) {
-      setUrl(storePreviewUrl);
-      return;
-    }
-
-    // No URL in store → reconstruct from IDB.
     let cancelled = false;
     refreshMediaUrl(clipId)
       .then((fresh) => {
         if (cancelled || !fresh) return;
         // Mark as locally owned so we revoke on cleanup.
         ownedBlobRef.current = fresh;
-        setUrl(fresh);
+        setHydratedUrl(fresh);
       })
       .catch(() => {});
 
@@ -69,5 +58,6 @@ export function useMediaPoolUrl(clipId: string): { url: string | null } {
     };
   }, [clipId, storePreviewUrl]);
 
+  const url = storePreviewUrl ?? hydratedUrl;
   return { url };
 }
