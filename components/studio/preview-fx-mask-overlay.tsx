@@ -59,13 +59,16 @@ export function PreviewFxMaskOverlay({ clip, aspectRatio, zIndex }: PreviewFxMas
   const selfManaged = isActive && (fxMask!.maskType === "polygon" || (fxMask!.masks?.length ?? 0) > 0);
   const simpleCssClipPath = isActive && !selfManaged ? buildMaskedFxClipPath(fxMask!) : undefined;
 
-  // Refs so the GlobalTick callback always reads the latest values without re-registering
+  // Refs so the GlobalTick callback always reads the latest values without re-registering.
+  // Assignments happen in an effect (not during render) to satisfy react-hooks/refs.
   const selfManagedRef = useRef(selfManaged);
-  selfManagedRef.current = selfManaged;
   const projectSettingsRef = useRef(projectSettings);
-  projectSettingsRef.current = projectSettings;
   const clipIdRef = useRef(clip.id);
-  clipIdRef.current = clip.id;
+  useEffect(() => {
+    selfManagedRef.current = selfManaged;
+    projectSettingsRef.current = projectSettings;
+    clipIdRef.current = clip.id;
+  });
 
   // Clear canvas when switching away from self-managed mode
   useEffect(() => {
