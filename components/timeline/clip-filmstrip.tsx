@@ -14,7 +14,7 @@ export function ClipFilmstrip({ clip, media, clipWidthPx }: ClipFilmstripProps) 
   const thumbCount = Math.min(10, Math.max(1, Math.ceil(clipWidthPx / 80)));
   const thumbWidth = clipWidthPx / thumbCount;
 
-  // Image clips: tile the source image
+  // Image clips: tile the source image. No hooks needed.
   if (media.type === "image") {
     return (
       <div className="pointer-events-none absolute inset-0 flex overflow-hidden opacity-40">
@@ -31,7 +31,19 @@ export function ClipFilmstrip({ clip, media, clipWidthPx }: ClipFilmstripProps) 
     );
   }
 
-  // Video clips: extract static JPEG frames via canvas (no <video> in DOM)
+  // Extracted sub-component so the video branch's hooks sit at the top of their
+  // function body and never run for the image branch — satisfies the
+  // rules-of-hooks contract that was previously tripped by the early return.
+  return <VideoFilmstrip media={media} thumbCount={thumbCount} thumbWidth={thumbWidth} />;
+}
+
+interface VideoFilmstripProps {
+  media: MediaPoolItem;
+  thumbCount: number;
+  thumbWidth: number;
+}
+
+function VideoFilmstrip({ media, thumbCount, thumbWidth }: VideoFilmstripProps) {
   const [frames, setFrames] = useState<string[]>([]);
 
   useEffect(() => {
