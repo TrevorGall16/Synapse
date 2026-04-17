@@ -98,7 +98,8 @@ export function GlobalSearch({ posts = [] }: Props) {
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     // Escape closes the dropdown but keeps the query.
     if (e.key === "Escape") { setOpen(false); return; }
-    // Tab is not intercepted — native focus traversal continues; blur closes the dropdown.
+    // Tab is not intercepted — native focus traversal continues. The
+    // dropdown closes via the outer click-outside mousedown handler.
     if (e.key === "Tab") return;
 
     if (!open && (e.key === "ArrowDown" || e.key === "Enter")) setOpen(true);

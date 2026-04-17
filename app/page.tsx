@@ -211,7 +211,13 @@ export default function DiscoveryFeedPage() {
     const params = new URLSearchParams(window.location.search);
     const s = params.get("search");
     const t = params.get("tag");
-    if (t) {
+    const c = params.get("channel");
+    if (c) {
+      // Reverse-lookup: URL carries the slug (e.g. "blonde"); state holds
+      // the canonical CHANNELS name (e.g. "Blonde"). Unknown slugs are ignored.
+      const match = CHANNELS.find((name) => channelSlug(name) === c);
+      if (match) setActiveChannel(match);
+    } else if (t) {
       const norm = t.startsWith("#") ? t : `#${t}`;
       setActiveTag(norm);
       setSearchQuery(t.replace(/^#/, ""));
