@@ -45,7 +45,6 @@ export function useMediaHydration() {
           const url = await refreshMediaUrl(item.id);
           if (url && !cancelled) {
             useProjectStore.getState().updateMediaItemUrl(item.id, url);
-            console.log(`IDB Recovery Success: ${item.name} (${item.id.slice(0, 8)})`);
           }
         })
       );

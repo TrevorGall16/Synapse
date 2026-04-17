@@ -256,7 +256,6 @@ class AudioEngine {
   syncTrackState(trackId: string, state: TrackAudioState) {
     this.ensureResumed();
     const chain = this.trackChains.get(trackId);
-    console.log("Syncing Track:", trackId, "Exists:", this.trackChains.has(trackId));
     if (!chain) return;
 
     // Store the desired volume
