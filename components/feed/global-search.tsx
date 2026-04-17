@@ -1,24 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Search, X, Video, User as UserIcon, Hash } from "lucide-react";
+import { Search, X, User as UserIcon, Hash } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useSearchStore } from "@/lib/store/search-store";
 import type { FeedPost } from "@/lib/store/feed-store";
-import { normalizeTag } from "@/lib/mock-posts";
-import { buildPostIndex, rankPosts, fuzzyMatch } from "@/lib/search-index";
+import { channelSlug, type Channel } from "@/lib/config/taxonomy";
+import { buildAutocompleteSuggestions } from "@/lib/search-autocomplete";
 
-type ResultKind = "video" | "creator" | "tag";
+type ResultKind = "channel" | "creator";
 interface Result {
   kind: ResultKind;
-  id: string;      // stable key
-  label: string;   // primary display
-  sub?: string;    // secondary display
-  payload: string; // routing target
+  id: string;     // stable key
+  label: string;  // primary display, e.g. "#Anal" or "@aurora_vj"
+  payload: string; // channel name OR creator handle
 }
 
 interface Props {
-  /** Candidate posts to search across. Caller passes the merged user + mock list. */
+  /** Candidate posts — used only as the creator-handle source. */
   posts?: FeedPost[];
 }
 
@@ -31,8 +30,7 @@ export function GlobalSearch({ posts = [] }: Props) {
   const wrapRef  = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [hi, setHi]     = useState(0);
-  // Reset highlight whenever searchQuery changes — store prev value in state so
-  // the reset happens during render, not in an effect (avoids cascading renders).
+  // Reset highlight on every query change — derived, not in an effect.
   const [prevQuery, setPrevQuery] = useState(searchQuery);
   if (prevQuery !== searchQuery) {
     setPrevQuery(searchQuery);
@@ -44,7 +42,7 @@ export function GlobalSearch({ posts = [] }: Props) {
     inputRef.current?.focus();
   }, [setSearchQuery]);
 
-  // Cmd/Ctrl+K: focus + open dropdown from anywhere on the page.
+  // Cmd/Ctrl+K: global focus shortcut.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -58,7 +56,7 @@ export function GlobalSearch({ posts = [] }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Click outside → close dropdown (keeps query in the input).
+  // Click outside → close dropdown; query stays in the input.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -68,78 +66,42 @@ export function GlobalSearch({ posts = [] }: Props) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  // Derived index — memoized on the posts array identity. Caller (home feed)
-  // already memoizes allPosts, so this only rebuilds when the catalog changes.
-  const index = useMemo(() => buildPostIndex(posts), [posts]);
-
-  // Grouped results — uses index byTag/byCreator for O(1) lookups where
-  // possible, and weighted scoring (title > tags > desc > creator) for videos.
-  const { videos, creators, tags, flat } = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return { videos: [] as Result[], creators: [] as Result[], tags: [] as Result[], flat: [] as Result[] };
-    const raw = q.replace(/^[@#]/, "");
-
-    // Videos: weighted relevance via scorePost, bounded to 6.
-    const ranked = rankPosts(posts, raw, 6);
-    const videoRes: Result[] = ranked.map((p) => ({
-      kind: "video",
-      id: `v-${p.id}`,
-      label: p.title,
-      sub: `@${p.user.handle}`,
-      payload: p.id,
+  const { channels, creators, flat } = useMemo(() => {
+    const { channels, creators } = buildAutocompleteSuggestions(posts, searchQuery);
+    const channelRes: Result[] = channels.map((c) => ({
+      kind: "channel",
+      id: `ch-${c}`,
+      label: `#${c}`,
+      payload: c,
     }));
-
-    // Creators: substring on handle; fallback to fuzzyMatch for longer queries.
-    const creatorRes: Result[] = [];
-    const seenCreators = new Set<string>();
-    for (const [handle] of index.byCreator) {
-      if (seenCreators.has(handle)) continue;
-      if (handle.includes(raw) || fuzzyMatch(handle, raw)) {
-        creatorRes.push({
-          kind: "creator",
-          id: `c-${handle}`,
-          label: `@${handle}`,
-          payload: handle,
-        });
-        seenCreators.add(handle);
-        if (creatorRes.length >= 5) break;
-      }
-    }
-
-    // Tags: substring on normalized tag; fuzzyMatch for longer queries.
-    const tagRes: Result[] = [];
-    const rawNorm = normalizeTag(raw);
-    for (const [tag] of index.byTag) {
-      if (tag.includes(rawNorm) || fuzzyMatch(tag, rawNorm)) {
-        tagRes.push({ kind: "tag", id: `t-${tag}`, label: `#${tag}`, payload: tag });
-        if (tagRes.length >= 8) break;
-      }
-    }
-
-    return {
-      videos: videoRes,
-      creators: creatorRes,
-      tags: tagRes,
-      flat: [...videoRes, ...creatorRes, ...tagRes],
-    };
-  }, [index, posts, searchQuery]);
+    const creatorRes: Result[] = creators.map((h) => ({
+      kind: "creator",
+      id: `cr-${h}`,
+      label: `@${h}`,
+      payload: h,
+    }));
+    return { channels: channelRes, creators: creatorRes, flat: [...channelRes, ...creatorRes] };
+  }, [posts, searchQuery]);
 
   const navigate = useCallback((r: Result) => {
     setOpen(false);
-    if (r.kind === "video") {
-      router.push(`/video/${r.payload}`);
-    } else if (r.kind === "creator") {
-      router.push(`/profile/${r.payload}`);
+    if (r.kind === "channel") {
+      // Channel selected → activate channel filter on the home feed and
+      // clear the free-text query so the filter is unambiguous.
+      setSearchQuery("");
+      router.push(`/?channel=${channelSlug(r.payload as Channel)}`);
     } else {
-      // Tag: sync the global search store + URL so the home feed filters instantly.
-      setSearchQuery(r.payload);
-      router.push(`/?search=${encodeURIComponent(r.payload)}`);
+      router.push(`/profile/${r.payload}`);
     }
   }, [router, setSearchQuery]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Escape") { setOpen(false); clear(); return; }
-    if (!open) { if (e.key === "ArrowDown" || e.key === "Enter") setOpen(true); }
+    // Escape closes the dropdown but keeps the query.
+    if (e.key === "Escape") { setOpen(false); return; }
+    // Tab is not intercepted — native focus traversal continues; blur closes the dropdown.
+    if (e.key === "Tab") return;
+
+    if (!open && (e.key === "ArrowDown" || e.key === "Enter")) setOpen(true);
     if (flat.length === 0) return;
     if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => (h + 1) % flat.length); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => (h - 1 + flat.length) % flat.length); }
@@ -154,7 +116,7 @@ export function GlobalSearch({ posts = [] }: Props) {
         {items.map((r, i) => {
           const idx = startIdx + i;
           const active = idx === hi;
-          const Icon = r.kind === "video" ? Video : r.kind === "creator" ? UserIcon : Hash;
+          const Icon = r.kind === "channel" ? Hash : UserIcon;
           return (
             <button
               key={r.id}
@@ -166,7 +128,6 @@ export function GlobalSearch({ posts = [] }: Props) {
             >
               <Icon size={11} className="shrink-0 text-white/40" />
               <span className="flex-1 truncate text-[11px] text-white/85">{r.label}</span>
-              {r.sub && <span className="shrink-0 text-[10px] text-white/35">{r.sub}</span>}
             </button>
           );
         })}
@@ -195,7 +156,7 @@ export function GlobalSearch({ posts = [] }: Props) {
           onFocus={() => setOpen(true)}
           onChange={(e) => { setSearchQuery(e.target.value); setOpen(true); }}
           onKeyDown={onKeyDown}
-          placeholder="Search videos, creators, tags…"
+          placeholder="Search channels & creators…"
           spellCheck={false}
           className="flex-1 bg-transparent text-[11px] text-white/80 placeholder:text-white/25 outline-none"
         />
@@ -214,9 +175,8 @@ export function GlobalSearch({ posts = [] }: Props) {
         <div className="absolute left-1/2 top-full z-50 mt-2 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-xl border border-white/12 bg-[#141414]/95 shadow-2xl backdrop-blur-xl">
           {flat.length > 0 ? (
             <div className="max-h-[60vh] overflow-y-auto" style={{ scrollbarWidth: "none" }}>
-              {renderGroup("Videos", videos, 0)}
-              {renderGroup("Creators", creators, videos.length)}
-              {renderGroup("Tags", tags, videos.length + creators.length)}
+              {renderGroup("Channels", channels, 0)}
+              {renderGroup("Creators", creators, channels.length)}
             </div>
           ) : (
             <div className="px-4 py-6 text-center">
