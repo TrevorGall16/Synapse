@@ -66,7 +66,29 @@
       "Bash(git checkout:*)",
       "Bash(ls lib/utils/coords*.ts)",
       "Bash(ls:*)",
-      "Bash(npx playwright:*)"
+      "Bash(npx playwright:*)",
+      "Bash(awk '{print $NF}')",
+      "Bash(awk NR==280,NR==295:*)",
+      "Bash(awk NR>=255,NR<=280:*)",
+      "Bash(git restore:*)",
+      "Bash(awk NR>=430,NR<=448:*)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(grep -n \"clip-event\" /tmp-lint.txt)",
+      "Bash(awk '{$1=$1; print}')",
+      "Bash(awk '-F  ' '{print $NF}')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/studio)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/explore)",
+      "Bash(wait)",
+      "Bash(curl -s -w \"\\\\nHTTP %{http_code}\\\\n\" http://localhost:3000/profile/you)",
+      "Bash(netstat -ano)",
+      "Bash(PORT=3005 npm run *)",
+      "Bash(curl -L -o public/fonts/geist-sans.woff2 https://github.com/vercel/geist-font/raw/1.4.1/packages/next/dist/fonts/geist-sans/Geist-Variable.woff2)",
+      "Bash(curl -L -o public/fonts/geist-mono.woff2 https://github.com/vercel/geist-font/raw/1.4.1/packages/next/dist/fonts/geist-mono/GeistMono-Variable.woff2)",
+      "Bash(file *)",
+      "Bash(rm public/fonts/*.woff2)",
+      "Bash(npm info *)",
+      "Bash(npm uninstall *)"
     ]
   }
 }

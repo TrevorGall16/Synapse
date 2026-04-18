@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState, useMemo, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRef, useState, useMemo, useCallback, useEffect, startTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Zap, TrendingUp, Upload, User, ArrowUp, Trash2 } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
@@ -14,7 +14,7 @@ import { retainMedia } from "@/lib/store/media-pool-db";
 import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
 import { normalizeTag } from "@/lib/mock-posts";
 import { rankPosts } from "@/lib/search-index";
-import { CHANNELS, channelSlug } from "@/lib/config/taxonomy";
+import { CHANNELS, channelSlug, type Channel } from "@/lib/config/taxonomy";
 import { rankByWindow, TIME_WINDOWS, TIME_WINDOW_LABEL, DEFAULT_WINDOW_FOR_SORT, type TimeWindow } from "@/lib/ranking";
 import { navigateToCreator } from "@/lib/nav/theater-nav";
 
@@ -77,11 +77,19 @@ function Toast({ msg }: { msg: string }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function DiscoveryFeedPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [theaterPostId, setTheaterPostId] = useState<string | null>(null);
   const [activeTag, setActiveTag]     = useState<string | null>(null);
-  /** Active Channel filter — sourced from CHANNELS master taxonomy.
-   *  Orthogonal to activeTag (free-form keyword filtering via search). */
-  const [activeChannel, setActiveChannel] = useState<string | null>(null);
+  // URL is the single source of truth for the channel filter. Any mutation
+  // goes through router.replace(params); activeChannel is a pure derivation
+  // of ?channel=slug against the fixed CHANNELS taxonomy. Unknown slugs
+  // resolve to null (no filter) so a stale/garbled URL degrades gracefully.
+  const channelParam = searchParams.get("channel");
+  const activeChannel = useMemo<Channel | null>(() => {
+    if (!channelParam) return null;
+    const slug = channelParam.toLowerCase();
+    return CHANNELS.find((c) => channelSlug(c) === slug) ?? null;
+  }, [channelParam]);
   // Persist sort/window to localStorage so returning users keep their choice.
   // First-time sessions default to Trending + Today.
   const [feedSort, setFeedSort] = useState<"latest" | "popular" | "trending">(() => {
@@ -157,10 +165,10 @@ export default function DiscoveryFeedPage() {
     // the channels field, so existing mocks still appear when a channel is active.
     let base = allPosts;
     if (activeChannel) {
-      const slug = activeChannel.toLowerCase();
+      const want = activeChannel.toLowerCase();
       base = base.filter((p) =>
-        p.channels?.includes(activeChannel) ||
-        p.tags.some((t) => t.toLowerCase().replace(/^#+/, "") === slug),
+        p.channels?.some((c) => c.toLowerCase() === want) ||
+        p.tags.some((t) => t.toLowerCase().replace(/^#+/, "") === want),
       );
     }
     // Tag filter: free-form keyword (search pill). Compare on normalized form.
@@ -201,23 +209,16 @@ export default function DiscoveryFeedPage() {
     });
   }, [displayPosts, searchQuery, followedSet, feedSort]);
 
-  // Hydrate search/tag filter from URL on mount — so external links
-  // (e.g. from global search tag results, or a refresh) restore the filter state.
+  // Hydrate tag / free-text search from URL on mount. The channel filter is
+  // live-derived from useSearchParams() above — no effect needed for it.
   /* eslint-disable react-hooks/set-state-in-effect -- Why: one-shot mount hydration
-     from window.location.search (external browser API, unavailable during SSR).
-     setSearchQuery is a store setter we don't own; lazy useState init can't reach it.
-     No cascade risk: empty dep array, runs exactly once after hydration. */
+     from window.location.search. setSearchQuery is an external store setter
+     so lazy useState init can't reach it. Empty deps; runs exactly once. */
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const s = params.get("search");
     const t = params.get("tag");
-    const c = params.get("channel");
-    if (c) {
-      // Reverse-lookup: URL carries the slug (e.g. "blonde"); state holds
-      // the canonical CHANNELS name (e.g. "Blonde"). Unknown slugs are ignored.
-      const match = CHANNELS.find((name) => channelSlug(name) === c);
-      if (match) setActiveChannel(match);
-    } else if (t) {
+    if (t) {
       const norm = t.startsWith("#") ? t : `#${t}`;
       setActiveTag(norm);
       setSearchQuery(t.replace(/^#/, ""));
@@ -247,6 +248,43 @@ export default function DiscoveryFeedPage() {
   const scrollToTop = useCallback(() => {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
+
+  // Filter-URL mutation primitives. All filter updates go through these so
+  // the URL stays authoritative, other query params survive, and navigation
+  // uses router.replace (keeps the back button anchored on the *real* entry
+  // point rather than each chip toggle). startTransition yields to the
+  // scheduler so the filter recompute doesn't stutter the chip animation.
+  const navigateFilters = useCallback((mutate: (p: URLSearchParams) => void) => {
+    const params = new URLSearchParams(searchParams.toString());
+    mutate(params);
+    const qs = params.toString();
+    startTransition(() => router.replace(qs ? `/?${qs}` : "/"));
+  }, [router, searchParams]);
+
+  const selectChannel = useCallback((ch: Channel) => {
+    const slug = channelSlug(ch);
+    const isActive = channelParam === slug;
+    setActiveTag(null);
+    setSearchQuery("");
+    navigateFilters((p) => {
+      if (isActive) {
+        p.delete("channel");
+      } else {
+        p.set("channel", slug);
+        p.delete("search"); // avoid empty intersections with text search
+      }
+    });
+  }, [channelParam, navigateFilters, setSearchQuery]);
+
+  const clearFilters = useCallback(() => {
+    setActiveTag(null);
+    setSearchQuery("");
+    navigateFilters((p) => {
+      p.delete("channel");
+      p.delete("search");
+      p.delete("tag");
+    });
+  }, [navigateFilters, setSearchQuery]);
 
   const showToast = (msg: string, delay = 700) => {
     setToast(msg);
@@ -393,27 +431,18 @@ export default function DiscoveryFeedPage() {
             >{TIME_WINDOW_LABEL[w]}</button>
           ))}
           <div className="mx-1 w-px self-stretch bg-white/10" />
-          <Chip label="All" active={!activeChannel && !activeTag} onClick={() => {
-            setActiveChannel(null);
-            setActiveTag(null);
-            setSearchQuery("");
-            window.history.replaceState(null, "", "/");
-          }} />
-          {/* CHANNELS: fixed controlled list — clicking a channel filters the
-              feed on post.channels[] (with a legacy tag-substring fallback
-              for pre-channel seeds). Deep-links round-trip via ?channel=. */}
-          {CHANNELS.map((ch) => {
-            const active = activeChannel === ch;
-            return (
-              <Chip key={ch} label={ch} active={active} onClick={() => {
-                const next = active ? null : ch;
-                setActiveChannel(next);
-                setActiveTag(null); // channel and tag filters are mutually exclusive in the pill row
-                setSearchQuery("");
-                window.history.replaceState(null, "", next ? `/?channel=${channelSlug(ch)}` : "/");
-              }} />
-            );
-          })}
+          <Chip label="All" active={!activeChannel && !activeTag} onClick={clearFilters} />
+          {/* CHANNELS: fixed controlled list. The active chip is matched by
+              slug against the URL's ?channel= param, so a deep-linked filter
+              arrives already highlighted without a second render pass. */}
+          {CHANNELS.map((ch) => (
+            <Chip
+              key={ch}
+              label={ch}
+              active={channelParam === channelSlug(ch)}
+              onClick={() => selectChannel(ch)}
+            />
+          ))}
         </div>
       </div>
 
@@ -450,8 +479,16 @@ export default function DiscoveryFeedPage() {
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-20 text-center">
-              <p className="text-sm font-semibold text-white/25">No results for {searchQuery || activeTag}</p>
-              <button onClick={() => { setActiveTag(null); }} className="mt-3 text-[11px] text-brand-accent/70 hover:text-brand-text">Clear filter</button>
+              {activeChannel ? (
+                <p className="text-sm font-semibold text-white/25">
+                  No videos found in <span className="text-brand-text/80">#{activeChannel}</span>.
+                </p>
+              ) : (
+                <p className="text-sm font-semibold text-white/25">
+                  No results for {searchQuery || activeTag}
+                </p>
+              )}
+              <button onClick={clearFilters} className="mt-3 text-[11px] text-brand-accent/70 hover:text-brand-text">Clear Filter</button>
             </div>
           )}
         </div>

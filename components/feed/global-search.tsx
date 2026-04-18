@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, startTransition } from "react";
 import { Search, X, User as UserIcon, Hash } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSearchStore } from "@/lib/store/search-store";
 import type { FeedPost } from "@/lib/store/feed-store";
 import { channelSlug, type Channel } from "@/lib/config/taxonomy";
@@ -23,6 +23,7 @@ interface Props {
 
 export function GlobalSearch({ posts = [] }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const searchQuery    = useSearchStore((s) => s.searchQuery);
   const setSearchQuery = useSearchStore((s) => s.setSearchQuery);
 
@@ -86,14 +87,21 @@ export function GlobalSearch({ posts = [] }: Props) {
   const navigate = useCallback((r: Result) => {
     setOpen(false);
     if (r.kind === "channel") {
-      // Channel selected → activate channel filter on the home feed and
-      // clear the free-text query so the filter is unambiguous.
+      // Channel selection sets the URL's ?channel= key (SSOT) and drops any
+      // stale ?search= so the two filters don't intersect to an empty feed.
+      // Other params on "/" are preserved. replace() avoids a history entry
+      // per chip tap; startTransition keeps the dropdown close animation
+      // smooth while the feed recomputes.
       setSearchQuery("");
-      router.push(`/?channel=${channelSlug(r.payload as Channel)}`);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("channel", channelSlug(r.payload as Channel));
+      params.delete("search");
+      const qs = params.toString();
+      startTransition(() => router.replace(qs ? `/?${qs}` : "/"));
     } else {
       router.push(`/profile/${r.payload}`);
     }
-  }, [router, setSearchQuery]);
+  }, [router, searchParams, setSearchQuery]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     // Escape closes the dropdown but keeps the query.
