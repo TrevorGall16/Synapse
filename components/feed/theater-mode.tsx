@@ -123,7 +123,13 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
-  // URL masking via History API — push /video/:id on open, restore on close/back
+  // URL masking via History API. Push-once rule: lightweightPush fires EXACTLY
+  // ONCE per Theater session so the Home feed is the single "save point" in
+  // the browser history. Subsequent seed/active changes use lightweightReplace
+  // — swiping through 5 videos still leaves one Back press to reach Home.
+  //
+  // Popstate handling lives in the parent (app/page.tsx). It persists across
+  // Theater unmount, so Forward-button reopen also works.
   const originalUrlRef = useRef(window.location.href);
   const hasPushedRef = useRef(false);
 
@@ -132,21 +138,21 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     const targetPath = `/video/${post.id}`;
     if (window.location.pathname !== targetPath) {
       lightweightPush(targetPath, () => { /* no param change */ });
-      hasPushedRef.current = true;
     }
-    const onPopState = () => {
-      hasPushedRef.current = false;
-      onClose();
-    };
-    window.addEventListener("popstate", onPopState);
+    hasPushedRef.current = true;
     return () => {
-      window.removeEventListener("popstate", onPopState);
-      if (hasPushedRef.current && window.location.pathname.startsWith("/video/")) {
+      // Clean unmount (Escape/X button) restores the original URL. A back-button
+      // close leaves pathname !== /video/... so this is a no-op; the parent's
+      // popstate listener drove the state change there.
+      if (window.location.pathname.startsWith("/video/")) {
         lightweightReplace(new URL(originalUrlRef.current).pathname, () => { /* preserve params */ });
-        hasPushedRef.current = false;
       }
+      hasPushedRef.current = false;
     };
-  }, [post.id, onClose, lightweightPush, lightweightReplace]);
+    // Mount-once: post.id seed changes within an open session are handled by
+    // the replace effect below, not a second push.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Lock body scroll
   useEffect(() => {
@@ -207,14 +213,18 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     }
   }, []);
 
-  // Update masked URL when active post changes (scroll between videos)
+  // Sync masked URL on any video change — scroll (activePostId) or seed swap
+  // (post.id, e.g. from onNavigate). Always REPLACE so we never add history
+  // entries; the single push from the mount effect remains the only save point.
   useEffect(() => {
-    if (!activePostId || !hasPushedRef.current) return;
-    const targetPath = `/video/${activePostId}`;
+    if (!hasPushedRef.current) return;
+    const idForUrl = activePostId ?? post.id;
+    if (!idForUrl) return;
+    const targetPath = `/video/${idForUrl}`;
     if (window.location.pathname !== targetPath) {
       lightweightReplace(targetPath, () => { /* no param change */ });
     }
-  }, [activePostId, lightweightReplace]);
+  }, [activePostId, post.id, lightweightReplace]);
 
   const activePost = useMemo(() => queue.find((p) => p.id === activePostId) ?? queue[0], [queue, activePostId]);
   const versionSiblings = useMemo(() => {

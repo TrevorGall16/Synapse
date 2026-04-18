@@ -250,6 +250,28 @@ export default function DiscoveryFeedPage() {
     return () => observer.disconnect();
   }, []);
 
+  // Popstate mirror: treat window.location as the single source of truth for
+  // Theater open/close. Reads window.location.pathname directly (not
+  // useSearchParams / usePathname — those trail lightweight history writes).
+  // Pathname matches /video/:id → Theater open (Forward button). Otherwise →
+  // closed (Back button). Lives here rather than in TheaterMode so it survives
+  // across open sessions and handles Forward-button reopen.
+  /* eslint-disable-next-line react-hooks/set-state-in-effect -- Why: popstate is
+     the browser's authoritative signal, so setTheaterPostId is the UI sync. */
+  useEffect(() => {
+    const onPopState = () => {
+      const match = window.location.pathname.match(/^\/video\/([^/]+)$/);
+      if (match) {
+        primeTheaterGesture(match[1]);
+        setTheaterPostId(match[1]);
+      } else {
+        setTheaterPostId(null);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   // Back-to-top visibility
   const handleScroll = useCallback(() => {
     setShowBackToTop((scrollContainerRef.current?.scrollTop ?? 0) > 2000);
