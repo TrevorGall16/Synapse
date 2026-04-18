@@ -11,6 +11,7 @@ import { registerTickCallback, unregisterTickCallback } from "@/lib/store/global
 import type { ClipEvent } from "@/lib/store/types";
 import { buildPostShareUrl } from "@/lib/utils/share";
 import { isHot } from "@/lib/social";
+import { observeViewport } from "@/lib/utils/intersection-observer-pool";
 
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
 
@@ -30,9 +31,11 @@ interface FeedPostCardProps {
 
 export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImport, showDelete, pool }: FeedPostCardProps) {
   const currentUsername = useUserStore((s) => s.profile?.username);
-  const likedPostIds = useFeedStore((s) => s.likedPostIds);
-  const toggleLike   = useFeedStore((s) => s.toggleLike);
-  const liked = likedPostIds.includes(post.id);
+  // Per-post subscription — cards re-render only when their own like flips,
+  // not when any other card's like does. Zustand compares by reference
+  // identity, and boolean primitives are referentially stable across renders.
+  const liked = useFeedStore((s) => s.likedPostIds.includes(post.id));
+  const toggleLike = useFeedStore((s) => s.toggleLike);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hovered, setHovered] = useState(false);
   const [mediaOffline, setMediaOffline] = useState(false);
@@ -113,6 +116,31 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     v.addEventListener("loadedmetadata", onMeta);
     return () => v.removeEventListener("loadedmetadata", onMeta);
   }, [firstClipSrc, firstClipOffset]);
+
+  // Viewport-driven <video>.src strip: when the card leaves the viewport,
+  // null out src so the browser releases decoder + demux buffer. On re-enter
+  // the src is restored; the loadedmetadata effect above re-seeks to
+  // firstClipOffset so the visible frame matches the published thumbnail.
+  // The rootMargin is generous to prevent flicker at scroll-edge bounces.
+  useEffect(() => {
+    const article = videoRef.current?.parentElement;
+    if (!article || !firstClipSrc) return;
+    const unobserve = observeViewport(article, (isVisible) => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (isVisible) {
+        if (v.src !== firstClipSrc) {
+          v.src = firstClipSrc;
+          v.load();
+        }
+      } else {
+        v.pause();
+        v.removeAttribute("src");
+        v.load();
+      }
+    }, "400px");
+    return unobserve;
+  }, [firstClipSrc]);
 
   // Hover FX preview — drive `buildFxFilter` per tick using the SHARED helper
   // that Studio and Theater use, so animated effects (hue-rotate speed, strobe,
