@@ -5,6 +5,7 @@ import { X, Volume2, VolumeX, History, GitBranch, MessageCircle } from "lucide-r
 import type { FeedPost } from "@/lib/store/feed-store";
 import { TheaterCell } from "./theater-cell";
 import { CommentsDrawer } from "./theater/comments-drawer";
+import { useSafeUrlSync } from "@/lib/hooks/use-safe-url-sync";
 // Re-exported for backward compatibility — callers import primeTheaterGesture from this module.
 export { primeTheaterGesture } from "./theater-gesture";
 
@@ -71,6 +72,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
   const cellRefs                = useRef<Map<string, HTMLDivElement>>(new Map());
   const elementToPid            = useRef<WeakMap<HTMLDivElement, string>>(new WeakMap());
   const observerRef             = useRef<IntersectionObserver | null>(null);
+  const { lightweightPush, lightweightReplace } = useSafeUrlSync("/");
 
   // Rebuild queue when seed post changes — skipped entirely when locked.
   // Why: subscribes to seed-post changes to rebuild the derived play queue.
@@ -129,29 +131,22 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     if (!post.id) return;
     const targetPath = `/video/${post.id}`;
     if (window.location.pathname !== targetPath) {
-      window.history.pushState({ synapse_theater: true }, "", targetPath);
+      lightweightPush(targetPath, () => { /* no param change */ });
       hasPushedRef.current = true;
     }
     const onPopState = () => {
-      // User hit browser Back — close the overlay instead of navigating.
-      // Mark that Back already restored the URL so the cleanup doesn't double-navigate.
       hasPushedRef.current = false;
       onClose();
     };
     window.addEventListener("popstate", onPopState);
     return () => {
       window.removeEventListener("popstate", onPopState);
-      // Restore original URL when Theater unmounts via normal close (not back-button).
-      // Guard: only restore if the browser is still on a /video/ path.  If router.push
-      // already navigated elsewhere (e.g. /profile/…), don't clobber the new URL.
-      if (hasPushedRef.current) {
-        if (window.location.pathname.startsWith("/video/")) {
-          window.history.replaceState(null, "", originalUrlRef.current);
-        }
+      if (hasPushedRef.current && window.location.pathname.startsWith("/video/")) {
+        lightweightReplace(new URL(originalUrlRef.current).pathname, () => { /* preserve params */ });
         hasPushedRef.current = false;
       }
     };
-  }, [post.id, onClose]);
+  }, [post.id, onClose, lightweightPush, lightweightReplace]);
 
   // Lock body scroll
   useEffect(() => {
@@ -217,9 +212,9 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     if (!activePostId || !hasPushedRef.current) return;
     const targetPath = `/video/${activePostId}`;
     if (window.location.pathname !== targetPath) {
-      window.history.replaceState({ synapse_theater: true }, "", targetPath);
+      lightweightReplace(targetPath, () => { /* no param change */ });
     }
-  }, [activePostId]);
+  }, [activePostId, lightweightReplace]);
 
   const activePost = useMemo(() => queue.find((p) => p.id === activePostId) ?? queue[0], [queue, activePostId]);
   const versionSiblings = useMemo(() => {
