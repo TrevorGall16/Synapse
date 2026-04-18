@@ -211,7 +211,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
       <div className="relative" style={{ aspectRatio: "9/16", background: post.bg }}>
         {/* Delete confirmation overlay — only reachable when showDelete is true */}
         {confirmDelete && showDelete && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/85 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#0a0a0a]/85 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
             <p className="text-xs font-bold text-white">Delete this post?</p>
             <div className="flex gap-2">
               <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }} className="rounded-lg border border-white/15 px-3 py-1.5 text-[10px] font-semibold text-white/60 hover:bg-white/8">Cancel</button>
@@ -246,7 +246,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           }}
         />
         {mediaOffline && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/60">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-[#0a0a0a]/60">
             <WifiOff size={18} className="text-white/30" />
             <p className="text-[9px] font-semibold text-white/35">Media Offline</p>
           </div>
@@ -268,12 +268,12 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           <span className="absolute left-2.5 top-2.5 rounded-full bg-orange-500/70 px-1.5 py-0.5 text-[8px] font-semibold text-white">Local</span>
         )}
         {post.duration !== "—" && !hovered && (
-          <span className="absolute right-2.5 top-2.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[9px] tabular-nums text-white/70 backdrop-blur-sm">{post.duration}</span>
+          <span className="absolute right-2.5 top-2.5 rounded-full bg-[#0a0a0a]/60 px-1.5 py-0.5 text-[9px] tabular-nums text-white/70 backdrop-blur-sm">{post.duration}</span>
         )}
 
         {/* Play icon (fades out on hover) */}
         <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-200 ${hovered ? "opacity-0" : ""}`}>
-          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/30 backdrop-blur-sm">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-[#0a0a0a]/30 backdrop-blur-sm">
             <Play size={14} className="ml-0.5 text-white" fill="white" />
           </div>
         </div>
@@ -364,7 +364,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           </div>
         </div>
         {toast && (
-          <div className="pointer-events-none absolute left-1/2 bottom-4 z-30 -translate-x-1/2 rounded-full bg-black/80 px-3 py-1 text-[9px] font-semibold text-white/90 backdrop-blur-sm">
+          <div className="pointer-events-none absolute left-1/2 bottom-4 z-30 -translate-x-1/2 rounded-full bg-[#0a0a0a]/80 px-3 py-1 text-[9px] font-semibold text-white/90 backdrop-blur-sm">
             {toast}
           </div>
         )}

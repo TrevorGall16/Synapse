@@ -265,7 +265,7 @@ export function PanCropWindow() {
       <div className="px-3 pt-3">
         <div
           ref={canvasRef}
-          className={`relative mx-auto aspect-video w-full overflow-hidden rounded border border-white/20 bg-black ${
+          className={`relative mx-auto aspect-video w-full overflow-hidden rounded border border-white/20 bg-[#0a0a0a] ${
             maskType === "polygon" && !polygonClosed ? "cursor-crosshair" : "cursor-move"
           }`}
           onPointerDown={onCanvasPointerDown}

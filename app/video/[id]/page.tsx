@@ -55,7 +55,7 @@ export default function VideoPage() {
 
   if (!post) {
     return (
-      <div className="flex h-screen items-center justify-center bg-black">
+      <div className="flex h-screen items-center justify-center bg-[#0a0a0a]">
         <div className="text-center">
           <p className="text-lg font-bold text-white/60">Video not found</p>
           <p className="mt-1 text-sm text-white/30">ID: {params.id}</p>

@@ -233,10 +233,10 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
   }, [activePost, allPosts]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black">
+    <div className="fixed inset-0 z-50 bg-[#0a0a0a]">
       {/* Versions drawer */}
       {showVersions && (
-        <div className="fixed right-0 top-0 z-[55] flex h-full w-64 flex-col border-l border-white/10 bg-black/90 backdrop-blur-md">
+        <div className="fixed right-0 top-0 z-[55] flex h-full w-64 flex-col border-l border-white/10 bg-[#0a0a0a]/90 backdrop-blur-md">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <span className="text-xs font-bold text-white/80">Versions ({versionSiblings.length})</span>
             <button onClick={() => setShowVersions(false)} className="text-white/40 hover:text-white"><X size={13} /></button>
@@ -302,7 +302,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
                 className={`flex h-9 items-center gap-1.5 rounded-full border px-3 text-[11px] font-semibold backdrop-blur-sm transition-colors ${
                   showVersions
                     ? "border-brand-accent/50 bg-brand/25 text-brand-muted"
-                    : "border-white/20 bg-black/60 text-white/70 hover:bg-white/15 hover:text-white"
+                    : "border-white/20 bg-[#0a0a0a]/60 text-white/70 hover:bg-white/15 hover:text-white"
                 }`}
               >
                 <History size={13} />
@@ -312,13 +312,13 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
             <button
               onClick={() => setMuted((v) => !v)}
               title={muted ? "Unmute" : "Mute"}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/80 text-white drop-shadow-lg backdrop-blur-sm transition-colors hover:bg-black/90"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-[#0a0a0a]/80 text-white drop-shadow-lg backdrop-blur-sm transition-colors hover:bg-[#0a0a0a]/90"
             >
               {muted ? <VolumeX size={16} className="text-white" /> : <Volume2 size={16} className="text-white" />}
             </button>
             <button
               onClick={onClose}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-black/80 text-white/90 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-[#0a0a0a]/80 text-white/90 backdrop-blur-sm transition-colors hover:bg-white/20 hover:text-white"
             >
               <X size={15} />
             </button>

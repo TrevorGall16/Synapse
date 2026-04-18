@@ -167,24 +167,29 @@ function PeakMeter({ volume }: { volume: number }) {
   useGlobalTick(() => {
     const bar = barRef.current;
     if (!bar) return;
+    // scaleY runs on the compositor — no layout recalc per tick. The bar is
+    // sized to 100% height and scaled from the bottom edge, so a scale of 0
+    // collapses it and 1 fills the gutter.
     if (!isPlayingRef.current || volumeRef.current <= 0) {
-      bar.style.height = "0%";
+      bar.style.transform = "scaleY(0)";
       return;
     }
     const jitter = 0.9 + Math.random() * 0.2;
-    const h = Math.min(100, volumeRef.current * jitter);
-    bar.style.height = `${h}%`;
+    const h = Math.min(100, volumeRef.current * jitter) / 100;
+    bar.style.transform = `scaleY(${h})`;
   });
 
   return (
     <div className="relative h-16 w-[2px] overflow-hidden rounded-sm bg-white/5">
       <div
         ref={barRef}
-        className="absolute bottom-0 w-full rounded-sm"
+        className="absolute bottom-0 w-full origin-bottom rounded-sm"
         style={{
           background: "linear-gradient(to top, #22c55e, #eab308 70%, #ef4444 95%)",
-          height: "0%",
-          transition: "height 50ms",
+          height: "100%",
+          transform: "scaleY(0)",
+          transition: "transform 50ms",
+          willChange: "transform",
         }}
       />
     </div>

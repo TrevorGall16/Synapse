@@ -127,11 +127,11 @@ export function TheaterUI({
   return (
     <>
       {/* Black cover during initial load — sits below video (z-[2] vs video z-[10]) */}
-      {!videoVisible && !mediaError && <div className="absolute inset-0 z-[2] bg-black" />}
+      {!videoVisible && !mediaError && <div className="absolute inset-0 z-[2] bg-[#0a0a0a]" />}
 
       {/* Media pool hydration spinner */}
       {hydratedPool === null && !!post.projectSnapshot?.mediaPool?.length && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/80">
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-[#0a0a0a]/80">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/10 border-t-white/50" />
           <p className="text-[10px] text-white/50">Loading media…</p>
         </div>
@@ -177,7 +177,7 @@ export function TheaterUI({
         onClick={onTogglePlay}
         className={`absolute inset-x-0 top-0 bottom-12 z-[20] flex items-center justify-center transition-opacity duration-150 ${!isPlaying && !isIdle ? "opacity-100" : "opacity-0"}`}
       >
-        <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/25 bg-black/45 backdrop-blur-sm">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/25 bg-[#0a0a0a]/45 backdrop-blur-sm">
           {isPlaying
             ? <Pause size={24} className="text-white" fill="white" />
             : <Play size={24} className="ml-1 text-white" fill="white" />
@@ -191,7 +191,7 @@ export function TheaterUI({
           cards and is computed per-pool via lib/social.isHot. */}
       <div className="absolute left-3 top-3 z-[40] flex items-center gap-1.5">
         {post.duration !== "—" && (
-          <span className="rounded-full bg-black/60 px-2 py-0.5 text-[9px] tabular-nums text-white/70 backdrop-blur-sm">
+          <span className="rounded-full bg-[#0a0a0a]/60 px-2 py-0.5 text-[9px] tabular-nums text-white/70 backdrop-blur-sm">
             {post.duration}
           </span>
         )}
@@ -199,7 +199,7 @@ export function TheaterUI({
           <span className="rounded-full bg-orange-500/70 px-2 py-0.5 text-[9px] font-semibold text-white backdrop-blur-sm">Local</span>
         )}
         {post.remixedFromHandle && (
-          <div className="flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 backdrop-blur-sm">
+          <div className="flex items-center gap-1 rounded-full bg-[#0a0a0a]/60 px-2 py-1 backdrop-blur-sm">
             <GitBranch size={8} className="shrink-0 text-brand-accent" />
             <span className="text-[9px] font-semibold text-brand-text">Remix of @{post.remixedFromHandle}</span>
           </div>
@@ -210,7 +210,7 @@ export function TheaterUI({
       {showPlayOverlay && (
         <button
           onClick={onPlayBlocked}
-          className="absolute inset-0 z-30 flex h-full w-full flex-col items-center justify-center gap-3 bg-black/60 backdrop-blur-sm"
+          className="absolute inset-0 z-30 flex h-full w-full flex-col items-center justify-center gap-3 bg-[#0a0a0a]/60 backdrop-blur-sm"
         >
           <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white/15 ring-2 ring-white/30">
             <Play size={36} className="ml-1.5 text-white" fill="white" />
@@ -221,7 +221,7 @@ export function TheaterUI({
 
       {/* "Click to Unmute" toast */}
       {showUnmuteToast && (
-        <div className="pointer-events-none absolute left-1/2 top-6 z-20 -translate-x-1/2 rounded-full bg-black/70 px-4 py-1.5 text-[11px] font-semibold text-white/80 backdrop-blur-sm">
+        <div className="pointer-events-none absolute left-1/2 top-6 z-20 -translate-x-1/2 rounded-full bg-[#0a0a0a]/70 px-4 py-1.5 text-[11px] font-semibold text-white/80 backdrop-blur-sm">
           Tap the speaker to unmute
         </div>
       )}
@@ -251,7 +251,7 @@ export function TheaterUI({
                 className={`flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold backdrop-blur-sm transition-colors ${
                   following
                     ? "border-brand-accent/40 bg-brand/20 text-brand-muted"
-                    : "border-white/25 bg-black/50 text-white/80 hover:bg-white/10"
+                    : "border-white/25 bg-[#0a0a0a]/50 text-white/80 hover:bg-white/10"
                 }`}
                 style={{
                   animation: "synapse-follower-pop 420ms cubic-bezier(0.22,1,0.36,1)",
@@ -290,7 +290,7 @@ export function TheaterUI({
             <button
               key={t}
               onClick={() => onHashtagClick(t)}
-              className="rounded-full bg-black/50 px-2 py-0.5 text-base font-medium text-white/85 backdrop-blur-sm hover:bg-brand/20 hover:text-brand-muted transition-colors"
+              className="rounded-full bg-[#0a0a0a]/50 px-2 py-0.5 text-base font-medium text-white/85 backdrop-blur-sm hover:bg-brand/20 hover:text-brand-muted transition-colors"
               style={TX}
             >
               {t}
@@ -303,7 +303,7 @@ export function TheaterUI({
       <div className="absolute bottom-14 right-3 z-[40] flex flex-col items-center gap-3">
         {/* Like */}
         <button onClick={onToggleLike} className="flex flex-col items-center gap-1">
-          <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${liked ? "border-red-500/40 bg-red-500/30" : "border-white/15 bg-black/40 hover:bg-white/12"}`}>
+          <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${liked ? "border-red-500/40 bg-red-500/30" : "border-white/15 bg-[#0a0a0a]/40 hover:bg-white/12"}`}>
             <Heart size={20} className={liked ? "fill-red-400 text-red-400" : "text-white"} />
           </div>
           <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.likes + (liked ? 1 : 0))}</span>
@@ -314,7 +314,7 @@ export function TheaterUI({
             <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${
               isCommentsOpen
                 ? "border-brand-accent/40 bg-brand/25"
-                : "border-white/15 bg-black/40 hover:bg-white/12"
+                : "border-white/15 bg-[#0a0a0a]/40 hover:bg-white/12"
             }`}>
               <MessageCircle size={20} className={isCommentsOpen ? "text-brand-text" : "text-white"} />
             </div>
@@ -330,7 +330,7 @@ export function TheaterUI({
             }}
             className="flex cursor-pointer flex-col items-center gap-1"
           >
-            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/12">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#0a0a0a]/40 backdrop-blur-sm hover:bg-white/12">
               <Share2 size={20} className="text-white" />
             </div>
             <span className="text-[9px] font-semibold text-white" style={TX}>Share</span>
@@ -345,7 +345,7 @@ export function TheaterUI({
         {/* Edit (own posts) */}
         {isOwn && (
           <button onClick={() => onRemix(post)} className="flex flex-col items-center gap-1">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/40 backdrop-blur-sm hover:bg-white/15">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#0a0a0a]/40 backdrop-blur-sm hover:bg-white/15">
               <Pencil size={15} className="text-white/80" />
             </div>
             <span className="text-[9px] font-semibold text-white/70" style={TX}>Edit</span>
@@ -386,7 +386,7 @@ export function TheaterUI({
 
       {/* Action toast */}
       {toast && (
-        <div className="pointer-events-none absolute left-1/2 bottom-14 z-[60] -translate-x-1/2 rounded-full bg-black/80 px-4 py-1.5 text-[11px] font-semibold text-white/90 backdrop-blur-sm">
+        <div className="pointer-events-none absolute left-1/2 bottom-14 z-[60] -translate-x-1/2 rounded-full bg-[#0a0a0a]/80 px-4 py-1.5 text-[11px] font-semibold text-white/90 backdrop-blur-sm">
           {toast}
         </div>
       )}

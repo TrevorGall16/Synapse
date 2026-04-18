@@ -195,7 +195,7 @@ export function ExportModal({ onClose }: ExportModalProps) {
   };
 
   return (
-    <div data-testid="export-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+    <div data-testid="export-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0a0a]/60"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="relative w-full max-w-sm rounded-lg border border-white/10 bg-[#1e1e1e] shadow-2xl">
         <button onClick={onClose} className="absolute right-3 top-3 rounded p-1 text-white/40 hover:bg-white/10 hover:text-white" aria-label="Close"><X size={14} /></button>

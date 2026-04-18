@@ -40,7 +40,7 @@ function ImpactCounter({ target }: { target: number }) {
   return (
     <div className="flex flex-col items-center gap-0.5 rounded-xl border border-purple-500/20 bg-purple-500/8 px-4 py-3">
       <span className="text-[9px] font-semibold uppercase tracking-widest text-purple-300/60">Projected Impact</span>
-      <span className="text-2xl font-black tabular-nums text-purple-200">{display.toLocaleString()}</span>
+      <span className="text-2xl font-black tabular-nums text-white/90">{display.toLocaleString()}</span>
       <span className="text-[8px] text-white/25">clips × quality × reach</span>
     </div>
   );
@@ -340,11 +340,11 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
         <span className="text-xs font-semibold text-red-300">Save Failed — your project was NOT saved. Try again.</span>
       </div>
     )}
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0a0a]/75 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-white/14 bg-[#1c1c1c] shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Durability overlay — blocks UI while project is being flushed to IDB */}
         {isSaving && (
-          <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center gap-2 rounded-2xl bg-black/80 backdrop-blur-sm">
+          <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center gap-2 rounded-2xl bg-[#0a0a0a]/80 backdrop-blur-sm">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/15 border-t-purple-400" />
             <p className="text-xs font-semibold text-white/70">Saving…</p>
           </div>
@@ -471,7 +471,7 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
                       {demoVideoId && (
                         <div className="mt-2 flex flex-col gap-2">
                           {/* Preview thumbnail — muted, paused, scrubs with slider */}
-                          <div className="overflow-hidden rounded-lg bg-black" style={{ aspectRatio: "16/9" }}>
+                          <div className="overflow-hidden rounded-lg bg-[#0a0a0a]" style={{ aspectRatio: "16/9" }}>
                             <video
                               ref={previewVideoRef}
                               muted

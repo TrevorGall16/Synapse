@@ -155,7 +155,7 @@ function MediaThumbnail({ item }: { item: MediaPoolItem }) {
     return (
       <video
         src={item.previewUrl}
-        className="aspect-video w-full rounded bg-black object-cover"
+        className="aspect-video w-full rounded bg-[#0a0a0a] object-cover"
         muted
         playsInline
         preload="metadata"
@@ -173,7 +173,7 @@ function MediaThumbnail({ item }: { item: MediaPoolItem }) {
       <img
         src={item.previewUrl}
         alt={item.name}
-        className="aspect-video w-full rounded bg-black object-cover"
+        className="aspect-video w-full rounded bg-[#0a0a0a] object-cover"
       />
     );
   }

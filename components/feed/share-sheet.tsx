@@ -174,7 +174,7 @@ export function ShareSheet({ target, open, onClose, positionClassName, withBackd
 
   return (
     <div
-      className="fixed inset-0 z-[115] flex items-center justify-center bg-black/55 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[115] flex items-center justify-center bg-[#0a0a0a]/55 backdrop-blur-[2px]"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       {sheet}

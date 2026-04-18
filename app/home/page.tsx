@@ -19,7 +19,7 @@ function ProjectCard({ project, onOpen, onDelete }: {
     <div className="group flex flex-col gap-3 rounded-lg border border-white/10 bg-[#1e1e1e] p-4 transition-colors hover:border-white/20 hover:bg-[#242424]">
       {/* Thumbnail placeholder */}
       <div
-        className="flex items-center justify-center rounded bg-black/40 text-xs text-white/20"
+        className="flex items-center justify-center rounded bg-[#0a0a0a]/40 text-xs text-white/20"
         style={{ aspectRatio: `${project.width}/${project.height}`, maxHeight: 120 }}
       >
         {project.width} × {project.height}

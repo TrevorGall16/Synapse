@@ -666,7 +666,7 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div ref={cellRef} className="relative flex h-screen w-full snap-start snap-always items-center justify-center bg-black">
+    <div ref={cellRef} className="relative flex h-screen w-full snap-start snap-always items-center justify-center bg-[#0a0a0a]">
       <div
         className={`group relative h-full w-full overflow-hidden ${isIdle && isPlaying ? "cursor-none" : "cursor-auto"}`}
         onMouseMove={handleMouseMove}

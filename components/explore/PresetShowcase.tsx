@@ -71,7 +71,7 @@ export function PresetShowcase({ post, preset, accent = "#7c3aed", onClose, onSa
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0a0a]/80 p-4 backdrop-blur-sm"
       onClick={handleBackdrop}
     >
       <style dangerouslySetInnerHTML={{ __html: SHOWCASE_KF }} />
@@ -83,13 +83,13 @@ export function PresetShowcase({ post, preset, accent = "#7c3aed", onClose, onSa
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute right-3 top-3 z-10 rounded-lg bg-black/50 p-1.5 text-white/50 backdrop-blur-sm transition-colors hover:bg-white/15 hover:text-white"
+          className="absolute right-3 top-3 z-10 rounded-lg bg-[#0a0a0a]/50 p-1.5 text-white/50 backdrop-blur-sm transition-colors hover:bg-white/15 hover:text-white"
         >
           <X size={13} />
         </button>
 
         {/* ── Left: Video or animated swatch ──────────────────────────────── */}
-        <div className="relative w-[56%] shrink-0 overflow-hidden bg-black">
+        <div className="relative w-[56%] shrink-0 overflow-hidden bg-[#0a0a0a]">
           {hasVideo ? (
             <video
               ref={videoRef}

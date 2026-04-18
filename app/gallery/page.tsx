@@ -84,19 +84,19 @@ function ProjectCard({ project, meta, onOpen, onDelete, onRename }: ProjectCardP
 
         {/* Duration badge */}
         {meta && (
-          <span className="absolute left-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[8px] tabular-nums text-white/60 backdrop-blur-sm">
+          <span className="absolute left-2 top-2 rounded bg-[#0a0a0a]/60 px-1.5 py-0.5 text-[8px] tabular-nums text-white/60 backdrop-blur-sm">
             {formatDuration(meta.duration)}
           </span>
         )}
 
         {/* Resolution badge */}
-        <span className="absolute right-2 top-2 rounded bg-black/60 px-1.5 py-0.5 text-[8px] tabular-nums text-white/40 backdrop-blur-sm">
+        <span className="absolute right-2 top-2 rounded bg-[#0a0a0a]/60 px-1.5 py-0.5 text-[8px] tabular-nums text-white/40 backdrop-blur-sm">
           {project.width}×{project.height}
         </span>
 
         {/* Hover play hint */}
         <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/55 backdrop-blur-sm">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-[#0a0a0a]/55 backdrop-blur-sm">
             <svg viewBox="0 0 24 24" className="ml-0.5 h-5 w-5 fill-white"><path d="M8 5v14l11-7z" /></svg>
           </div>
         </div>

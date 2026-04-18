@@ -83,7 +83,7 @@ function TemplateCard({ post, onRemix, onImport, onOpen }: { post: FeedPost; onR
 
         {/* Remix badge — only shown when remixing is permitted */}
         {remixAllowed && (
-          <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 backdrop-blur-sm">
+          <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-[#0a0a0a]/60 px-2 py-0.5 backdrop-blur-sm">
             <GitBranch size={8} className="text-purple-300" />
             <span className="text-[9px] font-semibold text-purple-300">Remixable</span>
           </div>

@@ -346,7 +346,7 @@ function MediaAssetRow({
 
 // ── AssetThumb ─────────────────────────────────────────────
 function AssetThumb({ item, hasProxy }: { item: MediaPoolItem; hasProxy: boolean }) {
-  const base = "h-7 w-11 rounded bg-black object-cover";
+  const base = "h-7 w-11 rounded bg-[#0a0a0a] object-cover";
 
   if (item.type === "video" && item.previewUrl) {
     return (

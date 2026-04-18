@@ -97,7 +97,7 @@ const PostCard = memo(function PostCard({ title, accentColor, bgColor, index, vi
       <div className="relative aspect-[9/16]" style={{ background: bgColor }}>
         {/* Delete confirmation overlay */}
         {confirmDelete && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/85 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#0a0a0a]/85 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
             <p className="text-xs font-bold text-white">Delete this post?</p>
             <div className="flex gap-2">
               <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
@@ -125,7 +125,7 @@ const PostCard = memo(function PostCard({ title, accentColor, bgColor, index, vi
         {/* Delete button — visible on hover when onDelete is provided */}
         {onDelete && (
           <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
-            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white/40 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/30 hover:text-red-400">
+            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#0a0a0a]/60 text-white/40 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/30 hover:text-red-400">
             <Trash2 size={10} />
           </button>
         )}
@@ -160,7 +160,7 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
   const [editHue, setEditHue] = useState(dp.hue);
   const save = () => { setProfile({ displayName: name.trim() || dp.displayName, bio: editBio.trim(), hue: editHue }); onClose(); };
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0a0a]/70 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-xs rounded-2xl border border-white/14 bg-[#1c1c1c] p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <span className="text-sm font-bold text-white">Edit Profile</span>

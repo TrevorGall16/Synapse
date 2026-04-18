@@ -421,7 +421,7 @@ export function PreviewMonitor() {
         </div>
       </div>
 
-      <div ref={videoContainerRef} data-preview-container className="relative flex-1 overflow-hidden bg-black">
+      <div ref={videoContainerRef} data-preview-container className="relative flex-1 overflow-hidden bg-[#0a0a0a]">
         {combinedSvgDefs && (
           <svg style={{ position: "absolute", width: 0, height: 0, overflow: "visible" }} aria-hidden>
             <defs dangerouslySetInnerHTML={{ __html: combinedSvgDefs }} />

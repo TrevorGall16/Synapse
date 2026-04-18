@@ -29,7 +29,7 @@ export function VolumeHud() {
 
   return (
     <div className="pointer-events-none fixed left-1/2 top-16 z-50 -translate-x-1/2">
-      <div className="flex items-center gap-2 rounded-lg bg-black/80 px-4 py-2 shadow-lg backdrop-blur-sm">
+      <div className="flex items-center gap-2 rounded-lg bg-[#0a0a0a]/80 px-4 py-2 shadow-lg backdrop-blur-sm">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-white/60">
           Master
         </span>

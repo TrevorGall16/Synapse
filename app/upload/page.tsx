@@ -500,7 +500,7 @@ function UploadTabContent(props: UploadTabProps) {
           ) : (
             <div className="flex flex-1 flex-col gap-4 overflow-hidden">
               {/* Live preview */}
-              <div className="relative flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black">
+              <div className="relative flex-1 overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a0a]">
                 {previewUrl && (
                   <video
                     src={previewUrl}
@@ -513,11 +513,11 @@ function UploadTabContent(props: UploadTabProps) {
                 )}
                 <button
                   onClick={clearFile}
-                  className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/70 text-white/60 backdrop-blur-sm transition-colors hover:bg-black/90 hover:text-white"
+                  className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#0a0a0a]/70 text-white/60 backdrop-blur-sm transition-colors hover:bg-[#0a0a0a]/90 hover:text-white"
                 >
                   <X size={14} />
                 </button>
-                <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg bg-black/60 px-2.5 py-1 backdrop-blur-sm">
+                <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg bg-[#0a0a0a]/60 px-2.5 py-1 backdrop-blur-sm">
                   <Film size={10} className="text-brand-accent" />
                   <span className="text-[10px] font-medium text-white/70 truncate max-w-[200px]">{file.name}</span>
                   <span className="text-[9px] text-white/30">{(file.size / 1_048_576).toFixed(1)} MB</span>
