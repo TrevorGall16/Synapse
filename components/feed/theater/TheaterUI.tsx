@@ -126,8 +126,10 @@ export function TheaterUI({
 
   return (
     <>
-      {/* Black cover during initial load — sits below video (z-[2] vs video z-[10]) */}
-      {!videoVisible && !mediaError && <div className="absolute inset-0 z-[2] bg-[#0a0a0a]" />}
+      {/* No opaque cover here: the ambilight radial wash at z-0 in TheaterPlayer
+          is the "poster" until the video's readyState flips videoVisible and it
+          fades in at z-[10]. An extra solid div at z-[2] would sit on top of
+          the ambilight and read as a dull gray overlay on open. */}
 
       {/* Media pool hydration spinner */}
       {hydratedPool === null && !!post.projectSnapshot?.mediaPool?.length && (
