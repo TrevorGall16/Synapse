@@ -10,7 +10,7 @@ import { useSearchStore } from "@/lib/store/search-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { TheaterMode, primeTheaterGesture } from "@/components/feed/theater-mode";
 import { GlobalSearch } from "@/components/feed/global-search";
-import { FeedPostCard } from "@/components/feed/feed-post-card";
+import { FeedGrid } from "@/components/feed/feed-grid";
 import { retainMedia } from "@/lib/store/media-pool-db";
 import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
 import { normalizeTag } from "@/lib/mock-posts";
@@ -482,21 +482,16 @@ export default function DiscoveryFeedPage() {
             </p>
           )}
           {filteredPosts.length > 0 ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {filteredPosts.map((post) => (
-                <FeedPostCard
-                  key={post.id} post={post}
-                  pool={filteredPosts}
-                  onOpen={() => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
-                  onRemix={() => handleRemix(post)}
-                  onImport={() => handleImport(post)}
-                  onCreator={() => router.push(`/profile/${post.user.handle}`)}
-                  onDelete={post.authorUsername && post.authorUsername === currentProfile?.username
-                    ? () => removePost(post.id)
-                    : undefined}
-                />
-              ))}
-            </div>
+            <FeedGrid
+              posts={filteredPosts}
+              scrollRef={scrollContainerRef}
+              currentUsername={currentProfile?.username}
+              onOpen={(post) => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
+              onRemix={handleRemix}
+              onImport={handleImport}
+              onCreator={(post) => router.push(`/profile/${post.user.handle}`)}
+              onDelete={(post) => removePost(post.id)}
+            />
           ) : (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               {activeChannel ? (
