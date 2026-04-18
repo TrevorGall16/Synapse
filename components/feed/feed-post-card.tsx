@@ -232,12 +232,16 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
 
   return (
     <article
-      className="group relative cursor-pointer overflow-hidden rounded-xl transition-transform duration-300 ease-out hover:z-10 hover:scale-[1.05]"
+      // aspect-[9/16] + w-full + h-auto locks the TikTok-style portrait
+      // rectangle in CSS, so the browser reserves the correct card box before
+      // the virtualizer's row math settles. Stripping this made cards collapse
+      // to a square during the first paint on wide monitors.
+      className="group relative aspect-[9/16] h-auto w-full cursor-pointer overflow-hidden rounded-xl transition-transform duration-300 ease-out hover:z-10 hover:scale-[1.05]"
       style={{ willChange: "transform" }}
       onClick={() => { videoRef.current?.play().catch(() => {}); onOpen(); }}
       onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}
     >
-      <div className="relative" style={{ aspectRatio: "9/16", background: post.bg }}>
+      <div className="relative h-full w-full" style={{ background: post.bg }}>
         {/* Delete confirmation overlay — only reachable when showDelete is true */}
         {confirmDelete && showDelete && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#0a0a0a]/85 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>

@@ -683,6 +683,18 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
         className={`group relative z-[1] h-full w-full overflow-hidden ${isIdle && isPlaying ? "cursor-none" : "cursor-auto"}`}
         onMouseMove={handleMouseMove}
       >
+        {/* Poster layer — fills the gap between mount and the video's first
+            safe frame (onCanPlay / readyState >= 3). Without this the container
+            rendered bare black between the ambilight wash and the hidden video,
+            which read as the "gray box" users reported on Theater open.
+            Fades out under the fade-in video so the hand-off is seamless. */}
+        <div
+          aria-hidden
+          className={`pointer-events-none absolute inset-0 z-[5] transition-opacity duration-200 ${videoVisible && !mediaError ? "opacity-0" : "opacity-100"}`}
+          style={{
+            background: `radial-gradient(circle at 50% 50%, ${post.accent}80 0%, ${post.bg}e6 55%, #0a0a0a 100%)`,
+          }}
+        />
         {/* Main video element */}
         <video
           ref={videoRef}
@@ -698,18 +710,26 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
             }
           }}
           onLoadedData={() => {
+            // readyState 2 (HAVE_CURRENT_DATA) is too early to reveal — the
+            // video has one frame but no buffered runway, so autoplay stutters
+            // visibly. Kick off the play() here but leave videoVisible false;
+            // the poster layer at z-[5] covers the dark-flash until onCanPlay.
             const v = videoRef.current;
             if (!v || isPlayingRef.current || post.projectSnapshot) return;
             v.play()
-              .then(() => { if (!mountedRef.current) return; setIsPlaying(true); setVideoVisible(true); setShowPlayOverlay(false); })
+              .then(() => { if (!mountedRef.current) return; setIsPlaying(true); setShowPlayOverlay(false); })
               .catch((err: Error) => console.warn("[Theater onLoadedData BLOCKED]", err.name));
           }}
           onCanPlay={() => {
+            // readyState 3 (HAVE_FUTURE_DATA) — safe to reveal.
             const v = videoRef.current;
-            if (!v || isPlayingRef.current || post.projectSnapshot) return;
-            v.play()
-              .then(() => { if (!mountedRef.current) return; setIsPlaying(true); setVideoVisible(true); setShowPlayOverlay(false); })
-              .catch(() => {});
+            if (!v || post.projectSnapshot) return;
+            setVideoVisible(true);
+            if (!isPlayingRef.current) {
+              v.play()
+                .then(() => { if (!mountedRef.current) return; setIsPlaying(true); setShowPlayOverlay(false); })
+                .catch(() => {});
+            }
           }}
           style={{ ...presetVideoStyle, animationPlayState: isPlaying ? "running" : "paused", willChange: "transform" }}
           className={`absolute inset-0 z-[10] h-full w-full object-contain transition-opacity duration-150 ${videoVisible && !mediaError ? "opacity-100" : "opacity-0"}`}
