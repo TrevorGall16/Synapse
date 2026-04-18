@@ -13,6 +13,7 @@
     "test-auth-policy": "vitest run lib/policy.test.ts"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.13.24",
     "framer-motion": "^12.38.0",
     "idb-keyval": "^6.2.2",
     "lucide-react": "^0.577.0",
