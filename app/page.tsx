@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState, useMemo, useCallback, useEffect, startTransition } from "react";
+import { useRef, useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useSafeUrlSync } from "@/lib/hooks/use-safe-url-sync";
 import { Zap, TrendingUp, Upload, User, ArrowUp, Trash2 } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
@@ -85,6 +86,7 @@ function Toast({ msg }: { msg: string }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function DiscoveryFeedPage() {
   const router = useRouter();
+  const { heavyReplace } = useSafeUrlSync("/");
   const searchParams = useSearchParams();
   const [theaterPostId, setTheaterPostId] = useState<string | null>(null);
   const [activeTag, setActiveTag]     = useState<string | null>(null);
@@ -257,42 +259,30 @@ export default function DiscoveryFeedPage() {
     scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
-  // Filter-URL mutation primitives. All filter updates go through these so
-  // the URL stays authoritative, other query params survive, and navigation
-  // uses router.replace (keeps the back button anchored on the *real* entry
-  // point rather than each chip toggle). startTransition yields to the
-  // scheduler so the filter recompute doesn't stutter the chip animation.
-  const navigateFilters = useCallback((mutate: (p: URLSearchParams) => void) => {
-    const params = new URLSearchParams(searchParams.toString());
-    mutate(params);
-    const qs = params.toString();
-    startTransition(() => router.replace(qs ? `/?${qs}` : "/"));
-  }, [router, searchParams]);
-
   const selectChannel = useCallback((ch: Channel) => {
     const slug = channelSlug(ch);
     const isActive = channelParam === slug;
     setActiveTag(null);
     setSearchQuery("");
-    navigateFilters((p) => {
+    heavyReplace((p) => {
       if (isActive) {
         p.delete("channel");
       } else {
         p.set("channel", slug);
-        p.delete("search"); // avoid empty intersections with text search
+        p.delete("search");
       }
     });
-  }, [channelParam, navigateFilters, setSearchQuery]);
+  }, [channelParam, heavyReplace, setSearchQuery]);
 
   const clearFilters = useCallback(() => {
     setActiveTag(null);
     setSearchQuery("");
-    navigateFilters((p) => {
+    heavyReplace((p) => {
       p.delete("channel");
       p.delete("search");
       p.delete("tag");
     });
-  }, [navigateFilters, setSearchQuery]);
+  }, [heavyReplace, setSearchQuery]);
 
   const showToast = (msg: string, delay = 700) => {
     setToast(msg);
