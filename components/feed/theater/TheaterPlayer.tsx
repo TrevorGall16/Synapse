@@ -667,8 +667,20 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
 
   return (
     <div ref={cellRef} className="relative flex h-screen w-full snap-start snap-always items-center justify-center bg-[#0a0a0a]">
+      {/* Ambilight — static radial wash derived from the post's bg + accent.
+          Replaces a live-video blur (cheap: one gradient div, no decode/compositor
+          churn per frame). The oversize scale prevents the blurred edge from
+          revealing the letterbox seam; saturate(140%) pushes the wall color so
+          the glow reads even on heavily-graded clips. */}
       <div
-        className={`group relative h-full w-full overflow-hidden ${isIdle && isPlaying ? "cursor-none" : "cursor-auto"}`}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          background: `radial-gradient(circle at 50% 42%, ${post.accent}66 0%, ${post.bg}b3 38%, #0a0a0a 82%)`,
+        }}
+      />
+      <div
+        className={`group relative z-[1] h-full w-full overflow-hidden ${isIdle && isPlaying ? "cursor-none" : "cursor-auto"}`}
         onMouseMove={handleMouseMove}
       >
         {/* Main video element */}

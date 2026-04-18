@@ -17,6 +17,12 @@
   --color-brand-accent: oklch(0.714 0.169 293.541);   /* borders, rings, icons     */
   --color-brand-text: oklch(0.827 0.119 293.541);     /* on-surface text, labels   */
   --color-brand-muted: oklch(0.885 0.083 293.541);    /* subtle text, hover states */
+
+  /* ── "Electric" accent — cinematic hot-pink used for primary UI reactions
+     (active chips, volume fill, search focus, theater like/follow). Kept
+     separate from --color-brand so we can lean into the "Electric" vibe
+     without retuning the purple identity. Alpha via /NN arbitrary-value. */
+  --color-electric: #ff007a;
 }
 
 body {

@@ -57,11 +57,19 @@ function generateMorePosts(pageNum: number): FeedPost[] {
 // ── Niche chip ────────────────────────────────────────────────────────────────
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick}
+    <button
+      onClick={onClick}
+      // Active chips carry the Electric (#ff007a) accent + a subtle glow
+      // box-shadow to lean into the cinematic vibe. Idle chips stay neutral.
       className={`whitespace-nowrap rounded-full px-3 py-1 text-[10px] font-semibold transition-colors ${
-        active ? "bg-brand/28 text-brand-muted ring-1 ring-brand/40" : "bg-white/6 text-white/40 hover:bg-white/12 hover:text-white/65"
+        active
+          ? "bg-[#ff007a]/20 text-white ring-1 ring-[#ff007a]/60"
+          : "bg-white/6 text-white/40 hover:bg-white/12 hover:text-white/65"
       }`}
-    >{label}</button>
+      style={active ? { boxShadow: "0 0 12px rgba(255, 0, 122, 0.35)" } : undefined}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -372,9 +380,9 @@ export default function DiscoveryFeedPage() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
+    <div className="flex h-full flex-col overflow-hidden bg-[#0a0a0a]">
       {/* Header */}
-      <div className="z-10 shrink-0 flex items-center justify-between border-b border-white/10 bg-[#141414]/95 px-5 py-2.5 backdrop-blur-sm">
+      <div className="z-10 shrink-0 flex items-center justify-between border-b border-white/10 bg-[#0a0a0a]/95 px-5 py-2.5 backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <TrendingUp size={13} className="text-white/35" />
           <h1 className="text-sm font-bold text-white">Discovery</h1>
@@ -449,11 +457,11 @@ export default function DiscoveryFeedPage() {
       {/* Scrollable grid */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         <div className="px-6 py-5">
-          {activeTag && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-brand-text/80">{activeTag}</span></p>}
+          {activeTag && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-[#ff007a]">{activeTag}</span></p>}
           {!activeTag && !searchQuery && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">Community Edits</p>}
           {!activeTag && searchQuery && (
             <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">
-              {filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-brand-text/80">{searchQuery}</span>
+              {filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-[#ff007a]">{searchQuery}</span>
               {/* Dev badge — verifies the ranking engine is receiving the
                   active sortMode. Remove once search sort is fully trusted. */}
               <span className="ml-2 rounded-full bg-brand/20 px-1.5 py-0.5 text-[9px] font-bold text-brand-text ring-1 ring-brand/40">

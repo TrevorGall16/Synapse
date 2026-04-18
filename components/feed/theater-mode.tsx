@@ -236,7 +236,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     <div className="fixed inset-0 z-50 bg-[#0a0a0a]">
       {/* Versions drawer */}
       {showVersions && (
-        <div className="fixed right-0 top-0 z-[55] flex h-full w-64 flex-col border-l border-white/10 bg-[#0a0a0a]/90 backdrop-blur-md">
+        <div className="fixed right-0 top-0 z-[55] flex h-full w-64 flex-col border-l border-white/10 bg-white/5 backdrop-blur-md backdrop-saturate-150">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <span className="text-xs font-bold text-white/80">Versions ({versionSiblings.length})</span>
             <button onClick={() => setShowVersions(false)} className="text-white/40 hover:text-white"><X size={13} /></button>

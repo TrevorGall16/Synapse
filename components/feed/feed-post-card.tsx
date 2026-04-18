@@ -204,7 +204,8 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
 
   return (
     <article
-      className="group relative cursor-pointer overflow-hidden rounded-xl border border-white/8 transition-all duration-200 hover:border-white/20 hover:shadow-2xl hover:-translate-y-0.5"
+      className="group relative cursor-pointer overflow-hidden rounded-xl transition-transform duration-300 ease-out hover:z-10 hover:scale-[1.05]"
+      style={{ willChange: "transform" }}
       onClick={() => { videoRef.current?.play().catch(() => {}); onOpen(); }}
       onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}
     >
@@ -257,7 +258,17 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
             <span style={r.style}>{r.displayText}</span>
           </div>
         ))}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80" />
+        {/* Typography scrim — multi-stop bottom gradient keeps the creator
+            handle + title legible on any frame. Top 25% carries a gentle
+            vignette so top-right badges stay readable without a second div. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 28%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.55) 76%, rgba(0,0,0,0.95) 100%)",
+          }}
+        />
 
         {pool && isHot(post, pool) && (
           <span className="absolute left-2.5 top-2.5 flex items-center gap-0.5 rounded-full bg-amber-400/90 px-1.5 py-0.5 text-[8px] font-bold uppercase text-black">

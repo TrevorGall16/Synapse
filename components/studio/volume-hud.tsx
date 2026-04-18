@@ -33,10 +33,10 @@ export function VolumeHud() {
         <span className="text-[10px] font-semibold uppercase tracking-wider text-white/60">
           Master
         </span>
-        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-white/20">
+        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-white/15">
           <div
-            className="h-full rounded-full bg-white/80 transition-all duration-100"
-            style={{ width: `${masterVolume}%` }}
+            className="h-full rounded-full bg-[#ff007a] transition-all duration-100"
+            style={{ width: `${masterVolume}%`, boxShadow: "0 0 6px rgba(255, 0, 122, 0.55)" }}
           />
         </div>
         <span className="min-w-[2rem] text-right text-xs font-bold tabular-nums text-white">

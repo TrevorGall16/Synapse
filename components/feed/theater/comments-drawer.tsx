@@ -239,9 +239,12 @@ export function CommentsDrawer({ postId, isOpen, onClose, commentsEnabled = true
           : "w-0 opacity-0 pointer-events-none border-l-0"
         }`}
       style={{
-        background: isOpen ? "rgba(18,18,18,0.95)" : "transparent",
-        backdropFilter: isOpen ? "blur(12px)" : "none",
-        WebkitBackdropFilter: isOpen ? "blur(12px)" : "none",
+        // Glassmorphism — a hair of white tint over the blurred backdrop reads
+        // as "frosted glass" rather than a solid panel. Saturate boost pops
+        // the video color through the frost.
+        background: isOpen ? "rgba(255,255,255,0.05)" : "transparent",
+        backdropFilter: isOpen ? "blur(12px) saturate(140%)" : "none",
+        WebkitBackdropFilter: isOpen ? "blur(12px) saturate(140%)" : "none",
       }}
     >
       {/* Header */}

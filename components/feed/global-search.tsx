@@ -154,7 +154,9 @@ export function GlobalSearch({ posts = [] }: Props) {
           "bg-white/5 backdrop-blur-md",
           "ring-1 ring-inset ring-white/8",
           "transition-all duration-150",
-          "focus-within:bg-white/8 focus-within:ring-brand/30",
+          // Electric focus ring — the search field is the most-used entry
+          // point, so its focus state carries the primary accent.
+          "focus-within:bg-white/8 focus-within:ring-[#ff007a]/50",
         ].join(" ")}
       >
         <Search size={12} className="shrink-0 text-white/30" />

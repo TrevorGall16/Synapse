@@ -185,7 +185,7 @@ function PeakMeter({ volume }: { volume: number }) {
         ref={barRef}
         className="absolute bottom-0 w-full origin-bottom rounded-sm"
         style={{
-          background: "linear-gradient(to top, #22c55e, #eab308 70%, #ef4444 95%)",
+          background: "linear-gradient(to top, #ff007a, #ff4da3 78%, #ffffff 100%)",
           height: "100%",
           transform: "scaleY(0)",
           transition: "transform 50ms",
