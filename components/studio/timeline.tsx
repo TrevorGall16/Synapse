@@ -17,7 +17,7 @@ import { TimelineToolbar } from "@/components/timeline/timeline-toolbar";
 import { TimelineGrid } from "@/components/timeline/timeline-grid";
 import { requestAudioPeaks } from "@/lib/utils/media-extractor";
 import type { TrackType } from "@/lib/store/types";
-import { screenXToTimeMicros, screenPxToTimelinePx } from "@/lib/utils/coords";
+import { pointerToMicros, screenPxToTimelinePx } from "@/lib/utils/coords";
 import { ScrollNavigator } from "@/components/timeline/scroll-navigator";
 
 const COLLAPSED_HEIGHT = 24;
@@ -113,9 +113,9 @@ export function Timeline() {
     if (!e.shiftKey) return;
     const container = scrollContainerRef.current;
     if (!container) return;
-    const rect = container.getBoundingClientRect();
-    // Selection click uses committed pixelsPerSecond only — transient cssZoomScale excluded.
-    const clickedMicros = Math.max(0, Math.round(screenXToTimeMicros(e.clientX, rect, container.scrollLeft, pixelsPerSecond, 1)));
+    // Canonical pointer math — same helper ruler, bracket drag, and playhead
+    // scrub all go through. Committed pixelsPerSecond only.
+    const clickedMicros = Math.max(0, Math.round(pointerToMicros(e.clientX, container, pixelsPerSecond)));
     const { selectionStart, setSelection } = usePlaybackStore.getState();
     const anchor = selectionStart ?? clickedMicros;
     setSelection(Math.min(anchor, clickedMicros), Math.max(anchor, clickedMicros));
@@ -368,8 +368,11 @@ export function Timeline() {
             <div
               ref={trackAreaRef}
               data-testid="timeline-track-area"
-              className="relative"
-              style={{ contain: "layout", transformOrigin: "left center", willChange: "transform" }}
+              // select-none + touch-none kill the browser's text-highlight
+              // and native pan gesture during clip drag / shift-click range.
+              // Pointer events continue to fire normally.
+              className="relative select-none touch-none"
+              style={{ contain: "layout", transformOrigin: "left center", willChange: "transform", userSelect: "none", WebkitUserSelect: "none", touchAction: "none" }}
             >
               <TimelineGrid />
               {tracks.map((track) => {

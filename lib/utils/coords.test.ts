@@ -5,6 +5,7 @@ import {
   timelinePxToTimeMicros,
   timeMicrosToTimelinePx,
   screenXToTimeMicros,
+  pointerToMicros,
 } from "./coords";
 
 function mockRect(left: number): DOMRect {
@@ -71,6 +72,66 @@ describe("screenXToTimeMicros", () => {
     // timelinePx = (100 - 0) / 0.5 + 0 = 200
     // time = 200 / 100 * 1e6 = 2_000_000µs
     expect(screenXToTimeMicros(100, mockRect(0), 0, 100, 0.5)).toBe(2_000_000);
+  });
+});
+
+// ── Canonical pointerToMicros — the helper every pointer interaction calls ──
+//
+// Critical invariant: pointerToMicros MUST measure against the outer scroll
+// container's rect, never an inner stretched content node. If the caller
+// accidentally passes a child that lives inside the scrollable content (whose
+// getBoundingClientRect already embeds the current scroll offset), the result
+// would double-count scrollLeft.
+
+function makeScrollEl(rectLeft: number, scrollLeft: number): HTMLElement {
+  return {
+    getBoundingClientRect: () => mockRect(rectLeft),
+    scrollLeft,
+  } as unknown as HTMLElement;
+}
+
+describe("pointerToMicros", () => {
+  it("zero scroll, rect.left=0, pps=100, clientX=300 → 3_000_000µs", () => {
+    const el = makeScrollEl(0, 0);
+    expect(pointerToMicros(300, el, 100)).toBe(3_000_000);
+  });
+
+  it("scrollLeft=500, pps=100, clientX=300, rect.left=0 → 8_000_000µs", () => {
+    const el = makeScrollEl(0, 500);
+    expect(pointerToMicros(300, el, 100)).toBe(8_000_000);
+  });
+
+  it("accounts for rect.left (container offset within viewport)", () => {
+    // clientX=500, rect.left=200 → (300 + 0) / 100 * 1e6 = 3_000_000
+    const el = makeScrollEl(200, 0);
+    expect(pointerToMicros(500, el, 100)).toBe(3_000_000);
+  });
+
+  it("the same screen pixel under different scroll yields different micros", () => {
+    const elA = makeScrollEl(0, 0);
+    const elB = makeScrollEl(0, 400);
+    const microsA = pointerToMicros(300, elA, 100);
+    const microsB = pointerToMicros(300, elB, 100);
+    // At pps=100, 400px scroll = 4_000_000µs shift
+    expect(microsB - microsA).toBe(4_000_000);
+  });
+
+  it("regression: 2s selection at far-right scroll returns exactly 2s (±1 frame)", () => {
+    // Setup: pps=100 (1s = 100px), project ~60s (6000px), container=800px wide.
+    // User scrolls to far right: scrollLeft ≈ 5200 (viewing [5200, 6000]).
+    // User drags a selection from clientX=300 to clientX=500 within the ruler.
+    // Both clientX values are inside the visible viewport.
+    const pps = 100;
+    const scrollLeft = 5200;
+    const el = makeScrollEl(0, scrollLeft);
+    const startMicros = pointerToMicros(300, el, pps);
+    const endMicros = pointerToMicros(500, el, pps);
+    const selectionDurationMicros = endMicros - startMicros;
+    // 200px screen distance at pps=100 → 2.0s = 2_000_000µs
+    expect(selectionDurationMicros).toBe(2_000_000);
+    // Also verify the absolute positions are correct (not double-counted)
+    // 5200 scroll + 300 visible = 5500px = 55s = 55_000_000µs
+    expect(startMicros).toBe(55_000_000);
   });
 });
 

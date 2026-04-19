@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { getGridInterval } from "@/lib/utils/grid";
+import { pointerToMicros, timeMicrosToTimelinePx } from "@/lib/utils/coords";
 
 function formatTimecode(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -22,11 +23,6 @@ function formatDurationHMSF(micros: number, fps: number): string {
 
 interface TimelineRulerProps {
   scrollContainerRef: RefObject<HTMLDivElement | null>;
-}
-
-/** Returns the raw X position (relative to scroll origin) for a clientX pointer event. */
-function rawXFromClient(clientX: number, el: HTMLDivElement, scrollEl: HTMLDivElement): number {
-  return clientX - el.getBoundingClientRect().left + scrollEl.scrollLeft;
 }
 
 export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
@@ -82,11 +78,11 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
 
   const microsFromClientX = useCallback(
     (clientX: number) => {
-      const el = rulerRef.current;
       const scrollEl = scrollContainerRef.current;
-      if (!el || !scrollEl) return 0;
-      const rawX = rawXFromClient(clientX, el, scrollEl);
-      const rawMicros = Math.round((rawX / pixelsPerSecond) * 1_000_000);
+      if (!scrollEl) return 0;
+      // Canonical pointer math — reads scrollLeft + rect from the outer scroll
+      // container, never an inner stretched content node. See lib/utils/coords.ts.
+      const rawMicros = Math.round(pointerToMicros(clientX, scrollEl, pixelsPerSecond));
       let micros = rawMicros;
 
       const snapThreshold = Math.round((8 / pixelsPerSecond) * 1_000_000);
@@ -109,27 +105,31 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
     [pixelsPerSecond, scrollContainerRef, duration]
   );
 
-  /** Check if rawX is within 10px of a bracket, return which one or null. */
-  const hitTestBracket = useCallback(
-    (rawX: number): "start" | "end" | null => {
+  /** Hit-test against bracket handles using the pointer's clientX directly.
+   *  Uses pointerToMicros so the math stays consistent with everything else. */
+  const hitTestBracketAt = useCallback(
+    (clientX: number): "start" | "end" | null => {
+      const scrollEl = scrollContainerRef.current;
+      if (!scrollEl) return null;
       const { selectionStart: ss, selectionEnd: se } = usePlaybackStore.getState();
       if (ss == null || se == null) return null;
-      const leftPx = (Math.min(ss, se) / 1_000_000) * pixelsPerSecond;
-      const rightPx = (Math.max(ss, se) / 1_000_000) * pixelsPerSecond;
-      if (Math.abs(rawX - leftPx) <= 10) return "start";
-      if (Math.abs(rawX - rightPx) <= 10) return "end";
+      // Convert each bracket micros to timeline-px, then compare to the
+      // pointer's timeline-px (derived via the same canonical formula).
+      const pointerPx = (pointerToMicros(clientX, scrollEl, pixelsPerSecond) / 1_000_000) * pixelsPerSecond;
+      const leftPx = timeMicrosToTimelinePx(Math.min(ss, se), pixelsPerSecond);
+      const rightPx = timeMicrosToTimelinePx(Math.max(ss, se), pixelsPerSecond);
+      if (Math.abs(pointerPx - leftPx) <= 10) return "start";
+      if (Math.abs(pointerPx - rightPx) <= 10) return "end";
       return null;
     },
-    [pixelsPerSecond]
+    [pixelsPerSecond, scrollContainerRef]
   );
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
-    const el = rulerRef.current;
     const scrollEl = scrollContainerRef.current;
-    if (!el || !scrollEl) return;
+    if (!scrollEl) return;
 
-    const rawX = rawXFromClient(e.clientX, el, scrollEl);
-    const bracket = hitTestBracket(rawX);
+    const bracket = hitTestBracketAt(e.clientX);
 
     if (bracket) {
       // Dragging an existing bracket — don't start a new selection
@@ -149,16 +149,12 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
     startClientX.current = e.clientX;
     startMicros.current = micros;
     e.currentTarget.setPointerCapture(e.pointerId);
-  }, [hitTestBracket, microsFromClientX, setPlayhead, scrollContainerRef]);
+  }, [hitTestBracketAt, microsFromClientX, setPlayhead, scrollContainerRef]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
-    const el = rulerRef.current;
-    const scrollEl = scrollContainerRef.current;
-
     // Update cursor based on bracket proximity (only when not actively dragging)
-    if (!isDragging.current && el && scrollEl) {
-      const rawX = rawXFromClient(e.clientX, el, scrollEl);
-      el.style.cursor = hitTestBracket(rawX) ? "col-resize" : "pointer";
+    if (!isDragging.current && rulerRef.current) {
+      rulerRef.current.style.cursor = hitTestBracketAt(e.clientX) ? "col-resize" : "pointer";
     }
 
     if (!isDragging.current) return;
@@ -183,9 +179,9 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
       setSelection(startMicros.current, micros);
       setPlayhead(micros);
     }
-  }, [hitTestBracket, microsFromClientX, setSelection, setPlayhead, scrollContainerRef]);
+  }, [hitTestBracketAt, microsFromClientX, setSelection, setPlayhead]);
 
-  const onPointerUp = useCallback((e: React.PointerEvent) => {
+  const endDrag = useCallback((e: React.PointerEvent) => {
     isDragging.current = false;
     draggingBracket.current = null;
     if (!isSelecting.current) {
@@ -195,30 +191,47 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
       if (s != null && en != null) setSelection(Math.min(s, en), Math.max(s, en));
     }
     isSelecting.current = false;
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    // Pointer capture is released even if the pointer left the element —
+    // that's the whole point of capture. Matching release keeps the OS happy.
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* already released */ }
   }, [clearSelection, setSelection]);
 
+  const onPointerUp = endDrag;
+  const onPointerCancel = endDrag;
+
   const onPointerLeave = useCallback(() => {
+    // The drag itself survives pointerleave thanks to setPointerCapture;
+    // this handler only resets the idle cursor.
     if (!isDragging.current && rulerRef.current) {
       rulerRef.current.style.cursor = "pointer";
     }
   }, []);
 
-  // Pre-compute selection geometry for rendering
+  // Selection geometry is derived from the authoritative micros every render,
+  // using the same canonical timeline-px mapping as clip rendering. This keeps
+  // the blue highlight + yellow brackets aligned with the exact published trim
+  // range at every zoom/scroll state — no drift, no re-entry from UI state.
   const hasSelection = selectionStart != null && selectionEnd != null;
-  const selLeft = hasSelection ? (Math.min(selectionStart!, selectionEnd!) / 1_000_000) * pixelsPerSecond : 0;
-  const selRight = hasSelection ? (Math.max(selectionStart!, selectionEnd!) / 1_000_000) * pixelsPerSecond : 0;
-  const selWidth = selRight - selLeft;
+  const selStartMicros = hasSelection ? Math.min(selectionStart!, selectionEnd!) : 0;
+  const selEndMicros = hasSelection ? Math.max(selectionStart!, selectionEnd!) : 0;
+  const selLeft = hasSelection ? timeMicrosToTimelinePx(selStartMicros, pixelsPerSecond) : 0;
+  const selRight = hasSelection ? timeMicrosToTimelinePx(selEndMicros, pixelsPerSecond) : 0;
+  const selWidth = Math.max(0, selRight - selLeft);
   const hudLeft = Math.max(40, Math.min(selLeft + selWidth / 2, totalWidth - 60));
 
   return (
     <div
       ref={rulerRef}
-      className="relative h-6 shrink-0 cursor-pointer border-b border-white/10 bg-[#1a1a1a]"
-      style={{ width: totalWidth }}
+      // `select-none` + `touch-none` prevent the browser from starting a
+      // native text-selection or pan gesture while we handle pointer events
+      // directly. Without these, dragging across tick labels highlights the
+      // numerals and tears the timeline.
+      className="relative h-6 shrink-0 cursor-pointer select-none touch-none border-b border-white/10 bg-[#1a1a1a]"
+      style={{ width: totalWidth, userSelect: "none", WebkitUserSelect: "none", touchAction: "none" }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onPointerLeave={onPointerLeave}
     >
       {/* Selection zone */}

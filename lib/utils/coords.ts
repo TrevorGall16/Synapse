@@ -51,3 +51,32 @@ export function screenXToTimeMicros(
     pixelsPerSecond
   );
 }
+
+/**
+ * Canonical pointer → micros helper for the timeline.
+ *
+ * Every pointer-driven interaction (ruler click/drag, bracket drag, playhead
+ * scrub, shift-click range, future drag tools) MUST derive micros through
+ * this function. It reads rect + scrollLeft directly off the outer scroll
+ * container — the one that owns scrollLeft — to avoid the double-scroll
+ * class of bugs that arises when a handler measures against an inner
+ * stretched content node (whose getBoundingClientRect already embeds
+ * the current scroll offset).
+ *
+ * Formula: (((clientX - outerScrollRect.left) + scrollLeft) / pps) * 1e6
+ *
+ * @param clientX           Pointer event clientX.
+ * @param outerScrollEl     The HTMLElement with overflow-x:auto that owns
+ *                          scrollLeft. Must NOT be an inner stretched
+ *                          content node.
+ * @param pixelsPerSecond   Committed pps from the playback store.
+ */
+export function pointerToMicros(
+  clientX: number,
+  outerScrollEl: HTMLElement,
+  pixelsPerSecond: number,
+): number {
+  const rect = outerScrollEl.getBoundingClientRect();
+  const scrollLeft = outerScrollEl.scrollLeft;
+  return (((clientX - rect.left) + scrollLeft) / pixelsPerSecond) * 1_000_000;
+}

@@ -12,6 +12,8 @@ import type { ClipEvent } from "@/lib/store/types";
 import { buildPostShareUrl } from "@/lib/utils/share";
 import { isHot } from "@/lib/social";
 import { observeViewport } from "@/lib/utils/intersection-observer-pool";
+import { loadThumbnailUrl, saveThumbnail } from "@/lib/store/thumbnail-idb";
+import { captureLiveFrame, extractThumbnail } from "@/lib/utils/thumbnail-extractor";
 
 function fmtK(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n); }
 
@@ -52,6 +54,10 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   const [copied, setCopied] = useState(false);
   const sharePopRef = useRef<HTMLDivElement>(null);
   const isBlob = isBlobUrl(post.videoUrl);
+  // Durable thumbnail URL resolved from IndexedDB. When present it wins over
+  // every other preview source, so local-media cards render immediately after
+  // refresh even before the blob pool finishes hydrating.
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
 
   // First clip's source URL + seek offset — handles gaps at project start.
   // Static thumbnail (un-hovered) NEVER applies color/animation filters so the
@@ -116,6 +122,55 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     v.addEventListener("loadedmetadata", onMeta);
     return () => v.removeEventListener("loadedmetadata", onMeta);
   }, [firstClipSrc, firstClipOffset]);
+
+  // ── Durable thumbnail pipeline ───────────────────────────────────────
+  // On mount (and whenever the source identity changes) try the durable
+  // IndexedDB thumbnail first. If none exists, schedule a background
+  // extraction from `firstClipSrc` — the result is both shown to this card
+  // immediately AND persisted so every subsequent refresh/boot short-circuits
+  // straight to Layer 1 of the source chain.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const existing = await loadThumbnailUrl(post.id);
+      if (cancelled) return;
+      if (existing) {
+        setThumbUrl(existing);
+        return;
+      }
+      // No persisted thumb — try to extract one from the canonical media.
+      // Skip when we have nothing to read from; the runtime captureLiveFrame
+      // effect below will handle the case where playback produces frames.
+      if (!firstClipSrc) return;
+      const blob = await extractThumbnail(firstClipSrc);
+      if (cancelled || !blob) return;
+      await saveThumbnail(post.id, blob);
+      const freshUrl = await loadThumbnailUrl(post.id);
+      if (!cancelled && freshUrl) setThumbUrl(freshUrl);
+    })();
+    return () => { cancelled = true; };
+  }, [post.id, firstClipSrc]);
+
+  // Runtime fallback (Layer 3 of the chain): if we still have no durable thumb
+  // but the video has reached a decodable frame during hover, capture that
+  // frame, persist it, and show it from now on. Guarded so we never overwrite
+  // an already-persisted thumbnail.
+  useEffect(() => {
+    if (thumbUrl) return; // Layer 1 already resolved
+    const v = videoRef.current;
+    if (!v) return;
+    const onFrame = () => {
+      if (thumbUrl || v.readyState < 2) return;
+      captureLiveFrame(v).then((blob) => {
+        if (!blob) return;
+        saveThumbnail(post.id, blob).then(() => {
+          loadThumbnailUrl(post.id).then((u) => { if (u) setThumbUrl(u); });
+        });
+      });
+    };
+    v.addEventListener("loadeddata", onFrame, { once: true });
+    return () => v.removeEventListener("loadeddata", onFrame);
+  }, [post.id, thumbUrl]);
 
   // Viewport-driven <video>.src strip: when the card leaves the viewport,
   // null out src so the browser releases decoder + demux buffer. On re-enter
@@ -260,9 +315,26 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           ))}
         </div>
 
+        {/* Durable IDB thumbnail — Layer 1 of the preview-source chain.
+            Rendered as a static <img> poster BEHIND the <video>. Stays
+            visible when the video isn't playing, which means:
+              - cards render instantly on scroll (no decoder warmup needed)
+              - refreshes with a dead blob URL still show a real frame
+              - on hover, the playing <video> covers it with live motion */}
+        {thumbUrl && (
+          <img
+            src={thumbUrl}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{ zIndex: 0 }}
+            draggable={false}
+          />
+        )}
+
         {/* Video */}
         <video ref={videoRef} src={firstClipSrc || undefined}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline && hovered ? "opacity-100" : thumbUrl ? "opacity-0" : firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
           // The hover tick loop owns `filter` and `transform` while hovered and
           // clears them on exit. Do not set them inline here or React re-renders
           // will clobber per-tick FX values.

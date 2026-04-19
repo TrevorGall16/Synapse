@@ -5,6 +5,7 @@ import { persist } from "zustand/middleware";
 import type { Track, ProjectSettings, MediaPoolItem } from "./types";
 import { releaseSnapshotMedia, hydrateMediaPool } from "./media-pool-db";
 import { savePostToIDB, removePostFromIDB, loadAllPostsFromIDB } from "./feed-idb";
+import { removeThumbnail } from "./thumbnail-idb";
 import { validateFeedPost } from "@/lib/schema";
 
 export type FeedPostType = "video" | "preset";
@@ -112,6 +113,9 @@ export const useFeedStore = create<FeedState>()(
         }
         set((s) => ({ userPosts: s.userPosts.filter((p) => p.id !== id) }));
         removePostFromIDB(id).catch(console.warn);
+        // Durable thumb cleanup — swallowed failures are acceptable, the post
+        // itself is already gone from the feed.
+        removeThumbnail(id).catch(console.warn);
       },
 
       removePosts: async (ids) => {
@@ -125,6 +129,8 @@ export const useFeedStore = create<FeedState>()(
         );
         // Durability: NO per-item .catch() — any IDB failure throws, state stays unchanged.
         await Promise.all(ids.map((id) => removePostFromIDB(id)));
+        // Durable thumb cleanup is fire-and-forget (post row is already gone).
+        await Promise.all(ids.map((id) => removeThumbnail(id).catch(console.warn)));
         // State updates only after all IDB deletes have landed.
         const idSet = new Set(ids);
         set((s) => ({ userPosts: s.userPosts.filter((p) => !idSet.has(p.id)) }));
