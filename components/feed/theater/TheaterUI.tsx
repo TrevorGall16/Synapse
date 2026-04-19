@@ -136,10 +136,12 @@ export function TheaterUI({
         </div>
       )}
 
-      {/* Bottom fade */}
+      {/* Bottom fade — deepened to support hero-sized handle + title.
+          Black stop raised to 0.9 and scrim extended to 45% so the larger
+          typography stays legible on bright/busy video content. */}
       <div
         className="absolute bottom-0 left-0 right-0 z-[35] pointer-events-none"
-        style={{ height: "35%", background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }}
+        style={{ height: "45%", background: "linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.55) 45%, transparent 100%)" }}
       />
 
       {/* Play/Pause — visible when paused; hidden when playing or idle */}
@@ -213,7 +215,7 @@ export function TheaterUI({
             {post.user.initial}
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-lg font-bold text-white hover:underline" style={TX}>@{post.user.handle}</span>
+            <span className="text-2xl font-bold text-white drop-shadow-lg hover:underline" style={TX}>@{post.user.handle}</span>
             {!isOwn && (
               <button
                 key={String(following)}
@@ -233,21 +235,22 @@ export function TheaterUI({
             )}
           </div>
         </a>
-        <h2 className="mb-1.5 line-clamp-2 text-xl font-bold leading-snug text-white" style={TX}>
+        <h2 className="mb-2 line-clamp-2 text-3xl font-extrabold tracking-tight leading-tight text-white drop-shadow-lg" style={TX}>
           {post.title}
         </h2>
         {post.description && (
-          <p className="mb-2 line-clamp-2 text-base leading-relaxed text-white/90" style={TX}>
+          <p className="mb-2 line-clamp-2 text-base leading-relaxed text-white/90 drop-shadow-lg" style={TX}>
             {parseHashtags(post.description, onHashtagClick)}
           </p>
         )}
-        {/* Channel chips */}
+        {/* Channel chips — scaled up to text-lg with px-4 py-1.5 so the
+            capsule has breathing room around the taller glyphs. */}
         {post.channels && post.channels.length > 0 && (
-          <div className="mb-1.5 flex flex-wrap gap-1.5">
+          <div className="mb-2 flex flex-wrap gap-2">
             {post.channels.map((ch) => (
               <span
                 key={ch}
-                className="rounded-full border border-purple-500/30 bg-purple-500/15 px-2.5 py-0.5 text-xs font-semibold text-purple-200 backdrop-blur-sm"
+                className="rounded-full border border-purple-500/30 bg-purple-500/15 px-4 py-1.5 text-lg font-semibold text-purple-200 backdrop-blur-sm drop-shadow-lg"
                 style={TX}
               >
                 {ch}
@@ -255,12 +258,12 @@ export function TheaterUI({
             ))}
           </div>
         )}
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-2">
           {post.tags.map((t) => (
             <button
               key={t}
               onClick={() => onHashtagClick(t)}
-              className="rounded-full bg-[#0a0a0a]/50 px-2 py-0.5 text-base font-medium text-white/85 backdrop-blur-sm hover:bg-brand/20 hover:text-brand-muted transition-colors"
+              className="rounded-full bg-[#0a0a0a]/50 px-4 py-1.5 text-lg font-medium text-white/85 backdrop-blur-sm drop-shadow-lg hover:bg-brand/20 hover:text-brand-muted transition-colors"
               style={TX}
             >
               {t}
