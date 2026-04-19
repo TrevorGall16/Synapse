@@ -64,6 +64,9 @@ export interface FeedPost {
   channels?: string[];
   /** Creator toggle — when false, comments are disabled on this post */
   comments_enabled?: boolean;
+  /** Derived, pool-relative, computed client-side at store mutation time.
+   *  NEVER sent over the wire; NEVER in any Zod schema; NEVER in IDB. */
+  heatTier?: import("@/lib/social").HeatTier;
 }
 
 interface FeedState {

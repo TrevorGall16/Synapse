@@ -99,3 +99,84 @@ export function isHot(post: FeedPost, pool: readonly FeedPost[], now: number = D
   if (v < HOT_MIN_VELOCITY) return false;
   return v >= getHotThreshold(pool, now);
 }
+
+// ──────────────────────────────────────────────────────────────
+// Heat Tier — Spec 1 Foundation
+// Derives a pool-percentile tier with absolute floors so tiny/idle
+// pools can't tier noise. Never serialized; never parsed from ingress.
+// ──────────────────────────────────────────────────────────────
+
+export type HeatTier = "warm" | "hot" | "trending";
+
+const FLOOR_WARM     = 5;
+const FLOOR_HOT      = 20;
+const FLOOR_TRENDING = 50;
+
+const PCT_WARM     = 0.20;
+const PCT_HOT      = 0.05;
+const PCT_TRENDING = 0.01;
+
+export interface HeatThresholds {
+  warm:     number;
+  hot:      number;
+  trending: number;
+}
+
+/** Single pass → three cut values. Sort once per pool. */
+export function computeHeatThresholds(
+  pool: readonly FeedPost[],
+  now: number = Date.now(),
+): HeatThresholds {
+  if (pool.length === 0) {
+    return { warm: Infinity, hot: Infinity, trending: Infinity };
+  }
+  const scores = pool
+    .map((p) => getVelocityScore(p, now))
+    .sort((a, b) => b - a);
+
+  const cut = (pct: number, floor: number) => {
+    const idx = Math.max(0, Math.floor(scores.length * pct) - 1);
+    return Math.max(scores[Math.min(idx, scores.length - 1)], floor);
+  };
+
+  return {
+    warm:     cut(PCT_WARM,     FLOOR_WARM),
+    hot:      cut(PCT_HOT,      FLOOR_HOT),
+    trending: cut(PCT_TRENDING, FLOOR_TRENDING),
+  };
+}
+
+/** Tier for a single velocity value against pre-computed thresholds. Pure. */
+export function tierFor(velocity: number, t: HeatThresholds): HeatTier | undefined {
+  if (velocity >= t.trending) return "trending";
+  if (velocity >= t.hot)      return "hot";
+  if (velocity >= t.warm)     return "warm";
+  return undefined;
+}
+
+/** Batch: attach heatTier to every post. Returns a new array; input is never
+ *  mutated. Posts below the warm floor get `heatTier: undefined`.
+ *
+ *  TODO(spec-2+): the `now` parameter is the hook for time-decay math —
+ *  e.g. penalise velocity scores for posts older than N days so the feed
+ *  stays fresh instead of tier-cementing ancient virality. Keep this
+ *  signature stable so the future decay factor can be slotted in without
+ *  touching callers. */
+export function enrichWithHeatTiers(
+  pool: readonly FeedPost[],
+  now: number = Date.now(),
+): FeedPost[] {
+  const t = computeHeatThresholds(pool, now);
+  return pool.map((p) => {
+    const v = getVelocityScore(p, now);
+    const tier = tierFor(v, t);
+    if (tier) return { ...p, heatTier: tier };
+    // Strip any stale tier if caller passed an already-enriched post that no
+    // longer qualifies. Never accumulate, never corrupt.
+    if (p.heatTier !== undefined) {
+      const { heatTier: _drop, ...rest } = p;
+      return rest as FeedPost;
+    }
+    return p;
+  });
+}
