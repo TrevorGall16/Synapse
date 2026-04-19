@@ -10,7 +10,7 @@
  * no refs, no playback logic. Pure rendering layer.
  */
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState } from "react";
 import {
   Zap, Heart, Share2, Play, Pause,
   MessageCircle, Users, GitBranch, WifiOff, Pencil,
@@ -57,11 +57,8 @@ export interface TheaterUIProps {
   onRemix: (post: FeedPost) => void;
   onCreator: () => void;
   onHashtagClick: (tag: string) => void;
-  blurSrc?: string;
   isCommentsOpen: boolean;
   onToggleComments: () => void;
-  /** Whether the main video is vertical (aspect < 1) — used to skip blur rendering */
-  isVerticalVideo?: boolean;
 }
 
 // ── TheaterUI ─────────────────────────────────────────────────────────────────
@@ -92,32 +89,11 @@ export function TheaterUI({
   onRemix,
   onCreator,
   onHashtagClick,
-  blurSrc,
   isCommentsOpen,
   onToggleComments,
-  isVerticalVideo,
 }: TheaterUIProps) {
   const [toast, setToast] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
-  const blurRef = useRef<HTMLVideoElement>(null);
-
-  // Sync blur video play/pause with main video state
-  // Skip entirely for vertical video — blur is invisible behind black bars
-  useEffect(() => {
-    const blur = blurRef.current;
-    if (!blur) return;
-    if (isVerticalVideo) {
-      blur.pause();
-      blur.removeAttribute("src");
-      blur.load();
-      return;
-    }
-    if (isPlaying) {
-      blur.play().catch(() => {});
-    } else {
-      blur.pause();
-    }
-  }, [isPlaying, isVerticalVideo]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -126,11 +102,6 @@ export function TheaterUI({
 
   return (
     <>
-      {/* No opaque cover here: the ambilight radial wash at z-0 in TheaterPlayer
-          is the "poster" until the video's readyState flips videoVisible and it
-          fades in at z-[10]. An extra solid div at z-[2] would sit on top of
-          the ambilight and read as a dull gray overlay on open. */}
-
       {/* Media pool hydration spinner */}
       {hydratedPool === null && !!post.projectSnapshot?.mediaPool?.length && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-[#0a0a0a]/80">
@@ -156,9 +127,6 @@ export function TheaterUI({
           />
         ))}
       </div>
-
-      {/* Depth gradient */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/60" />
 
       {/* Media error indicator */}
       {mediaError && (
@@ -393,17 +361,6 @@ export function TheaterUI({
         </div>
       )}
 
-      {/* Mirror blur — fixed behind the entire cell, synced to main video.
-          Vertical videos (aspect < 1) skip rendering entirely for zero CPU hit. */}
-      {blurSrc && !isVerticalVideo && (
-        <video
-          ref={blurRef}
-          src={blurSrc}
-          className="fixed inset-0 w-full h-full object-cover blur-3xl opacity-60 scale-110 -z-[1] pointer-events-none"
-          muted
-          playsInline
-        />
-      )}
     </>
   );
 }

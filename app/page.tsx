@@ -33,27 +33,9 @@ function buildDemoSnapshot(id: string, title: string) {
   };
 }
 
-// ── Static mock posts ─────────────────────────────────────────────────────────
-const MOCK_POSTS: FeedPost[] = [
-  { id: "1", user: { handle: "aurora_vj",    initial: "A", hue: 270 }, title: "Strobing Bass Drop Edit",   tags: ["#techno","#hypnotic"],    bg: "#1a0a2e", accent: "#7c3aed", duration: "0:42", likes: 2847, comments: 142, featured: true  },
-  { id: "2", user: { handle: "neon_cut",     initial: "N", hue: 340 }, title: "RGB Glitch Cascade",        tags: ["#glitch","#edm"],         bg: "#1a0818", accent: "#ec4899", duration: "0:30", likes: 1923, comments: 88,  featured: false },
-  { id: "3", user: { handle: "spectral_x",  initial: "S", hue: 200 }, title: "Hypno Tunnel Loop",         tags: ["#psy","#loop"],           bg: "#071a1a", accent: "#06b6d4", duration: "1:04", likes: 3410, comments: 211, featured: false },
-  { id: "4", user: { handle: "hue.shift",   initial: "H", hue: 30  }, title: "Chromatic Aberration Pack", tags: ["#vfx","#bass"],           bg: "#1a1100", accent: "#f59e0b", duration: "0:55", likes: 891,  comments: 47,  featured: false },
-  { id: "5", user: { handle: "deep.freq",   initial: "D", hue: 150 }, title: "Pixel Sort Waveform",       tags: ["#experimental","#lo-fi"], bg: "#051a0a", accent: "#22c55e", duration: "0:37", likes: 2104, comments: 93,  featured: false },
-  { id: "6", user: { handle: "void_signal", initial: "V", hue: 0   }, title: "Infrared Strobe Cut",       tags: ["#industrial","#harsh"],   bg: "#1a0500", accent: "#ef4444", duration: "0:28", likes: 1650, comments: 72,  featured: false },
-  { id: "7", user: { handle: "prismatic",   initial: "P", hue: 300 }, title: "Kaleidoscope Crossfade",    tags: ["#ambient","#visual"],     bg: "#160a1a", accent: "#a855f7", duration: "2:10", likes: 4201, comments: 317, featured: true  },
-  { id: "8", user: { handle: "lo.form",     initial: "L", hue: 185 }, title: "Scan Line Retro Mix",       tags: ["#retrowave","#vhs"],      bg: "#071018", accent: "#38bdf8", duration: "1:20", likes: 1389, comments: 61,  featured: false },
-  { id: "9", user: { handle: "bpmviz",      initial: "B", hue: 45  }, title: "Beat-Sync Flash Grid",      tags: ["#dnb","#reactive"],       bg: "#180e00", accent: "#fb923c", duration: "0:48", likes: 3027, comments: 184, featured: false },
-];
-
-// ── Deterministic infinite-scroll generator ───────────────────────────────────
-function generateMorePosts(pageNum: number): FeedPost[] {
-  return Array.from({ length: 10 }, (_, i) => {
-    const src = MOCK_POSTS[(pageNum * 10 + i) % MOCK_POSTS.length];
-    const v   = pageNum * 10 + i + 10;
-    return { ...src, id: `gen-${pageNum}-${i}`, title: `${src.title} • Vol. ${pageNum + 1}`, likes: src.likes + v * 37, comments: src.comments + v * 7, featured: false };
-  });
-}
+// Mock catalog wiped for launch — the home feed now sources only user-published
+// posts from the zustand store. The infinite-scroll generator + sentinel UI
+// have been removed alongside the mock catalog.
 
 // ── Niche chip ────────────────────────────────────────────────────────────────
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
@@ -129,10 +111,8 @@ export default function DiscoveryFeedPage() {
   }, [feedSort]);
   const [toast, setToast]             = useState<string | null>(null);
 
-  const [loadedPages, setLoadedPages]     = useState(1);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const sentinelRef        = useRef<HTMLDivElement>(null);
 
   const userPosts      = useFeedStore((s) => s.userPosts);
   const removePost     = useFeedStore((s) => s.removePost);
@@ -152,15 +132,10 @@ export default function DiscoveryFeedPage() {
   const loadProject  = useProjectStore((s) => s.loadProject);
   const tracks       = useProjectStore((s) => s.tracks);
 
-  // Merge user posts + infinite mock pages; deduplicate tags for filter bar
-  const allMockPosts = useMemo(() => {
-    const extra: FeedPost[] = [];
-    for (let p = 1; p < loadedPages; p++) extra.push(...generateMorePosts(p));
-    return [...MOCK_POSTS, ...extra];
-  }, [loadedPages]);
-  // Exclude preset posts — they have no video and show as "Media Offline" on the home feed
-  const videoUserPosts = useMemo(() => userPosts.filter((p) => !p.type || p.type === "video"), [userPosts]);
-  const allPosts = useMemo(() => [...videoUserPosts, ...allMockPosts], [videoUserPosts, allMockPosts]);
+  // Mock catalog wiped — feed is now sourced exclusively from user-published
+  // posts. Preset posts are excluded because they have no video and would
+  // render as "Media Offline" on the discovery grid.
+  const allPosts = useMemo(() => userPosts.filter((p) => !p.type || p.type === "video"), [userPosts]);
   // Derive reactively so TheaterMode always gets fresh URLs after GlobalHydrator finishes
   const theaterPost = useMemo(
     () => (theaterPostId ? allPosts.find((p) => p.id === theaterPostId) ?? null : null),
@@ -186,9 +161,6 @@ export default function DiscoveryFeedPage() {
     if (nActive) {
       base = base.filter((p) => p.tags.some((t) => normalizeTag(t) === nActive));
     }
-    // Latest in "all" window preserves the upstream chronological order so
-    // newly-uploaded posts stay on top without needing createdAt on mocks.
-    if (feedSort === "latest" && timeWindow === "all") return base;
     return rankByWindow(base, feedSort, timeWindow, { likeBoostIds: likedPostIds });
   }, [activeChannel, activeTag, allPosts, feedSort, timeWindow, likedPostIds]);
 
@@ -219,6 +191,16 @@ export default function DiscoveryFeedPage() {
     });
   }, [displayPosts, searchQuery, followedSet, feedSort]);
 
+  // Latest is contractually "newest first." Re-sort explicitly here, after
+  // every other ranking/filtering step has run, so Position 1 is mathematically
+  // guaranteed to be the post with the highest createdAt — regardless of what
+  // upstream ranking helpers do. V8 Array.sort is stable, so for non-Latest
+  // modes we leave the upstream order untouched.
+  const sortedPosts = useMemo(() => {
+    if (feedSort !== "latest") return filteredPosts;
+    return [...filteredPosts].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  }, [filteredPosts, feedSort]);
+
   // Hydrate tag / free-text search from URL on mount. The channel filter is
   // live-derived from useSearchParams() above — no effect needed for it.
   /* eslint-disable react-hooks/set-state-in-effect -- Why: one-shot mount hydration
@@ -237,18 +219,6 @@ export default function DiscoveryFeedPage() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   /* eslint-enable react-hooks/set-state-in-effect */
-
-  // Infinite scroll — load more when sentinel enters viewport
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setLoadedPages((p) => p + 1); },
-      { rootMargin: "200px" }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   // Popstate mirror: treat window.location as the single source of truth for
   // Theater open/close. Reads window.location.pathname directly (not
@@ -469,11 +439,11 @@ export default function DiscoveryFeedPage() {
       {/* Scrollable grid */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" onScroll={handleScroll}>
         <div className="px-6 py-5">
-          {activeTag && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-[#ff007a]">{activeTag}</span></p>}
+          {activeTag && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">{sortedPosts.length} result{sortedPosts.length !== 1 ? "s" : ""} for <span className="text-[#ff007a]">{activeTag}</span></p>}
           {!activeTag && !searchQuery && <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">Community Edits</p>}
           {!activeTag && searchQuery && (
             <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">
-              {filteredPosts.length} result{filteredPosts.length !== 1 ? "s" : ""} for <span className="text-[#ff007a]">{searchQuery}</span>
+              {sortedPosts.length} result{sortedPosts.length !== 1 ? "s" : ""} for <span className="text-[#ff007a]">{searchQuery}</span>
               {/* Dev badge — verifies the ranking engine is receiving the
                   active sortMode. Remove once search sort is fully trusted. */}
               <span className="ml-2 rounded-full bg-brand/20 px-1.5 py-0.5 text-[9px] font-bold text-brand-text ring-1 ring-brand/40">
@@ -481,9 +451,9 @@ export default function DiscoveryFeedPage() {
               </span>
             </p>
           )}
-          {filteredPosts.length > 0 ? (
+          {sortedPosts.length > 0 ? (
             <FeedGrid
-              posts={filteredPosts}
+              posts={sortedPosts}
               scrollRef={scrollContainerRef}
               currentUsername={currentProfile?.username}
               onOpen={(post) => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
@@ -492,6 +462,21 @@ export default function DiscoveryFeedPage() {
               onCreator={(post) => router.push(`/profile/${post.user.handle}`)}
               onDelete={(post) => removePost(post.id)}
             />
+          ) : !activeChannel && !activeTag && !searchQuery ? (
+            <div className="flex flex-col items-center justify-center py-24 text-center">
+              <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-brand/15 ring-1 ring-brand/30">
+                <Upload size={26} className="text-brand-text" />
+              </div>
+              <p className="text-base font-bold text-white/85">No videos found</p>
+              <p className="mt-1.5 text-sm text-white/50">Upload your first remix to get started.</p>
+              <button
+                onClick={() => router.push("/upload")}
+                className="mt-5 flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand/20 transition-colors hover:bg-brand/90"
+              >
+                <Upload size={14} />
+                Upload Video
+              </button>
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               {activeChannel ? (
@@ -507,9 +492,6 @@ export default function DiscoveryFeedPage() {
             </div>
           )}
         </div>
-        {/* Infinite scroll sentinel */}
-        <div ref={sentinelRef} className="h-1" />
-        <p className="pb-8 text-center text-[10px] text-white/18">Loading more…</p>
       </div>
 
       {/* Overlays */}
@@ -526,7 +508,7 @@ export default function DiscoveryFeedPage() {
             scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
           }}
           allPosts={allPosts}
-          lockedQueue={filteredPosts}
+          lockedQueue={sortedPosts}
           onNavigate={(p) => setTheaterPostId(p.id)}
         />
       )}

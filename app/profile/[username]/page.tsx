@@ -17,25 +17,12 @@ import { navigateToCreator } from "@/lib/nav/theater-nav";
 import { formatFollowerCount } from "@/lib/social";
 
 // ── Mock creator profiles ─────────────────────────────────────────────────────
-const CREATOR_MAP: Record<string, { displayName: string; bio: string; hue: number; followers: number; following: number; postCount: number; totalLikes: number; remixes: number }> = {
-  aurora_vj:   { displayName: "Aurora VJ",   bio: "Strobing visuals & hypnotic loops.",              hue: 270, followers: 8420,  following: 312, postCount: 47, totalLikes: 2600,  remixes: 12 },
-  neon_cut:    { displayName: "Neon Cut",     bio: "RGB splits and glitch art. EDM edit machine.",    hue: 340, followers: 5130,  following: 198, postCount: 31, totalLikes: 1400,  remixes: 8  },
-  spectral_x:  { displayName: "Spectral X",  bio: "Psy visuals, tunnel loops, trippy transitions.",  hue: 200, followers: 11200, following: 427, postCount: 63, totalLikes: 4800,  remixes: 21 },
-  "hue.shift": { displayName: "Hue Shift",   bio: "Chromatic aberration and VFX packs.",             hue: 30,  followers: 2980,  following: 155, postCount: 18, totalLikes: 690,   remixes: 4  },
-  "deep.freq": { displayName: "Deep Freq",   bio: "Pixel sorting, lo-fi, experimental cuts.",        hue: 150, followers: 6740,  following: 281, postCount: 39, totalLikes: 2100,  remixes: 11 },
-  void_signal: { displayName: "Void Signal", bio: "Industrial noise, infrared palette.",             hue: 0,   followers: 4890,  following: 167, postCount: 28, totalLikes: 1350,  remixes: 6  },
-  prismatic:   { displayName: "Prismatic",   bio: "Kaleidoscope edits, ambient crossfades.",         hue: 300, followers: 14300, following: 503, postCount: 82, totalLikes: 7800,  remixes: 31 },
-  "lo.form":   { displayName: "Lo Form",     bio: "Retrowave, VHS grain, scan-line aesthetics.",     hue: 185, followers: 3720,  following: 224, postCount: 22, totalLikes: 930,   remixes: 5  },
-  bpmviz:      { displayName: "BPM Viz",     bio: "Beat-synced flash grids. DnB reactive visuals.",  hue: 45,  followers: 9160,  following: 390, postCount: 54, totalLikes: 3650,  remixes: 17 },
-};
-const MOCK_ACCENT: Record<string, string> = {
-  aurora_vj: "#7c3aed", neon_cut: "#ec4899", spectral_x: "#06b6d4", "hue.shift": "#f59e0b",
-  "deep.freq": "#22c55e", void_signal: "#ef4444", prismatic: "#a855f7", "lo.form": "#38bdf8", bpmviz: "#fb923c",
-};
-const MOCK_BG: Record<string, string> = {
-  aurora_vj: "#1a0a2e", neon_cut: "#1a0818", spectral_x: "#071a1a", "hue.shift": "#1a1100",
-  "deep.freq": "#051a0a", void_signal: "#1a0500", prismatic: "#160a1a", "lo.form": "#071018", bpmviz: "#180e00",
-};
+// Wiped for launch — only the signed-in user's profile is populated. Lookups
+// against an unknown handle return undefined, which the consuming code below
+// already handles via `?.` chains and `?? 0` fallbacks.
+const CREATOR_MAP: Record<string, { displayName: string; bio: string; hue: number; followers: number; following: number; postCount: number; totalLikes: number; remixes: number }> = {};
+const MOCK_ACCENT: Record<string, string> = {};
+const MOCK_BG: Record<string, string> = {};
 
 // ── Unified post card ─────────────────────────────────────────────────────────
 const PostCard = memo(function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, onDelete, views, createdAt }: {

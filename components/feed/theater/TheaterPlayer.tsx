@@ -95,7 +95,6 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   const [showUnmuteToast, setShowUnmuteToast] = useState(false);
   const [isIdle, setIsIdle]                   = useState(false);
   const [hydratedPool, setHydratedPool]       = useState<MediaPoolItem[] | null>(null);
-  const [isVerticalVideo, setIsVerticalVideo] = useState(false);
 
   const isHydrated       = useHydrationStore((s) => s.isHydrated);
   const currentUsername  = useUserStore((s) => s.profile?.username);
@@ -657,7 +656,6 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   const isBlobPost   = post.videoUrl?.startsWith("blob:");
   const remixAllowed = canRemix(post);
   const stableSrc    = !post.projectSnapshot && post.videoUrl ? post.videoUrl : undefined;
-  const blurSrc      = post.videoUrl ?? snapshotClips[0]?.url;
 
   if (!post.projectSnapshot && post.videoUrl && !stableSrc) {
     console.error("[Theater] stableSrc resolved to undefined despite videoUrl being set", { postId: post.id, videoUrl: post.videoUrl });
@@ -667,34 +665,10 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
 
   return (
     <div ref={cellRef} className="relative flex h-screen w-full snap-start snap-always items-center justify-center bg-[#0a0a0a]">
-      {/* Ambilight — static radial wash derived from the post's bg + accent.
-          Replaces a live-video blur (cheap: one gradient div, no decode/compositor
-          churn per frame). The oversize scale prevents the blurred edge from
-          revealing the letterbox seam; saturate(140%) pushes the wall color so
-          the glow reads even on heavily-graded clips. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 z-0"
-        style={{
-          background: `radial-gradient(circle at 50% 42%, ${post.accent}66 0%, ${post.bg}b3 38%, #0a0a0a 82%)`,
-        }}
-      />
       <div
         className={`group relative z-[1] h-full w-full overflow-hidden ${isIdle && isPlaying ? "cursor-none" : "cursor-auto"}`}
         onMouseMove={handleMouseMove}
       >
-        {/* Poster layer — fills the gap between mount and the video's first
-            safe frame (onCanPlay / readyState >= 3). Without this the container
-            rendered bare black between the ambilight wash and the hidden video,
-            which read as the "gray box" users reported on Theater open.
-            Fades out under the fade-in video so the hand-off is seamless. */}
-        <div
-          aria-hidden
-          className={`pointer-events-none absolute inset-0 z-[5] transition-opacity duration-200 ${videoVisible && !mediaError ? "opacity-0" : "opacity-100"}`}
-          style={{
-            background: `radial-gradient(circle at 50% 50%, ${post.accent}80 0%, ${post.bg}e6 55%, #0a0a0a 100%)`,
-          }}
-        />
         {/* Main video element */}
         <video
           ref={videoRef}
@@ -703,12 +677,6 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onError={() => setMediaError(true)}
-          onLoadedMetadata={(e) => {
-            const v = e.currentTarget;
-            if (v.videoWidth > 0 && v.videoHeight > 0) {
-              setIsVerticalVideo(v.videoWidth / v.videoHeight < 1);
-            }
-          }}
           onLoadedData={() => {
             // readyState 2 (HAVE_CURRENT_DATA) is too early to reveal — the
             // video has one frame but no buffered runway, so autoplay stutters
@@ -794,10 +762,8 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
           onRemix={onRemix}
           onCreator={onCreator}
           onHashtagClick={onHashtagClick}
-          blurSrc={blurSrc}
           isCommentsOpen={isCommentsOpen}
           onToggleComments={onToggleComments}
-          isVerticalVideo={isVerticalVideo}
         />
       </div>
     </div>

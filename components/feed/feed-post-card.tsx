@@ -290,15 +290,16 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
             <span style={r.style}>{r.displayText}</span>
           </div>
         ))}
-        {/* Typography scrim — multi-stop bottom gradient keeps the creator
-            handle + title legible on any frame. Top 25% carries a gentle
-            vignette so top-right badges stay readable without a second div. */}
+        {/* Typography scrim — deeper bottom-half ramp to support the larger
+            handle + title text. Dark stop now starts at 50% (was 76%) so the
+            bottom block of copy reads on any frame, including bright videos.
+            A short top vignette keeps the upper badge row legible. */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 28%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.55) 76%, rgba(0,0,0,0.95) 100%)",
+              "linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 25%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.65) 78%, rgba(0,0,0,0.95) 100%)",
           }}
         />
 
@@ -323,11 +324,11 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
 
         {/* Default bottom info (fades on hover) */}
         <div className={`absolute bottom-0 left-0 right-0 p-3 transition-all duration-200 ${hovered ? "opacity-0 translate-y-1" : ""}`}>
-          <button onClick={(e) => { e.stopPropagation(); onCreator(); }} className="mb-1 flex cursor-pointer items-center gap-1.5 hover:underline">
+          <button onClick={(e) => { e.stopPropagation(); onCreator(); }} className="mb-1.5 flex cursor-pointer items-center gap-1.5 hover:underline">
             <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white" style={{ background: `hsl(${post.user.hue} 55% 30%)` }}>{post.user.initial}</div>
-            <span className="text-[10px] font-medium text-white/70">@{post.user.handle}</span>
+            <span className="text-base font-semibold text-white/85 drop-shadow-md">@{post.user.handle}</span>
           </button>
-          <p className="line-clamp-2 text-[11px] font-bold leading-snug text-white">{post.title}</p>
+          <p className="line-clamp-2 text-base font-bold leading-snug text-white drop-shadow-md">{post.title}</p>
           {post.remixedFromHandle && (
             <div className="mt-1">
               <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}{post.rootParentHandle && <> • Original by @{post.rootParentHandle}</>}</span>
@@ -339,9 +340,9 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
         <div className={`absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/30 to-transparent p-3 transition-all duration-200 ${hovered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
           <button onClick={(e) => { e.stopPropagation(); onCreator(); }} className="mb-1.5 flex cursor-pointer items-center gap-1.5 hover:underline">
             <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ring-1 ring-white/20" style={{ background: `hsl(${post.user.hue} 55% 30%)` }}>{post.user.initial}</div>
-            <span className="text-[10px] font-semibold text-white/80">@{post.user.handle}</span>
+            <span className="text-base font-semibold text-white/90 drop-shadow-md">@{post.user.handle}</span>
           </button>
-          <p className="mb-1 text-xs font-bold leading-snug text-white">{post.title}</p>
+          <p className="mb-1.5 text-base font-bold leading-snug text-white drop-shadow-md">{post.title}</p>
           {post.remixedFromHandle && (
             <div className="mb-1">
               <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}{post.rootParentHandle && <> • Original by @{post.rootParentHandle}</>}</span>
@@ -349,7 +350,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           )}
           {post.channels && post.channels.length > 0 && (
             <div className="mb-1 flex flex-wrap gap-1">
-              {post.channels.map((ch) => <span key={ch} className="rounded-full border border-purple-500/25 bg-purple-500/15 px-1.5 py-px text-[8px] font-semibold text-purple-200">{ch}</span>)}
+              {post.channels.map((ch) => <span key={ch} className="rounded-full border border-purple-500/25 bg-purple-500/15 px-2 py-px text-[9px] font-bold tracking-wide text-purple-200">{ch}</span>)}
             </div>
           )}
           <div className="mb-2 flex flex-wrap gap-1">
