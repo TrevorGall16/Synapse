@@ -64,7 +64,18 @@ export interface MockCreator {
   remixes:     number;
 }
 
-export const CREATOR_MAP: Record<string, MockCreator> = {};
+export const CREATOR_MAP: Record<string, MockCreator> = {
+  aurora_vj: {
+    displayName: "Aurora VJ",
+    bio:         "Techno-leaning VJ edits. Sharp cuts, hypnotic loops.",
+    hue:         270,
+    followers:   2847,
+    following:   142,
+    postCount:   18,
+    totalLikes:  12_400,
+    remixes:     64,
+  },
+};
 
 export function findMockCreator(username: string): MockCreator | null {
   return CREATOR_MAP[username] ?? null;

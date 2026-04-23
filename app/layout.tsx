@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { Sidebar } from "@/components/ui/sidebar";
 import { GlobalHydrator } from "@/components/GlobalHydrator";
 import { GlobalSvgFilters } from "@/components/GlobalSvgFilters";
-import { HydrationBarrier } from "@/components/HydrationBarrier";
 import { AppBootstrap } from "@/components/AppBootstrap";
 import { SaveBarrierOverlay } from "@/components/SaveBarrierOverlay";
 import "./globals.css";
@@ -43,12 +41,7 @@ export default function RootLayout({
         <GlobalHydrator />
         <AppBootstrap />
         <SaveBarrierOverlay />
-        <div className="flex h-screen w-screen overflow-hidden">
-          <Sidebar />
-          <main className="ml-56 flex-1 overflow-hidden min-w-0 min-h-0 h-full">
-            <HydrationBarrier>{children}</HydrationBarrier>
-          </main>
-        </div>
+        {children}
       </body>
     </html>
   );

@@ -8,7 +8,7 @@ import { Compass } from "lucide-react";
 import { NICHE_CATEGORIES as CATEGORIES } from "@/lib/config/taxonomy";
 
 // Lazy-load the heavy Explore page content (800+ lines)
-const ExploreContent = dynamic(() => import("@/app/explore/page"), {
+const ExploreContent = dynamic(() => import("@/app/(consumption)/explore/page"), {
   loading: () => (
     <div className="flex flex-1 items-center justify-center">
       <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/10 border-t-white/50" />
