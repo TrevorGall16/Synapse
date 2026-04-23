@@ -7,6 +7,7 @@ import { releaseSnapshotMedia, hydrateMediaPool } from "./media-pool-db";
 import { savePostToIDB, removePostFromIDB, loadAllPostsFromIDB } from "./feed-idb";
 import { removeThumbnail } from "./thumbnail-idb";
 import { validateFeedPost } from "@/lib/schema";
+import { enrichWithHeatTiers } from "@/lib/social";
 
 export type FeedPostType = "video" | "preset";
 
@@ -98,7 +99,7 @@ export const useFeedStore = create<FeedState>()(
       likedPostIds: [],
 
       addPost: (post) => {
-        set((s) => ({ userPosts: [post, ...s.userPosts] }));
+        set((s) => ({ userPosts: enrichWithHeatTiers([post, ...s.userPosts]) }));
         // Persist to IDB asynchronously — blob URLs stripped in savePostToIDB
         savePostToIDB(post).catch((err) => console.error("[FeedStore] addPost IDB save threw unexpectedly:", err));
       },
@@ -114,7 +115,7 @@ export const useFeedStore = create<FeedState>()(
         if (post?.projectSnapshot?.mediaPool?.length) {
           releaseSnapshotMedia(post.projectSnapshot.mediaPool).catch(console.warn);
         }
-        set((s) => ({ userPosts: s.userPosts.filter((p) => p.id !== id) }));
+        set((s) => ({ userPosts: enrichWithHeatTiers(s.userPosts.filter((p) => p.id !== id)) }));
         removePostFromIDB(id).catch(console.warn);
         // Durable thumb cleanup — swallowed failures are acceptable, the post
         // itself is already gone from the feed.
@@ -136,7 +137,7 @@ export const useFeedStore = create<FeedState>()(
         await Promise.all(ids.map((id) => removeThumbnail(id).catch(console.warn)));
         // State updates only after all IDB deletes have landed.
         const idSet = new Set(ids);
-        set((s) => ({ userPosts: s.userPosts.filter((p) => !idSet.has(p.id)) }));
+        set((s) => ({ userPosts: enrichWithHeatTiers(s.userPosts.filter((p) => !idSet.has(p.id))) }));
       },
 
       /**
@@ -184,7 +185,7 @@ export const useFeedStore = create<FeedState>()(
         // called during the same tick as hydration) so they are never silently dropped.
         const idbIds = new Set(hydrated.map((p) => p.id));
         const unpersistedInMemory = get().userPosts.filter((p) => !idbIds.has(p.id));
-        set({ userPosts: [...unpersistedInMemory, ...hydrated] });
+        set({ userPosts: enrichWithHeatTiers([...unpersistedInMemory, ...hydrated]) });
       },
     }),
     {
