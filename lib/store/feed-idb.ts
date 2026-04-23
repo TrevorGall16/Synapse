@@ -11,18 +11,39 @@ import type { FeedPost } from "./feed-store";
 const feedDb = createStore("synapse-feed-db", "posts");
 
 /**
+ * Pure helper: strips all derived (pool-dependent, time-dependent) fields from a
+ * FeedPost before it is written to IndexedDB.
+ *
+ * `heatTier` is computed from the pool at mutation time using `Date.now()`.
+ * If persisted, a cold post could survive across sessions flagged "trending" forever.
+ * Enrichment is always recomputed on hydrate (see `hydrateAllPosts`), so it is
+ * safe — and correct — to omit it from the durable record.
+ *
+ * Exported so unit tests can assert the strip logic directly without IDB plumbing.
+ */
+export function stripDerivedFields(post: FeedPost): FeedPost {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { heatTier: _drop, ...rest } = post;
+  return rest as FeedPost;
+}
+
+/**
  * Persist one post to IDB.
  * Blob videoUrl / mediaPool previewUrls are stripped before writing —
  * they are session-only and will be re-hydrated from media-pool-db on next boot.
  */
 export async function savePostToIDB(post: FeedPost): Promise<void> {
+  // Strip derived `heatTier` — pool-dependent and time-dependent (reads Date.now()).
+  // If persisted, a cold post could survive across sessions flagged "trending" forever.
+  // Enrichment is always recomputed on hydrate, so never persist it in the first place.
+  const rest = stripDerivedFields(post);
   const safePost: FeedPost = {
-    ...post,
-    videoUrl: post.videoUrl?.startsWith("blob:") ? undefined : post.videoUrl,
-    projectSnapshot: post.projectSnapshot
+    ...rest,
+    videoUrl: rest.videoUrl?.startsWith("blob:") ? undefined : rest.videoUrl,
+    projectSnapshot: rest.projectSnapshot
       ? {
-          ...post.projectSnapshot,
-          mediaPool: post.projectSnapshot.mediaPool?.map((m) => ({
+          ...rest.projectSnapshot,
+          mediaPool: rest.projectSnapshot.mediaPool?.map((m) => ({
             ...m,
             previewUrl: m.previewUrl?.startsWith("blob:") ? "" : m.previewUrl,
           })),
