@@ -58,8 +58,8 @@ export interface FeedPost {
   demoStartTime?: number;
   /** Duration of the demo loop window in MICROSECONDS — Theater Mode loops demoStartTime…demoStartTime+demoDuration */
   demoDuration?: number;
-  /** Visual style niche — used for the niche/* pages and explore grouping. */
-  category?: "high-sensation" | "aesthetic" | "cinematic" | "glitch" | "slow-mo";
+  /** Content channel slug used for niche/* page routing (matches channelSlug(channel)). */
+  category?: string;
   /** Content channels — multi-select (max 4) from lib/config/taxonomy.CHANNELS.
    *  Orthogonal to `category` (visual style) and `tags` (free-form keywords). */
   channels?: string[];

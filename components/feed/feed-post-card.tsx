@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useMemo, useEffect, useCallback, useSyncExternalStore } from "react";
-import { Heart, MessageCircle, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch, Download, Eye } from "lucide-react";
+import { Heart, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch, Download, Eye, MoreHorizontal } from "lucide-react";
 import { type FeedPost, isBlobUrl, useFeedStore, FALLBACK_VIDEO_URL } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { canRemix } from "@/lib/policy";
@@ -64,6 +64,8 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   const [copied, setCopied] = useState(false);
   const sharePopRef = useRef<HTMLDivElement>(null);
   const sharePopPillarRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isBlob = isBlobUrl(post.videoUrl);
   // Durable thumbnail URL resolved from IndexedDB. When present it wins over
@@ -338,10 +340,14 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     setShareOpen(false);
   }, [post.id, post.title]);
 
-  const handleComment = () => {
-    setToast("Comments coming soon");
-    setTimeout(() => setToast(null), 2000);
-  };
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onOut = (e: MouseEvent) => {
+      if (!(moreMenuRef.current?.contains(e.target as Node) ?? false)) setMoreOpen(false);
+    };
+    document.addEventListener("pointerdown", onOut);
+    return () => document.removeEventListener("pointerdown", onOut);
+  }, [moreOpen]);
 
   const handleMouseEnter = () => {
     setHovered(true);
@@ -371,7 +377,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
       // rectangle in CSS, so the browser reserves the correct card box before
       // the virtualizer's row math settles. Stripping this made cards collapse
       // to a square during the first paint on wide monitors.
-      className="group relative aspect-[9/16] h-auto w-full cursor-pointer overflow-hidden rounded-xl transition-transform duration-300 ease-out hover:z-10 hover:scale-[1.05]"
+      className={`group relative aspect-[9/16] h-auto w-full cursor-pointer overflow-hidden rounded-xl transition-transform duration-300 ease-out ${autoplayInView ? "" : "hover:z-10 hover:scale-[1.05]"}`}
       style={{ willChange: "transform" }}
       onClick={() => { videoRef.current?.play().catch(() => {}); onOpen(); }}
       onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}
@@ -474,18 +480,18 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           </div>
         </div>
 
-        {/* Persistent bottom-left metadata — enhanced in single-column, fades on hover in grid */}
+        {/* Persistent bottom-left metadata — always visible; hover overlay sits on top without covering it */}
         <div
-          className={`absolute bottom-0 left-0 right-0 p-3 transition-all duration-200 ${!autoplayInView && hovered ? "opacity-0 translate-y-1" : ""}`}
+          className="absolute bottom-0 left-0 right-0 p-3"
           style={autoplayInView ? { paddingRight: "4.5rem", paddingBottom: "1rem" } : undefined}
         >
           <div className="mb-1.5 flex items-center gap-2">
             <button onClick={(e) => { e.stopPropagation(); onCreator(); }} className="flex cursor-pointer items-center gap-1.5 hover:underline">
               <div
-                className={`flex shrink-0 items-center justify-center rounded-full font-bold text-white ${autoplayInView ? "h-8 w-8 text-sm" : "h-5 w-5 text-[9px]"}`}
+                className={`flex shrink-0 items-center justify-center rounded-full font-bold text-white ${autoplayInView ? "h-12 w-12 text-base" : "h-5 w-5 text-[9px]"}`}
                 style={{ background: `hsl(${post.user.hue} 55% 30%)` }}
               >{post.user.initial}</div>
-              <span className={`font-semibold text-white/85 drop-shadow-md ${autoplayInView ? "text-lg" : "text-base"}`}>@{post.user.handle}</span>
+              <span className={`font-semibold text-white/85 drop-shadow-md ${autoplayInView ? "text-xl" : "text-base"}`}>@{post.user.handle}</span>
             </button>
             {autoplayInView && currentUsername !== post.user.handle && (
               <button
@@ -498,7 +504,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
               >{isFollowingCreator ? "Following" : "Follow"}</button>
             )}
           </div>
-          <p className="line-clamp-2 text-base font-bold leading-snug text-white drop-shadow-md">{post.title}</p>
+          <p className={`line-clamp-2 font-bold leading-snug text-white drop-shadow-md ${autoplayInView ? "text-lg" : "text-base"}`}>{post.title}</p>
           {post.remixedFromHandle && (
             <div className="mt-1">
               <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}{post.rootParentHandle && <> • Original by @{post.rootParentHandle}</>}</span>
@@ -506,34 +512,24 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           )}
         </div>
 
-        {/* Hover overlay — actions slide up */}
-        <div className={`absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/30 to-transparent p-3 transition-all duration-200 ${autoplayInView ? "pr-16" : ""} ${hovered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
-          <button onClick={(e) => { e.stopPropagation(); onCreator(); }} className="mb-1.5 flex cursor-pointer items-center gap-1.5 hover:underline">
-            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white ring-1 ring-white/20" style={{ background: `hsl(${post.user.hue} 55% 30%)` }}>{post.user.initial}</div>
-            <span className="text-base font-semibold text-white/90 drop-shadow-md">@{post.user.handle}</span>
-          </button>
-          <p className="mb-1.5 text-base font-bold leading-snug text-white drop-shadow-md">{post.title}</p>
-          {post.remixedFromHandle && (
-            <div className="mb-1">
-              <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}{post.rootParentHandle && <> • Original by @{post.rootParentHandle}</>}</span>
-            </div>
-          )}
+        {/* Hover overlay — transparent layer; tags stack above the persistent metadata (sandwich).
+            No background here — the permanent scrim handles readability. */}
+        <div className={`absolute inset-0 flex flex-col justify-end p-3 transition-all duration-200 ${autoplayInView ? "pr-16" : ""} ${hovered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
           {post.channels && post.channels.length > 0 && (
-            <div className="mb-1 flex flex-wrap gap-1">
-              {post.channels.map((ch) => <span key={ch} className="rounded-full border border-purple-500/25 bg-purple-500/15 px-2 py-px text-[9px] font-bold tracking-wide text-purple-200">{ch}</span>)}
+            <div className="mb-1.5 flex flex-wrap gap-1">
+              {post.channels.map((ch) => <span key={ch} className="rounded-full border border-purple-500/25 bg-purple-500/15 px-2.5 py-0.5 text-sm font-bold tracking-wide text-purple-200">{ch}</span>)}
             </div>
           )}
-          <div className="mb-2 flex flex-wrap gap-1">
-            {post.tags.map((t) => <span key={t} className="rounded bg-white/10 px-1 py-px text-[8px] text-white/50">{t}</span>)}
-          </div>
+          {post.tags.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {post.tags.map((t) => <span key={t} className="glass-surface-ghost rounded-full px-2.5 py-0.5 text-sm font-medium text-white/80">{t}</span>)}
+            </div>
+          )}
           <div className={`flex items-center ${autoplayInView ? "justify-end" : "justify-between"}`}>
             {!autoplayInView && (
               <div className="flex items-center gap-3">
                 <button onClick={(e) => { e.stopPropagation(); toggleLike(post.id); }} className="flex items-center gap-0.5 text-[10px] text-white/60 transition-colors hover:text-red-400">
                   <Heart size={11} className={liked ? "fill-red-400 text-red-400" : ""} /><span>{fmtK(post.likes + (liked ? 1 : 0))}</span>
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); handleComment(); }} className="flex items-center gap-0.5 text-[10px] text-white/60 hover:text-white/90">
-                  <MessageCircle size={11} /><span>{fmtK(post.comments)}</span>
                 </button>
                 <div className="relative" ref={sharePopRef}>
                   <button onClick={(e) => { e.stopPropagation(); setShareOpen((v) => !v); }} className="text-white/60 hover:text-white/90"><Share2 size={11} /></button>
@@ -563,20 +559,6 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
                 )}
               </div>
             )}
-            <div className="flex items-center gap-1.5">
-              {onImport && (
-                <button onClick={(e) => { e.stopPropagation(); onImport(); }}
-                  className="flex items-center gap-1 rounded-lg border border-white/15 px-2 py-1.5 text-[10px] font-semibold text-white/60 transition-all hover:bg-white/8 active:scale-95"
-                  title="Import to Media Pool"
-                ><Download size={9} />Import</button>
-              )}
-              {canRemix(post) && (
-                <button onClick={(e) => { e.stopPropagation(); onRemix(); }}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[10px] font-bold text-white transition-all active:scale-95"
-                  style={{ background: `${post.accent}dd`, boxShadow: `0 0 10px ${post.accent}50` }}
-                ><Zap size={9} />Remix</button>
-              )}
-            </div>
           </div>
         </div>
         {/* Single-column action pillar — persistent social triggers, no backdrop-filter blur (mobile GPU guardrail) */}
@@ -587,12 +569,6 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
                 <Heart size={20} className={liked ? "fill-red-400 text-red-400" : ""} />
               </div>
               <span className="text-[9px] font-bold text-white drop-shadow-md">{fmtK(post.likes + (liked ? 1 : 0))}</span>
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); handleComment(); }} className="flex flex-col items-center gap-1">
-              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white drop-shadow-md">
-                <MessageCircle size={20} />
-              </div>
-              <span className="text-[9px] font-bold text-white drop-shadow-md">{fmtK(post.comments)}</span>
             </button>
             <div className="relative flex flex-col items-center gap-1" ref={sharePopPillarRef}>
               <button onClick={(e) => { e.stopPropagation(); setShareOpen((v) => !v); }} className="flex flex-col items-center gap-1">
@@ -625,6 +601,37 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
               </div>
               <span className="text-[9px] font-bold text-white drop-shadow-md">{fmtK(post.likes * 10 + post.comments * 20)}</span>
             </div>
+            {/* Three-dots: Remix + Import */}
+            {(canRemix(post) || onImport) && (
+              <div className="relative flex flex-col items-center gap-1" ref={moreMenuRef}>
+                <button onClick={(e) => { e.stopPropagation(); setMoreOpen((v) => !v); }} className="flex flex-col items-center gap-1">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white drop-shadow-md">
+                    <MoreHorizontal size={20} />
+                  </div>
+                  <span className="text-[9px] font-bold text-white drop-shadow-md">More</span>
+                </button>
+                {moreOpen && (
+                  <div
+                    className="absolute right-full bottom-0 z-[60] mr-2 min-w-[140px] rounded-xl border border-white/20 py-1.5 shadow-2xl"
+                    style={{ background: "rgba(30,30,30,0.82)", backdropFilter: "blur(16px) saturate(180%)", WebkitBackdropFilter: "blur(16px) saturate(180%)" }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {canRemix(post) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setMoreOpen(false); onRemix(); }}
+                        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
+                      ><Zap size={13} style={{ color: post.accent }} />Remix</button>
+                    )}
+                    {onImport && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setMoreOpen(false); onImport(); }}
+                        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
+                      ><Download size={13} className="text-white/60" />Import</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

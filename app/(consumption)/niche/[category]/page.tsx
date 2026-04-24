@@ -7,7 +7,7 @@ import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 import { TheaterMode } from "@/components/feed/theater-mode";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { getRemixMode } from "@/lib/policy";
-import { NICHE_CATEGORY_BY_SLUG as CATEGORY_META, NICHE_CATEGORY_SLUGS, isValidNicheCategory as isValidCategory, type NicheCategorySlug as NicheCategory } from "@/lib/config/taxonomy";
+import { NICHE_CATEGORY_BY_SLUG as CATEGORY_META, isValidNicheCategory as isValidCategory } from "@/lib/config/taxonomy";
 import { navigateToCreator } from "@/lib/nav/theater-nav";
 
 // ---------------------------------------------------------------------------
@@ -85,14 +85,11 @@ export default function NichePage() {
   const valid = isValidCategory(rawCategory);
   const meta = valid ? CATEGORY_META[rawCategory] : null;
 
-  // Filter posts by category enum OR matching hashtag in tags[] — bridges both systems
+  // Filter posts whose channels[] includes this category's label (e.g. "Big Tits")
   const filtered = useMemo(() => {
-    if (!valid) return [];
-    const aliases = CATEGORY_META[rawCategory].tagAliases;
-    return allPosts.filter(
-      (p) => p.category === rawCategory || p.tags.some((t) => aliases.includes(t))
-    );
-  }, [allPosts, rawCategory, valid]);
+    if (!valid || !meta) return [];
+    return allPosts.filter((p) => p.channels?.includes(meta.label));
+  }, [allPosts, valid, meta]);
 
   const handleStudioLoad = (p: FeedPost) => {
     if (getRemixMode(p) === "snapshot") {
@@ -114,7 +111,7 @@ export default function NichePage() {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-[#141414] text-center">
         <p className="text-sm font-bold text-white/40">Unknown category</p>
-        <p className="mt-1 text-[11px] text-white/25">Valid: {NICHE_CATEGORY_SLUGS.join(", ")}</p>
+        <p className="mt-1 text-[11px] text-white/25">Browse to /explore to see all categories.</p>
         <button onClick={() => router.push("/")} className="mt-4 rounded-lg bg-white/8 px-3 py-1.5 text-xs text-white/60 hover:bg-white/14">
           <ArrowLeft size={11} className="mr-1 inline" />Back to Feed
         </button>

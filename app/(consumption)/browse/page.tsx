@@ -1,149 +1,177 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useRef, useState } from "react";
 import { Compass } from "lucide-react";
-import { NICHE_CATEGORIES, NICHE_TAGS } from "@/lib/config/taxonomy";
+import { NICHE_CATEGORIES, NICHE_TAGS, type NicheCategory } from "@/lib/config/taxonomy";
+import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 
-type BrowseTab = "niches" | "creators" | "tags";
+type MediaType = "all" | "videos" | "gifs" | "images";
 type SortOption = "trending" | "latest" | "top";
 
-// ── Tab content panels ────────────────────────────────────────────────────────
+const MEDIA_TYPES: { id: MediaType; label: string }[] = [
+  { id: "all",    label: "All" },
+  { id: "videos", label: "Videos" },
+  { id: "gifs",   label: "GIFs" },
+  { id: "images", label: "Images" },
+];
 
-function NichesContent() {
+const SORT_OPTIONS: SortOption[] = ["trending", "latest", "top"];
+
+// ── Category card with hover-play video preview ───────────────────────────────
+
+function CategoryCard({ cat, previewPost }: { cat: NicheCategory; previewPost: FeedPost | undefined }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const handleEnter = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.play().catch(() => {});
+  };
+
+  const handleLeave = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.pause();
+    v.currentTime = 0;
+  };
+
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-6">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {NICHE_CATEGORIES.map((cat) => (
-          <Link
-            key={cat.slug}
-            href={`/niche/${cat.slug}`}
-            className="group relative overflow-hidden rounded-xl border border-white/8 transition-all duration-200 hover:border-white/20 hover:scale-[1.01]"
-            style={{ background: cat.bg }}
-          >
-            <div
-              className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full opacity-20 blur-3xl"
-              style={{ background: cat.accent }}
-            />
-            <div className="relative flex flex-col gap-1.5 p-5">
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full" style={{ background: cat.accent }} />
-                <span className="text-sm font-bold text-white">{cat.label}</span>
-              </div>
-              <p className="text-[11px] leading-relaxed text-white/45">{cat.description}</p>
-            </div>
-          </Link>
-        ))}
+    <Link
+      href={`/niche/${cat.slug}`}
+      className="group relative aspect-square overflow-hidden rounded-xl border border-white/8 transition-all duration-300 hover:scale-[1.03] hover:border-white/20"
+      style={{ background: cat.bg }}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+    >
+      {/* Video preview — fades in on hover, invisible at rest */}
+      {previewPost?.videoUrl && (
+        <video
+          ref={videoRef}
+          src={previewPost.videoUrl}
+          className="absolute inset-0 h-full w-full object-cover opacity-0 transition-opacity duration-400 group-hover:opacity-100"
+          muted
+          loop
+          playsInline
+          preload="none"
+        />
+      )}
+
+      {/* Accent glow blob — fades out when video takes over */}
+      <div
+        className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full opacity-30 blur-2xl transition-opacity duration-300 group-hover:opacity-0"
+        style={{ background: cat.accent }}
+      />
+
+      {/* Bottom scrim + label */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent p-3 pt-10">
+        <div className="flex items-center gap-1.5">
+          <div className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: cat.accent }} />
+          <span className="truncate text-[12px] font-bold text-white">{cat.label}</span>
+        </div>
       </div>
-    </div>
+    </Link>
   );
 }
 
-function CreatorsContent() {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-20 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/6 ring-1 ring-white/12">
-        <Compass size={22} className="text-white/30" />
-      </div>
-      <p className="text-sm font-semibold text-white/40">Creator profiles coming soon</p>
-      <p className="max-w-xs text-[11px] text-white/25">
-        Follow creators from their profile pages or from any post in your feed.
-      </p>
-    </div>
-  );
-}
-
-function TagsContent() {
-  return (
-    <div className="flex-1 overflow-y-auto px-6 py-6">
-      <p className="mb-4 text-[10px] font-semibold uppercase tracking-widest text-white/25">Trending Tags</p>
-      <div className="flex flex-wrap gap-2">
-        {NICHE_TAGS.map((tag) => (
-          <Link
-            key={tag}
-            href={`/?tag=${encodeURIComponent(tag.slice(1))}`}
-            className="rounded-full border border-white/12 bg-white/6 px-4 py-2 text-sm font-semibold text-white/70 transition-colors hover:border-white/25 hover:bg-white/12 hover:text-white"
-          >
-            {tag}
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Browse Page ──────────────────────────────────────────────────────────────
+// ── Browse / Explore Page ─────────────────────────────────────────────────────
 
 export default function BrowsePage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const activeTab = (searchParams.get("tab") as BrowseTab) || "niches";
+  const [mediaType, setMediaType] = useState<MediaType>("all");
   const [sort, setSort] = useState<SortOption>("trending");
+  const allPosts = useFeedStore((s) => s.userPosts);
 
-  const switchTab = useCallback((tab: BrowseTab) => {
-    const params = new URLSearchParams();
-    if (tab !== "niches") params.set("tab", tab);
-    const qs = params.toString();
-    router.replace(`/browse${qs ? `?${qs}` : ""}`, { scroll: false });
-  }, [router]);
-
-  const tabs: { id: BrowseTab; label: string }[] = [
-    { id: "niches",   label: "Niches" },
-    { id: "creators", label: "Creators" },
-    { id: "tags",     label: "Tags" },
-  ];
-
-  const sorts: { id: SortOption; label: string }[] = [
-    { id: "trending", label: "Trending" },
-    { id: "latest",   label: "Latest" },
-    { id: "top",      label: "Top" },
-  ];
+  // First post per category for the video preview
+  const previewBySlug = new Map<string, FeedPost>();
+  for (const cat of NICHE_CATEGORIES) {
+    const match = allPosts.find((p) => p.channels?.includes(cat.label));
+    if (match) previewBySlug.set(cat.slug, match);
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
       {/* Header */}
-      <div className="z-10 shrink-0 border-b border-white/10 bg-[#141414]/95 backdrop-blur-sm">
-        <div className="flex items-center justify-between gap-2.5 px-6 py-3">
+      <div className="z-10 shrink-0 border-b border-white/10 bg-[#141414]/95 px-6 py-3 backdrop-blur-sm">
+        <div className="mb-3 flex items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
             <Compass size={15} className="text-brand-accent" />
-            <h1 className="text-base font-bold text-white">Browse</h1>
+            <h1 className="text-base font-bold text-white">Explore</h1>
           </div>
-          {/* Sort options */}
           <div className="flex items-center gap-1">
-            {sorts.map(({ id, label }) => (
+            {SORT_OPTIONS.map((id) => (
               <button
                 key={id}
                 onClick={() => setSort(id)}
-                className={`rounded-full px-3 py-1 text-[10px] font-semibold transition-colors ${
+                className={`rounded-full px-3 py-1 text-[10px] font-semibold capitalize transition-colors ${
                   sort === id
                     ? "bg-white/14 text-white ring-1 ring-white/20"
                     : "text-white/35 hover:text-white/65"
                 }`}
-              >{label}</button>
+              >{id}</button>
             ))}
           </div>
         </div>
-        {/* Tab row */}
-        <div className="flex gap-0 px-6">
-          {tabs.map(({ id, label }) => (
+
+        {/* Media type pills */}
+        <div className="flex gap-1.5">
+          {MEDIA_TYPES.map(({ id, label }) => (
             <button
               key={id}
-              onClick={() => switchTab(id)}
-              className={`border-b-2 px-4 py-2 text-[11px] font-semibold transition-colors ${
-                activeTab === id
-                  ? "border-brand-accent text-brand-text"
-                  : "border-transparent text-white/40 hover:text-white/70"
+              onClick={() => setMediaType(id)}
+              className={`rounded-full px-3.5 py-1.5 text-[11px] font-semibold transition-all ${
+                mediaType === id
+                  ? "bg-brand-accent/20 text-brand-accent ring-1 ring-brand-accent/40"
+                  : "bg-white/6 text-white/50 hover:bg-white/10 hover:text-white/80"
               }`}
             >{label}</button>
           ))}
         </div>
       </div>
 
-      {/* Content */}
-      {activeTab === "niches"   && <NichesContent />}
-      {activeTab === "creators" && <CreatorsContent />}
-      {activeTab === "tags"     && <TagsContent />}
+      {/* Scrollable content */}
+      <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+        {/* Categories — square cards with hover video previews */}
+        <section>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/30">Categories</p>
+          <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
+            {NICHE_CATEGORIES.map((cat) => (
+              <CategoryCard
+                key={cat.slug}
+                cat={cat}
+                previewPost={previewBySlug.get(cat.slug)}
+              />
+            ))}
+          </div>
+        </section>
+
+        {/* Trending tags */}
+        <section>
+          <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-white/30">Trending Tags</p>
+          <div className="flex flex-wrap gap-2">
+            {NICHE_TAGS.map((tag) => (
+              <Link
+                key={tag}
+                href={`/?tag=${encodeURIComponent(tag.slice(1))}`}
+                className="rounded-full border border-white/12 bg-white/6 px-4 py-2 text-sm font-semibold text-white/70 transition-colors hover:border-white/25 hover:bg-white/12 hover:text-white"
+              >{tag}</Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Creators (coming soon) */}
+        <section>
+          <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-white/30">Creators</p>
+          <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/3 px-5 py-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/6 ring-1 ring-white/12">
+              <Compass size={18} className="text-white/30" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-white/40">Creator profiles coming soon</p>
+              <p className="text-[11px] text-white/25">Follow creators from their profile pages or any post in your feed.</p>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

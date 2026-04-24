@@ -7,43 +7,14 @@
  * Hardcoded string literals for tags/categories are not allowed elsewhere.
  */
 
-/** Valid niche category slugs — matches FeedPostSchema.category enum. */
-export const NICHE_CATEGORY_SLUGS = [
-  "high-sensation",
-  "aesthetic",
-  "cinematic",
-  "glitch",
-  "slow-mo",
-] as const;
-
-export type NicheCategorySlug = (typeof NICHE_CATEGORY_SLUGS)[number];
-
 export interface NicheCategory {
-  slug: NicheCategorySlug;
+  slug: string;
   label: string;
   description: string;
   /** Primary accent color for badges, borders, gradients. */
   accent: string;
   /** Card/background fill tint. */
   bg: string;
-  /** Hashtag aliases used when matching feed posts to this category. */
-  tagAliases: readonly string[];
-}
-
-export const NICHE_CATEGORIES: readonly NicheCategory[] = [
-  { slug: "high-sensation", label: "High Sensation", description: "Strobing, rapid-cut, beat-synced intensity.", accent: "#ec4899", bg: "#1a0818", tagAliases: ["#HighSensation", "#highsensation"] },
-  { slug: "aesthetic",      label: "Aesthetic",       description: "Dreamy palettes, soft grading, lo-fi vibes.", accent: "#a855f7", bg: "#160a1a", tagAliases: ["#Aesthetic", "#aesthetic"] },
-  { slug: "cinematic",      label: "Cinematic",       description: "Wide aspect, film grain, color science.",    accent: "#06b6d4", bg: "#071a1a", tagAliases: ["#Cinematic", "#cinematic"] },
-  { slug: "glitch",         label: "Glitch",          description: "Data-bent, pixel-sorted, RGB split chaos.",  accent: "#22c55e", bg: "#051a0a", tagAliases: ["#Glitch", "#glitch"] },
-  { slug: "slow-mo",        label: "Slow Mo",         description: "Time-stretch, optical flow, high-fps glass.",accent: "#f59e0b", bg: "#1a1100", tagAliases: ["#SlowMo", "#slowmo", "#slow-mo"] },
-] as const;
-
-/** Lookup table by slug. */
-export const NICHE_CATEGORY_BY_SLUG: Readonly<Record<NicheCategorySlug, NicheCategory>> =
-  Object.fromEntries(NICHE_CATEGORIES.map((c) => [c.slug, c])) as Record<NicheCategorySlug, NicheCategory>;
-
-export function isValidNicheCategory(v: string): v is NicheCategorySlug {
-  return (NICHE_CATEGORY_SLUGS as readonly string[]).includes(v);
 }
 
 // ── Channels vs Tags ─────────────────────────────────────────────────────────
@@ -98,16 +69,73 @@ export function channelSlug(channel: Channel): string {
   return channel.toLowerCase().replace(/\s+/g, "-");
 }
 
+// ── Niche category metadata ────────────────────────────────────────────────────
+// NICHE_CATEGORIES is derived from CHANNELS — each channel gets a slug, color,
+// and short description for use on the /niche/* pages and the Explore grid.
+
+const _CHANNEL_ACCENTS = [
+  "#ec4899", "#f97316", "#a855f7", "#06b6d4", "#8b5cf6",
+  "#f43f5e", "#f59e0b", "#22c55e", "#e11d48", "#fde68a",
+  "#fb923c", "#d946ef", "#f43f5e", "#a3e635", "#fb7185",
+  "#6366f1", "#f472b6", "#ef4444", "#ec4899", "#7c3aed", "#dc2626",
+];
+const _CHANNEL_BGS = [
+  "#1a0818", "#1a0c06", "#160a1a", "#071a1a", "#0d0a1a",
+  "#1a0810", "#1a1100", "#051a0a", "#1a050c", "#1a1a06",
+  "#1a0e06", "#150a1a", "#1a0810", "#0d1a06", "#1a090d",
+  "#0a0b1a", "#1a0a14", "#1a0606", "#1a0815", "#0f0a1a", "#1a0606",
+];
+const _CHANNEL_DESCS = [
+  "Busty and voluptuous performers.",
+  "Anal play and deep penetration.",
+  "Internal finishes and creampies.",
+  "Solo masturbation and self-play.",
+  "Toy play and dildo action.",
+  "Girl-on-girl heat.",
+  "Interracial couples and scenes.",
+  "Real amateur couples and solo.",
+  "Asian performers and passion.",
+  "Blonde beauties and bombshells.",
+  "Latina curves and fire.",
+  "Ebony queens in action.",
+  "Phat ass, irresistible curves.",
+  "Trans and shemale content.",
+  "Full-figured, luscious bodies.",
+  "Foot worship and fetish.",
+  "Experienced, mature women.",
+  "Group sex and multi-partner scenes.",
+  "Busty, full-chested performers.",
+  "Female domination and control.",
+  "Bondage, discipline, and S&M.",
+];
+
+export const NICHE_CATEGORIES: readonly NicheCategory[] = CHANNELS.map((ch, i) => ({
+  slug: channelSlug(ch),
+  label: ch as string,
+  description: _CHANNEL_DESCS[i] ?? "",
+  accent: _CHANNEL_ACCENTS[i] ?? "#ec4899",
+  bg: _CHANNEL_BGS[i] ?? "#1a0818",
+}));
+
+/** Lookup table by slug — e.g. "big-tits" → NicheCategory. */
+export const NICHE_CATEGORY_BY_SLUG: Readonly<Record<string, NicheCategory>> =
+  Object.fromEntries(NICHE_CATEGORIES.map((c) => [c.slug, c]));
+
+export function isValidNicheCategory(v: string): boolean {
+  return v in NICHE_CATEGORY_BY_SLUG;
+}
+
 /** Suggested free-form tags shown in publish/upload quick-pick rows. NOT a
  *  closed set — creators can also type custom tags. */
 export const NICHE_TAGS = [
-  "#HighSensation",
-  "#Cinematic",
-  "#Glitch",
-  "#SlowMo",
-  "#Aesthetic",
-  "#Curvy",
-  "#Latex",
+  "#BigTits",
+  "#Anal",
+  "#Amateur",
+  "#MILF",
+  "#Lesbian",
+  "#Asian",
+  "#PAWG",
+  "#Latina",
 ] as const;
 
 export type NicheTag = (typeof NICHE_TAGS)[number];

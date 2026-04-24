@@ -313,7 +313,7 @@ export const FeedPostSchema = z.object({
   createdAt:     z.number().optional(),
   demoStartTime: z.number().nonnegative().optional(),
   demoDuration:  z.number().positive().optional(),
-  category:      z.enum(["high-sensation", "aesthetic", "cinematic", "glitch", "slow-mo"]).optional(),
+  category:      z.string().optional(),
   channels:      z.array(z.string().min(1).max(32)).max(4).optional(),
 }).strip();
 
