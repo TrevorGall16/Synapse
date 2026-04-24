@@ -52,7 +52,7 @@ export function GlassIsland() {
       transition={transition}
       aria-label="Primary navigation"
       className={[
-        "glass-pill fixed left-1/2 z-30 -translate-x-1/2 flex items-center",
+        "lg:hidden glass-pill fixed left-1/2 z-30 -translate-x-1/2 flex items-center",
         compressed ? "top-2 gap-2 px-3.5 py-1.5" : "top-4 gap-4 px-5 py-3",
       ].join(" ")}
       style={{ width: "min(calc(100% - 2rem), 72rem)" }}

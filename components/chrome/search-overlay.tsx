@@ -1,32 +1,27 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import { X } from "lucide-react";
 import { useUiStore } from "@/lib/store/ui-store";
+import { GlobalSearch } from "@/components/feed/global-search";
+import { useFeedStore } from "@/lib/store/feed-store";
 
 export function SearchOverlay() {
-  const open = useUiStore((s) => s.searchOverlayOpen);
+  const open  = useUiStore((s) => s.searchOverlayOpen);
   const close = useUiStore((s) => s.closeSearchOverlay);
-  const inputRef = useRef<HTMLInputElement>(null);
+  // Mirror the same filter the feed page uses so autocomplete sees identical content.
+  const userPosts = useFeedStore((s) => s.userPosts);
+  const posts = useMemo(
+    () => userPosts.filter((p) => !p.type || p.type === "video"),
+    [userPosts],
+  );
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
-
-  // Auto-focus input when opened
-  useEffect(() => {
-    if (open) {
-      // Defer one tick so the DOM is visible before focusing
-      const t = setTimeout(() => inputRef.current?.focus(), 50);
-      return () => clearTimeout(t);
-    }
-  }, [open]);
 
   if (!open) return null;
 
@@ -38,24 +33,16 @@ export function SearchOverlay() {
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/80 backdrop-blur-sm pt-[20vh]"
       onClick={(e) => { if (e.target === e.currentTarget) close(); }}
     >
-      <div className="glass-pill flex w-full max-w-xl flex-col gap-3 p-4 mx-4">
-        <div className="flex items-center gap-2">
-          <input
-            ref={inputRef}
-            type="search"
-            placeholder="Search Synapse…"
-            className="flex-1 bg-transparent text-sm text-white placeholder:text-white/40 outline-none"
-          />
-          <button
-            type="button"
-            onClick={close}
-            aria-label="Close search"
-            className="flex h-8 w-8 items-center justify-center rounded-full text-white/60 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <p className="text-xs text-white/30">Start typing to search posts, creators, and sounds.</p>
+      <div className="relative w-full max-w-2xl mx-4">
+        <button
+          type="button"
+          onClick={close}
+          aria-label="Close search"
+          className="absolute -right-2 -top-12 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+        >
+          <X size={18} />
+        </button>
+        <GlobalSearch posts={posts} />
       </div>
     </div>
   );

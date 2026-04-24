@@ -9,8 +9,9 @@ import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useSearchStore } from "@/lib/store/search-store";
 import { useUserStore } from "@/lib/store/user-store";
 import { TheaterMode, primeTheaterGesture } from "@/components/feed/theater-mode";
-import { GlobalSearch } from "@/components/feed/global-search";
 import { FeedGrid } from "@/components/feed/feed-grid";
+import { FeedSingleColumn } from "@/components/feed/feed-single-column";
+import { useUiStore } from "@/lib/store/ui-store";
 import { retainMedia } from "@/lib/store/media-pool-db";
 import type { Track, ProjectSettings, MediaPoolItem } from "@/lib/store/types";
 import { normalizeTag } from "@/lib/mock-posts";
@@ -121,6 +122,7 @@ export default function DiscoveryFeedPage() {
   const searchQuery    = useSearchStore((s) => s.searchQuery);
   const setSearchQuery = useSearchStore((s) => s.setSearchQuery);
   const currentProfile = useUserStore((s) => s.profile);
+  const feedViewMode   = useUiStore((s) => s.feedViewMode);
   const followingList  = useUserStore((s) => s.following);
   const cleanupOffline = useCallback(() => {
     const { userPosts: posts, removePost: rp } = useFeedStore.getState();
@@ -389,9 +391,6 @@ export default function DiscoveryFeedPage() {
         </div>
       </div>
 
-      {/* Search bar */}
-      <GlobalSearch posts={allPosts} />
-
       {/* Sort + Niche filter bar */}
       <div className="shrink-0 overflow-x-auto border-b border-white/8 px-4 py-2 scrollbar-none">
         <div className="flex gap-1.5" style={{ width: "max-content" }}>
@@ -452,16 +451,29 @@ export default function DiscoveryFeedPage() {
             </p>
           )}
           {sortedPosts.length > 0 ? (
-            <FeedGrid
-              posts={sortedPosts}
-              scrollRef={scrollContainerRef}
-              currentUsername={currentProfile?.username}
-              onOpen={(post) => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
-              onRemix={handleRemix}
-              onImport={handleImport}
-              onCreator={(post) => router.push(`/profile/${post.user.handle}`)}
-              onDelete={(post) => removePost(post.id)}
-            />
+            feedViewMode === "single" ? (
+              <FeedSingleColumn
+                posts={sortedPosts}
+                scrollRef={scrollContainerRef}
+                currentUsername={currentProfile?.username}
+                onOpen={(post) => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
+                onRemix={handleRemix}
+                onImport={handleImport}
+                onCreator={(post) => router.push(`/profile/${post.user.handle}`)}
+                onDelete={(post) => removePost(post.id)}
+              />
+            ) : (
+              <FeedGrid
+                posts={sortedPosts}
+                scrollRef={scrollContainerRef}
+                currentUsername={currentProfile?.username}
+                onOpen={(post) => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
+                onRemix={handleRemix}
+                onImport={handleImport}
+                onCreator={(post) => router.push(`/profile/${post.user.handle}`)}
+                onDelete={(post) => removePost(post.id)}
+              />
+            )
           ) : !activeChannel && !activeTag && !searchQuery ? (
             <div className="flex flex-col items-center justify-center py-24 text-center">
               <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-brand/15 ring-1 ring-brand/30">
