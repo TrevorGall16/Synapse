@@ -50,12 +50,16 @@ export function FeedSingleColumn({
       {posts.map((post) => (
         <div
           key={post.id}
-          className="flex w-full max-w-[460px] items-center justify-center py-3"
+          className="flex w-full items-center justify-center px-3 py-3"
           style={{ height: "100svh", scrollSnapAlign: "start" }}
         >
-          {/* FeedPostCard owns aspect-[9/16] on its root <article>; render
-              it full-width inside the constrained column. */}
-          <div className="w-full">
+          {/* Inner wrapper clamps the 9:16 card to grow until it either hits
+              720px or is bounded by the viewport height, whichever comes first.
+              This prevents the card from letterboxing on landscape monitors. */}
+          <div
+            className="w-full"
+            style={{ maxWidth: "min(calc(100svh * 9 / 16 - 2rem), 720px)" }}
+          >
             <FeedPostCard
               post={post}
               pool={posts}

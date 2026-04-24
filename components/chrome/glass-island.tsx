@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Search, User, LayoutGrid, Rows3 } from "lucide-react";
+import { User, LayoutGrid, Rows3 } from "lucide-react";
 import { useGlassIslandState } from "./use-glass-island-state";
 import { useGlassMotion } from "./use-glass-motion";
 import { useUserStore } from "@/lib/store/user-store";
@@ -36,7 +36,6 @@ export function GlassIsland() {
   const compressed       = useGlassIslandState(scrollRef ?? undefined);
   const transition       = useGlassMotion();
   const profile          = useUserStore((s) => s.profile);
-  const openSearchOverlay  = useUiStore((s) => s.openSearchOverlay);
   const feedViewMode       = useUiStore((s) => s.feedViewMode);
   const toggleFeedViewMode = useUiStore((s) => s.toggleFeedViewMode);
 
@@ -103,16 +102,6 @@ export function GlassIsland() {
           ) : (
             <Rows3 size={16} />
           )}
-        </button>
-
-        {/* Search — opens global overlay */}
-        <button
-          type="button"
-          onClick={openSearchOverlay}
-          aria-label="Search"
-          className={iconClass}
-        >
-          <Search size={16} />
         </button>
 
         {!compressed && (

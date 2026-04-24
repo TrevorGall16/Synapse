@@ -210,7 +210,19 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
       // Translate video's media time → timeline microseconds so buildFxFilter
       // evaluates the effect at the *same* playhead Theater would compute.
       const timelineUs = firstClipStart + (v.currentTime * 1_000_000 - firstClipMediaOffsetUs);
-      const fx = buildFxFilter(activeEffectClips, timelineUs);
+      // Theater/Feed parity — per-tick lifetime gate. Matches
+      // TheaterPlayer.tsx:312-316 so short effect clips (e.g., a 3s glitch)
+      // stop applying once the playhead passes their duration, instead of
+      // persisting for the whole hover.
+      const liveClips = activeEffectClips.filter(
+        (c) => timelineUs >= c.startTime && timelineUs < c.startTime + c.duration,
+      );
+      if (liveClips.length === 0) {
+        v.style.filter = "";
+        v.style.transform = baseTransform ?? "";
+        return;
+      }
+      const fx = buildFxFilter(liveClips, timelineUs);
       v.style.filter = fx.filter === "none" ? "" : fx.filter;
       const transformParts: string[] = [];
       if (baseTransform) transformParts.push(baseTransform);

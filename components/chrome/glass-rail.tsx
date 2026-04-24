@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Compass, Hash, Bookmark, Search, LayoutGrid, Rows3, User } from "lucide-react";
+import { Home, Compass, Hash, Bookmark, LayoutGrid, Rows3, User } from "lucide-react";
 import { useUiStore } from "@/lib/store/ui-store";
 import { useUserStore } from "@/lib/store/user-store";
 
@@ -29,7 +29,6 @@ function isActive(pathname: string, item: NavItem): boolean {
 
 export function GlassRail() {
   const pathname   = usePathname();
-  const openSearch = useUiStore((s) => s.openSearchOverlay);
   const mode       = useUiStore((s) => s.feedViewMode);
   const toggleMode = useUiStore((s) => s.toggleFeedViewMode);
   const profile    = useUserStore((s) => s.profile);
@@ -69,17 +68,6 @@ export function GlassRail() {
           );
         })}
       </nav>
-
-      <div className="my-1 h-px w-8 bg-white/10" />
-
-      <button
-        type="button"
-        onClick={openSearch}
-        aria-label="Search"
-        className="flex h-11 w-11 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-      >
-        <Search size={18} />
-      </button>
 
       <button
         type="button"
