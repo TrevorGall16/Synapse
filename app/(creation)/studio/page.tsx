@@ -20,7 +20,6 @@ import { HistoryPanel } from "@/components/studio/history-panel";
 import { PresetPanel } from "@/components/studio/preset-panel";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useMediaHydration } from "@/lib/hooks/use-media-hydration";
-import { refreshMediaUrl } from "@/lib/store/media-pool-db";
 import { Film, Plus } from "lucide-react";
 
 // ── Studio Splash Screen ───────────────────────────────
@@ -79,7 +78,6 @@ export default function StudioPage() {
   const tracks = useProjectStore((s) => s.tracks);
   const fxMaskEditingClipId = useProjectStore((s) => s.fxMaskEditingClipId);
   const projectId = useProjectStore((s) => s.projectId);
-  const updateMediaItemUrl = useProjectStore((s) => s.updateMediaItemUrl);
 
   // When hydration finishes and a projectId exists, bypass the splash automatically
   useEffect(() => {
@@ -95,17 +93,15 @@ export default function StudioPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNewInit, isHydrating]);
 
-  // Silently re-hydrate stale media when switching tabs
-  useEffect(() => {
-    const { mediaPool } = useProjectStore.getState();
-    const stale = mediaPool.filter((m) => !m.previewUrl || m.previewUrl.startsWith("blob:"));
-    if (!stale.length) return;
-    Promise.all(stale.map(async (item) => {
-      const url = await refreshMediaUrl(item.id);
-      if (url) updateMediaItemUrl(item.id, url);
-    })).catch(console.warn);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  // NOTE: A previous "Silently re-hydrate stale media when switching tabs"
+  // useEffect lived here and matched `m.previewUrl.startsWith("blob:")`.
+  // That predicate treated already-valid, freshly-minted ObjectURLs as stale
+  // and refreshed them on every tab switch, which (a) leaked the prior
+  // blob URL, and (b) mutated `mediaPool` → tripped GlobalHydrator's
+  // subscribe → scheduled a doSave → flipped SaveBarrierOverlay every few
+  // seconds, which looked like a whole-route flash. `useMediaHydration`
+  // above already restores URLs whose `previewUrl` is empty (the only
+  // genuine post-reload stale case), so the duplicate effect is gone.
 
   const hasContent = tracks.some((t) => t.clips.length > 0);
   const showSplash = !projectStarted && !hasContent && !projectId;

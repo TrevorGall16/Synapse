@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { FeedPost } from "@/lib/store/feed-store";
+import { loadThumbnailUrl } from "@/lib/store/thumbnail-idb";
 import { FeedPostCard } from "./feed-post-card";
 
 interface Props {
@@ -13,6 +14,37 @@ interface Props {
   onImport: (post: FeedPost) => void;
   onCreator: (post: FeedPost) => void;
   onDelete: (post: FeedPost) => void;
+}
+
+/** Blurred, opacity-dimmed thumbnail stretched behind each 9:16 card so the
+ *  empty letterbox on wide desktop screens feels cinematic rather than dead.
+ *
+ *  Perf guardrails:
+ *    - Image, not a second <video> — zero decoder cost, zero additional GPU
+ *      compositing layers beyond the cheap blur filter.
+ *    - `hidden lg:block` so mobile (where the card already fills the width)
+ *      pays nothing.
+ *    - Reuses the same durable IDB thumbnail the <FeedPostCard> already
+ *      primes, so no extra decode work when the card mounts. */
+function AmbientGlow({ postId }: { postId: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadThumbnailUrl(postId).then((u) => {
+      if (!cancelled && u) setUrl(u);
+    });
+    return () => { cancelled = true; };
+  }, [postId]);
+  if (!url) return null;
+  return (
+    <img
+      src={url}
+      alt=""
+      aria-hidden
+      draggable={false}
+      className="pointer-events-none absolute inset-0 hidden h-full w-full scale-110 object-cover opacity-30 blur-3xl lg:block"
+    />
+  );
 }
 
 /**
@@ -50,15 +82,16 @@ export function FeedSingleColumn({
       {posts.map((post) => (
         <div
           key={post.id}
-          className="flex w-full items-center justify-center px-3 py-3"
-          style={{ height: "calc(100svh - 160px)", scrollSnapAlign: "start" }}
+          className="relative flex w-full items-center justify-center overflow-hidden px-3 py-3"
+          style={{ height: "calc(100svh - 112px)", scrollSnapAlign: "start" }}
         >
+          <AmbientGlow postId={post.id} />
           {/* Inner wrapper clamps the 9:16 card to grow until it either hits
               720px or is bounded by the viewport height, whichever comes first.
               This prevents the card from letterboxing on landscape monitors. */}
           <div
-            className="w-full"
-            style={{ maxWidth: "min(calc((100svh - 160px) * 9 / 16 - 2rem), 720px)" }}
+            className="relative w-full"
+            style={{ maxWidth: "min(calc((100svh - 112px) * 9 / 16 - 2rem), 720px)" }}
           >
             <FeedPostCard
               post={post}

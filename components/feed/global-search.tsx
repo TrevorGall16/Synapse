@@ -142,16 +142,19 @@ export function GlobalSearch({ posts = [] }: Props) {
   const showDropdown = open && searchQuery.trim().length > 0;
 
   return (
-    <div ref={wrapRef} className="relative shrink-0 border-b border-white/8 px-4 py-2">
+    <div ref={wrapRef} className="relative w-full">
       <div
         className={[
-          "mx-auto flex max-w-xl items-center gap-2 rounded-full px-3 py-1.5",
-          "bg-white/5 backdrop-blur-md",
-          "ring-1 ring-inset ring-white/8",
-          "transition-all duration-150",
-          // Electric focus ring — the search field is the most-used entry
-          // point, so its focus state carries the primary accent.
-          "focus-within:bg-white/8 focus-within:ring-[#ff007a]/50",
+          "flex w-full items-center gap-2 rounded-full px-3 py-1.5",
+          // Ghost Input: faint translucent surface + subtle hairline — the
+          // field blends into the dark theme until focused.
+          "bg-[color:var(--color-glass-surface-ghost)]",
+          "border border-[color:var(--color-glass-hairline)]",
+          "transition-colors duration-150",
+          // Electric focus state: lifts the surface a notch and paints the
+          // hairline with the primary accent.
+          "focus-within:bg-[color:var(--color-glass-surface)]",
+          "focus-within:border-[#ff007a]/45",
         ].join(" ")}
       >
         <Search size={12} className="shrink-0 text-white/30" />

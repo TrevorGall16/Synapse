@@ -47,7 +47,7 @@ export function GlassRail() {
         S
       </Link>
 
-      <nav className="mt-2 flex flex-col items-center gap-1">
+      <nav className="mt-2 flex w-full flex-col items-center gap-0.5 px-2">
         {NAV.map(({ href, label, Icon, prefixes }) => {
           const active = isActive(pathname, { href, label, Icon, prefixes });
           return (
@@ -57,13 +57,14 @@ export function GlassRail() {
               aria-label={label}
               data-testid={`glass-rail-nav-${label.toLowerCase()}`}
               className={[
-                "flex h-11 w-11 items-center justify-center rounded-full transition-colors",
+                "flex w-full flex-col items-center gap-0.5 rounded-xl py-2 transition-colors",
                 active
                   ? "bg-white/15 text-white"
-                  : "text-white/70 hover:bg-white/10 hover:text-white",
+                  : "text-white/50 hover:bg-white/10 hover:text-white/80",
               ].join(" ")}
             >
               <Icon size={18} />
+              <span className="text-[8px] font-medium tracking-wide">{label}</span>
             </Link>
           );
         })}
@@ -74,9 +75,10 @@ export function GlassRail() {
         onClick={toggleMode}
         aria-label={mode === "single" ? "Switch to grid view" : "Switch to single-column view"}
         aria-pressed={mode === "grid"}
-        className="flex h-11 w-11 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+        className="mx-2 flex w-[calc(100%-1rem)] flex-col items-center gap-0.5 rounded-xl py-2 text-white/50 transition-colors hover:bg-white/10 hover:text-white/80"
       >
         {mode === "single" ? <LayoutGrid size={18} /> : <Rows3 size={18} />}
+        <span className="text-[8px] font-medium tracking-wide">{mode === "single" ? "Grid" : "Feed"}</span>
       </button>
 
       <div className="flex-1" />

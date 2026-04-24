@@ -3,7 +3,7 @@
 import { useRef, useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSafeUrlSync } from "@/lib/hooks/use-safe-url-sync";
-import { Zap, TrendingUp, Upload, User, ArrowUp, Trash2 } from "lucide-react";
+import { Upload, ArrowUp, Trash2 } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useSearchStore } from "@/lib/store/search-store";
@@ -365,35 +365,22 @@ export default function DiscoveryFeedPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[#0a0a0a]">
-      {/* Header */}
-      <div className="z-10 shrink-0 flex items-center justify-between border-b border-white/10 bg-[#0a0a0a]/95 px-5 py-2.5 backdrop-blur-sm">
-        <div className="flex items-center gap-2">
-          <TrendingUp size={13} className="text-white/35" />
-          <h1 className="text-sm font-bold text-white">Discovery</h1>
-          <span className="rounded-full bg-white/8 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white/35">Trending</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {offlineCount > 0 && (
-            <button onClick={cleanupOffline}
-              className="flex items-center gap-1.5 rounded-lg bg-orange-500/14 px-2.5 py-1.5 text-[11px] font-semibold text-orange-300/80 transition-colors hover:bg-orange-500/24 hover:text-orange-200">
-              <Trash2 size={10} />Clean Up ({offlineCount})
-            </button>
-          )}
-          <button onClick={() => router.push("/upload")} className="flex items-center gap-1.5 rounded-lg bg-white/8 px-2.5 py-1.5 text-[11px] font-semibold text-white/60 transition-colors hover:bg-white/14 hover:text-white">
-            <Upload size={11} />Upload
-          </button>
-          <button onClick={() => router.push("/profile/you")} className="flex items-center gap-1.5 rounded-lg bg-white/8 px-2.5 py-1.5 text-[11px] font-semibold text-white/60 transition-colors hover:bg-white/14 hover:text-white">
-            <User size={11} />Profile
-          </button>
-          <button onClick={() => router.push("/studio")} className="flex items-center gap-1.5 rounded-lg bg-brand/20 px-2.5 py-1.5 text-[11px] font-bold text-brand-text transition-colors hover:bg-brand/30">
-            <Zap size={11} />Studio
-          </button>
-        </div>
-      </div>
-
-      {/* Sort + Niche filter bar */}
+      {/* Sort + Niche filter bar.
+          Nav + global actions now live in the unified TopBar (see
+          components/chrome/top-bar.tsx); this row is pure feed control. */}
       <div className="shrink-0 overflow-x-auto border-b border-white/8 px-4 py-2 scrollbar-none">
-        <div className="flex gap-1.5" style={{ width: "max-content" }}>
+        <div className="flex items-center gap-1.5" style={{ width: "max-content" }}>
+          {offlineCount > 0 && (
+            <>
+              <button
+                onClick={cleanupOffline}
+                className="flex items-center gap-1.5 rounded-full bg-orange-500/14 px-2.5 py-1.5 text-[11px] font-semibold text-orange-300/80 transition-colors hover:bg-orange-500/24 hover:text-orange-200"
+              >
+                <Trash2 size={10} />Clean Up ({offlineCount})
+              </button>
+              <div className="mx-1 w-px self-stretch bg-white/10" />
+            </>
+          )}
           {/* Sort pills — always visible at start */}
           {(["latest", "popular", "trending"] as const).map((s) => (
             <button key={s} onClick={() => handleSortChange(s)}

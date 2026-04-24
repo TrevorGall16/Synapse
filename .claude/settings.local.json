@@ -89,7 +89,14 @@
       "Bash(rm public/fonts/*.woff2)",
       "Bash(npm info *)",
       "Bash(npm uninstall *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(curl -fs -o /dev/null http://localhost:3000/home)",
+      "Bash(taskkill //F //FI \"ImageName eq node.exe\" //FI \"WINDOWTITLE eq *\")",
+      "Bash(ps -W)",
+      "Bash(curl -fs -o /dev/null http://localhost:3000/)",
+      "Bash(npm list *)",
+      "Bash(npm i *)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('scripts', {}\\).get\\('lint', 'NOT_FOUND'\\)\\)\")"
     ]
   }
 }

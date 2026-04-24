@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { HydrationBarrier } from "@/components/HydrationBarrier";
 import { GlassIsland } from "@/components/chrome/glass-island";
 import { GlassRail } from "@/components/chrome/glass-rail";
-import { TopSearchPill } from "@/components/chrome/top-search-pill";
+import { TopBar } from "@/components/chrome/top-bar";
 import { ConsumptionScrollContext } from "@/components/chrome/consumption-scroll-context";
 
 export default function ConsumptionLayout({
@@ -24,7 +24,7 @@ export default function ConsumptionLayout({
         ref={scrollRef as React.RefObject<HTMLElement>}
         className="glass-scroll h-screen w-full overflow-y-auto bg-[#141414] lg:pl-20"
       >
-        <TopSearchPill />
+        <TopBar />
         <HydrationBarrier>{children}</HydrationBarrier>
       </main>
       {modal}
