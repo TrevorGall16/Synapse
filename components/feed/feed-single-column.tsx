@@ -51,18 +51,19 @@ export function FeedSingleColumn({
         <div
           key={post.id}
           className="flex w-full items-center justify-center px-3 py-3"
-          style={{ height: "100svh", scrollSnapAlign: "start" }}
+          style={{ height: "calc(100svh - 160px)", scrollSnapAlign: "start" }}
         >
           {/* Inner wrapper clamps the 9:16 card to grow until it either hits
               720px or is bounded by the viewport height, whichever comes first.
               This prevents the card from letterboxing on landscape monitors. */}
           <div
             className="w-full"
-            style={{ maxWidth: "min(calc(100svh * 9 / 16 - 2rem), 720px)" }}
+            style={{ maxWidth: "min(calc((100svh - 160px) * 9 / 16 - 2rem), 720px)" }}
           >
             <FeedPostCard
               post={post}
               pool={posts}
+              autoplayInView
               onOpen={() => onOpen(post)}
               onRemix={() => onRemix(post)}
               onImport={() => onImport(post)}

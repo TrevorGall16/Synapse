@@ -29,9 +29,14 @@ interface FeedPostCardProps {
   /** Pool to score engagement against for the "Hot" badge. Defaults to empty
    *  (no badge) — callers that render a grid should pass the rendered list. */
   pool?: readonly FeedPost[];
+  /** When true, an IntersectionObserver auto-plays the video when ≥60% of the
+   *  card is visible and pauses it when it scrolls out. Intended for the
+   *  single-column RedGIF view. Grid mode leaves this false (default) so the
+   *  existing hover-only behaviour is byte-identical. */
+  autoplayInView?: boolean;
 }
 
-export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImport, showDelete, pool }: FeedPostCardProps) {
+export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImport, showDelete, pool, autoplayInView = false }: FeedPostCardProps) {
   const currentUsername = useUserStore((s) => s.profile?.username);
   // Per-post subscription — cards re-render only when their own like flips,
   // not when any other card's like does. Zustand compares by reference
@@ -39,6 +44,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   const liked = useFeedStore((s) => s.likedPostIds.includes(post.id));
   const toggleLike = useFeedStore((s) => s.toggleLike);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const articleRef = useRef<HTMLElement>(null);
   const [hovered, setHovered] = useState(false);
   const [mediaOffline, setMediaOffline] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -197,6 +203,33 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     return unobserve;
   }, [firstClipSrc]);
 
+  // IntersectionObserver autoplay — single-column (RedGIF) mode only.
+  // When autoplayInView is true, play the video as soon as ≥60% of the <article>
+  // is intersecting the viewport, and pause it when it scrolls out. The three
+  // autoplay-policy attributes (muted loop playsInline) are already on the
+  // <video> element so no additions are needed here.
+  useEffect(() => {
+    if (!autoplayInView) return;
+    const article = articleRef.current;
+    if (!article) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        const v = videoRef.current;
+        if (!v) return;
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+          v.play().catch(() => {});
+        } else {
+          v.pause();
+        }
+      },
+      { threshold: [0, 0.6, 1] },
+    );
+    observer.observe(article);
+    return () => observer.disconnect();
+  }, [autoplayInView]);
+
   // Hover FX preview — drive `buildFxFilter` per tick using the SHARED helper
   // that Studio and Theater use, so animated effects (hue-rotate speed, strobe,
   // glitch, flash) preview with byte-identical math. Only runs while hovered;
@@ -299,6 +332,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
 
   return (
     <article
+      ref={articleRef}
       // aspect-[9/16] + w-full + h-auto locks the TikTok-style portrait
       // rectangle in CSS, so the browser reserves the correct card box before
       // the virtualizer's row math settles. Stripping this made cards collapse
@@ -346,7 +380,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
 
         {/* Video */}
         <video ref={videoRef} src={firstClipSrc || undefined}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline && hovered ? "opacity-100" : thumbUrl ? "opacity-0" : firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline && (hovered || autoplayInView) ? "opacity-100" : thumbUrl ? "opacity-0" : firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
           // The hover tick loop owns `filter` and `transform` while hovered and
           // clears them on exit. Do not set them inline here or React re-renders
           // will clobber per-tick FX values.
