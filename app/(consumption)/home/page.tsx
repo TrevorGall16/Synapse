@@ -76,7 +76,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-[#141414] p-6">
+    <div className="flex min-h-full flex-col bg-[#141414] px-6 pt-20 pb-6">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>

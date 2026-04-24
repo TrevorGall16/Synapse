@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Search, User } from "lucide-react";
+import { Search, User, LayoutGrid, Rows3 } from "lucide-react";
 import { useGlassIslandState } from "./use-glass-island-state";
 import { useGlassMotion } from "./use-glass-motion";
 import { useUserStore } from "@/lib/store/user-store";
+import { useConsumptionScrollRef } from "./consumption-scroll-context";
+import { useUiStore } from "@/lib/store/ui-store";
 
 interface NavItem {
   href: string;
@@ -29,13 +31,20 @@ function isActive(pathname: string, item: NavItem): boolean {
 }
 
 export function GlassIsland() {
-  const pathname   = usePathname();
-  const compressed = useGlassIslandState();
-  const transition = useGlassMotion();
-  const profile    = useUserStore((s) => s.profile);
+  const pathname         = usePathname();
+  const scrollRef        = useConsumptionScrollRef();
+  const compressed       = useGlassIslandState(scrollRef ?? undefined);
+  const transition       = useGlassMotion();
+  const profile          = useUserStore((s) => s.profile);
+  const openSearchOverlay  = useUiStore((s) => s.openSearchOverlay);
+  const feedViewMode       = useUiStore((s) => s.feedViewMode);
+  const toggleFeedViewMode = useUiStore((s) => s.toggleFeedViewMode);
 
-  // Avatar/login destination. Keeps search-icon parity in both states.
+  // Avatar/login destination.
   const avatarHref = profile ? `/profile/${profile.username}` : "/login";
+
+  const iconClass =
+    "flex h-8 w-8 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/10";
 
   return (
     <motion.nav
@@ -55,6 +64,7 @@ export function GlassIsland() {
       >
         {compressed ? "S" : "SYNAPSE"}
       </Link>
+
       <div className="flex items-center gap-1">
         {PRIMARY.map((item) => {
           const active = isActive(pathname, item);
@@ -75,19 +85,41 @@ export function GlassIsland() {
           );
         })}
       </div>
+
       <div className="ml-auto flex items-center gap-2">
-        <Link
-          href="/browse"
+        {/* View toggle — visible in both compressed and expanded states */}
+        <button
+          type="button"
+          onClick={toggleFeedViewMode}
+          aria-label={
+            feedViewMode === "single"
+              ? "Switch to grid view"
+              : "Switch to single-column view"
+          }
+          className={iconClass}
+        >
+          {feedViewMode === "single" ? (
+            <LayoutGrid size={16} />
+          ) : (
+            <Rows3 size={16} />
+          )}
+        </button>
+
+        {/* Search — opens global overlay */}
+        <button
+          type="button"
+          onClick={openSearchOverlay}
           aria-label="Search"
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/10"
+          className={iconClass}
         >
           <Search size={16} />
-        </Link>
+        </button>
+
         {!compressed && (
           <Link
             href={avatarHref}
             aria-label={profile ? "Open profile" : "Sign in"}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/10"
+            className={iconClass}
           >
             <User size={16} />
           </Link>

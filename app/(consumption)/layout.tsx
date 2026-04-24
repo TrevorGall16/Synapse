@@ -1,5 +1,10 @@
+"use client";
+
+import { useRef } from "react";
 import { HydrationBarrier } from "@/components/HydrationBarrier";
 import { GlassIsland } from "@/components/chrome/glass-island";
+import { SearchOverlay } from "@/components/chrome/search-overlay";
+import { ConsumptionScrollContext } from "@/components/chrome/consumption-scroll-context";
 
 export default function ConsumptionLayout({
   children,
@@ -8,17 +13,19 @@ export default function ConsumptionLayout({
   children: React.ReactNode;
   modal: React.ReactNode;
 }) {
+  const scrollRef = useRef<HTMLElement | null>(null);
+
   return (
-    <div className="relative min-h-screen w-full">
+    <ConsumptionScrollContext.Provider value={scrollRef}>
       <GlassIsland />
-      {/* Reachability: 3.5rem top-padding ensures the first row of feed content
-          is tappable even when the Island is in its expanded state (top: 1rem
-          + height ≈ 2.5rem = 3.5rem). Content still scrolls visually under
-          the glass. */}
-      <div className="pt-14">
+      <SearchOverlay />
+      <main
+        ref={scrollRef as React.RefObject<HTMLElement>}
+        className="h-screen w-full overflow-y-auto bg-[#141414]"
+      >
         <HydrationBarrier>{children}</HydrationBarrier>
-      </div>
+      </main>
       {modal}
-    </div>
+    </ConsumptionScrollContext.Provider>
   );
 }
