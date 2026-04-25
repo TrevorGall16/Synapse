@@ -25,7 +25,7 @@ import { Film, Plus } from "lucide-react";
 // ── Studio Splash Screen ───────────────────────────────
 function StudioSplash({ onCreateProject }: { onCreateProject: () => void }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 bg-[#141414]">
+    <div className="flex h-full flex-col items-center justify-center gap-6 bg-[#121014]">
       <Film size={56} className="text-white/15" />
       <div className="text-center">
         <h2 className="text-lg font-bold text-white">No Project Open</h2>
@@ -119,7 +119,7 @@ export default function StudioPage() {
 
   if (isHydrating) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#141414]">
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#121014]">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-white/50" />
         <p className="text-xs font-semibold text-white/40">Waiting for Disk...</p>
       </div>

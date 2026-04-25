@@ -148,30 +148,30 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
   const save = () => { setProfile({ displayName: name.trim() || dp.displayName, bio: editBio.trim(), hue: editHue }); onClose(); };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0a0a0a]/70 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-xs rounded-2xl border border-white/14 bg-[#1c1c1c] p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <span className="text-sm font-bold text-white">Edit Profile</span>
-          <button onClick={onClose} className="rounded-lg bg-white/8 p-1.5 text-white/40 hover:bg-white/15 hover:text-white"><X size={12} /></button>
+      <div className="w-full max-w-xs rounded-3xl border border-white/14 bg-[#1c1c1c] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-5 flex items-center justify-between">
+          <span className="text-base font-bold text-white">Edit Profile</span>
+          <button onClick={onClose} className="rounded-xl bg-white/8 p-1.5 text-white/40 hover:bg-white/15 hover:text-white"><X size={12} /></button>
         </div>
-        <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1">
+        <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Display Name</span>
             <input value={name} onChange={(e) => setName(e.target.value)} maxLength={DISPLAY_NAME_MAX}
-              className="rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white outline-none focus:border-purple-500/40" />
+              className="rounded-xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm text-white outline-none focus:border-brand-accent/40" />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Bio</span>
             <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} rows={2} maxLength={BIO_MAX}
-              className="resize-none rounded-lg border border-white/10 bg-white/4 px-3 py-2 text-xs text-white outline-none focus:border-purple-500/40" />
+              className="resize-none rounded-xl border border-white/10 bg-white/4 px-3 py-2.5 text-sm text-white outline-none focus:border-brand-accent/40" />
           </label>
-          <label className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Accent Hue</span>
             <input type="range" min={0} max={359} value={editHue} onChange={(e) => setEditHue(+e.target.value)} className="w-full" />
             <div className="h-3 w-full rounded-full" style={{ background: "linear-gradient(to right,hsl(0,55%,45%),hsl(60,55%,45%),hsl(120,55%,45%),hsl(180,55%,45%),hsl(240,55%,45%),hsl(300,55%,45%),hsl(359,55%,45%))" }} />
           </label>
           <div className="mt-1 flex gap-2">
-            <button onClick={onClose} className="flex-1 rounded-lg border border-white/10 py-2 text-xs text-white/50 hover:bg-white/8">Cancel</button>
-            <button onClick={save} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-500/22 py-2 text-xs font-bold text-purple-300 hover:bg-purple-500/32">
+            <button onClick={onClose} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-white/50 hover:bg-white/8">Cancel</button>
+            <button onClick={save} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand/20 py-2.5 text-sm font-bold text-brand-text hover:bg-brand/30">
               <Check size={11} />Save
             </button>
           </div>
@@ -376,7 +376,7 @@ function InlineBioEditor() {
           if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
           if (e.key === "Escape") { e.preventDefault(); cancel(); }
         }}
-        className="w-full resize-none rounded-lg border border-brand-accent/40 bg-white/5 px-2 py-1.5 text-[13px] leading-snug text-white outline-none focus:border-brand-accent"
+        className="w-full resize-none rounded-xl border border-brand-accent/40 bg-white/5 px-2 py-1.5 text-[13px] leading-snug text-white outline-none focus:border-brand-accent"
       />
       <div className="mt-1 flex justify-end text-[10px] tabular-nums text-white/40">
         <span className={draft.length >= BIO_MAX ? "text-red-400" : ""}>{draft.length}/{BIO_MAX}</span>
@@ -571,7 +571,7 @@ export default function ProfilePage() {
 
   // ── Loading gate — AFTER all hook declarations ────────────────────────────
   if (isOwnProfile && (!storeProfile || !hasHydrated) && !forceRender) return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
+    <div className="flex h-full flex-col overflow-hidden bg-[#121014]">
       <div className="flex-1 flex items-center justify-center">
         <span className="text-[11px] text-white/25">Loading profile…</span>
       </div>
@@ -617,7 +617,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
+    <div className="flex h-full flex-col overflow-hidden bg-[#121014]">
       {showEditProfile && <EditProfileModal onClose={() => setShowEdit(false)} />}
       <ShareSheet
         target={{ kind: "profile", handle: username, displayName: profile.displayName }}
@@ -638,7 +638,7 @@ export default function ProfilePage() {
       )}
 
       {/* Back nav */}
-      <div className="z-10 shrink-0 flex items-center gap-2 border-b border-white/8 bg-[#141414]/95 px-4 py-2.5 backdrop-blur-sm">
+      <div className="z-10 shrink-0 flex items-center gap-2 border-b border-white/8 bg-[#121014]/95 px-4 py-2.5 backdrop-blur-sm">
         <button onClick={() => router.back()} className="flex items-center gap-1.5 rounded-lg bg-white/8 px-2.5 py-1.5 text-[11px] font-semibold text-white/60 transition-colors hover:bg-white/14 hover:text-white">
           <ArrowLeft size={11} />Back
         </button>
@@ -674,7 +674,7 @@ export default function ProfilePage() {
             <rect width="100%" height="100%" filter="url(#pg-grain)" />
           </svg>
           {/* Bottom-to-top readability gradient */}
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#141414] via-[#141414]/40 to-transparent" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#121014] via-[#141414]/40 to-transparent" />
         </div>
 
         {/* ── Avatar + info ──────────────────────────────────────────────────── */}
@@ -725,8 +725,8 @@ export default function ProfilePage() {
             )}
           </div>
 
-          <h1 className="text-base font-bold text-white">{profile.displayName}</h1>
-          <p className="text-[11px] text-white/45">@{username}</p>
+          <h1 className="text-xl font-bold text-white">{profile.displayName}</h1>
+          <p className="text-sm text-white/45">@{username}</p>
           {isOwnProfile ? (
             <InlineBioEditor />
           ) : (
@@ -744,7 +744,7 @@ export default function ProfilePage() {
                   re-triggers each click. */}
               <span
                 key={followerDelta}
-                className="text-sm font-bold text-white tabular-nums"
+                className="text-base font-bold text-white tabular-nums"
                 style={{
                   animation: followerDelta !== 0 ? "synapse-follower-pop 420ms cubic-bezier(0.22,1,0.36,1)" : undefined,
                   display: "inline-block",
@@ -756,22 +756,22 @@ export default function ProfilePage() {
               <span className="text-[11px] text-white/40">Followers</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white">{profile.following}</span>
+              <span className="text-base font-bold text-white">{profile.following}</span>
               <span className="text-[11px] text-white/40">Following</span>
             </div>
             <div className="mx-0.5 h-3 w-px self-center bg-white/12" />
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white">{pubCount}</span>
+              <span className="text-base font-bold text-white">{pubCount}</span>
               <span className="text-[11px] text-white/40">Posts</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white" style={{ color: `${accent}` }}>
+              <span className="text-base font-bold text-white" style={{ color: `${accent}` }}>
                 {totalLikes >= 1000 ? `${(totalLikes / 1000).toFixed(1)}k` : totalLikes}
               </span>
               <span className="text-[11px] text-white/40">Likes</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-bold text-white">{recipeUses}</span>
+              <span className="text-base font-bold text-white">{recipeUses}</span>
               <span className="text-[11px] text-white/40">Remixes</span>
             </div>
           </div>
@@ -800,7 +800,7 @@ export default function ProfilePage() {
           )}
         </div>
         {tab === "published" && isOwnProfile && viewMode === "compact" && (
-          <div className="flex items-center gap-2 border-t border-white/6 bg-[#141414]/80 px-6 py-2">
+          <div className="flex items-center gap-2 border-t border-white/6 bg-[#121014]/80 px-6 py-2">
             <button
               onClick={() => { setIsMultiSelect((v) => !v); setSelectedIds(new Set()); setIsBatchConfirming(false); }}
               className={`rounded-md px-2.5 py-1 text-[10px] font-semibold transition-colors ${

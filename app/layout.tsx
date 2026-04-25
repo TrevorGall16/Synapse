@@ -35,7 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} bg-[#1a1a1a] font-sans antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} bg-[#121014] font-sans antialiased`}
       >
         <GlobalSvgFilters />
         <GlobalHydrator />
