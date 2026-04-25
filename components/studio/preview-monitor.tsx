@@ -406,7 +406,7 @@ export function PreviewMonitor() {
   const tunnelClipPath = useMemo(() => computeTunnelClipPath(activeEffectClips), [activeEffectClips]);
 
   return (
-    <div className="flex h-full flex-col border-t border-white/20 bg-[#1a1a1a]">
+    <div className="flex h-full flex-col border-t border-white/10 bg-[#121014]">
       <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-white/60">Preview</h2>
         <div className="flex items-center gap-2">
@@ -488,12 +488,12 @@ export function PreviewMonitor() {
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center justify-center gap-1 border-t border-white/10 px-4 py-2">
-        <TransportBtn icon={<SkipBack size={14} />} label="Go to start" onClick={() => setPlayhead(0)} />
-        <TransportBtn icon={<ChevronLeft size={14} />} label="Prev frame" onClick={() => setPlayhead(playheadPosition - FRAME_MICROS)} />
-        <TransportBtn icon={isPlaying ? <Pause size={14} /> : <Play size={14} />} label={isPlaying ? "Pause" : "Play"} onClick={togglePlayback} accent />
-        <TransportBtn icon={<ChevronRight size={14} />} label="Next frame" onClick={() => setPlayhead(playheadPosition + FRAME_MICROS)} />
-        <TransportBtn icon={<SkipForward size={14} />} label="Go to end" onClick={() => setPlayhead(duration)} />
+      <div className="flex shrink-0 items-center justify-center gap-1.5 border-t border-white/10 px-4 py-2.5">
+        <TransportBtn icon={<SkipBack size={16} />} label="Go to start" onClick={() => setPlayhead(0)} />
+        <TransportBtn icon={<ChevronLeft size={16} />} label="Prev frame" onClick={() => setPlayhead(playheadPosition - FRAME_MICROS)} />
+        <TransportBtn icon={isPlaying ? <Pause size={18} /> : <Play size={18} />} label={isPlaying ? "Pause" : "Play"} onClick={togglePlayback} accent />
+        <TransportBtn icon={<ChevronRight size={16} />} label="Next frame" onClick={() => setPlayhead(playheadPosition + FRAME_MICROS)} />
+        <TransportBtn icon={<SkipForward size={16} />} label="Go to end" onClick={() => setPlayhead(duration)} />
         <span className="ml-3 text-xs tabular-nums text-white/50">{formatTimecode(playheadPosition)}</span>
       </div>
     </div>
@@ -503,7 +503,11 @@ export function PreviewMonitor() {
 function TransportBtn({ icon, label, onClick, accent }: { icon: React.ReactNode; label: string; onClick: () => void; accent?: boolean }) {
   return (
     <button onClick={onClick} aria-label={label}
-      className={`rounded p-1.5 transition-colors focus-visible:ring-1 focus-visible:ring-white/40 ${accent ? "bg-white/15 text-white hover:bg-white/25" : "text-white/50 hover:bg-white/10 hover:text-white"}`}
+      className={`rounded-xl p-2.5 transition-colors focus-visible:ring-2 focus-visible:ring-white/40 ${
+        accent
+          ? "bg-[#ff007a]/20 text-[#ff007a] ring-1 ring-[#ff007a]/40 hover:bg-[#ff007a]/30"
+          : "text-white/50 hover:bg-white/10 hover:text-white"
+      }`}
     >{icon}</button>
   );
 }

@@ -71,6 +71,7 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
   const scrollRef               = useRef<HTMLDivElement>(null);
   const cellRefs                = useRef<Map<string, HTMLDivElement>>(new Map());
   const elementToPid            = useRef<WeakMap<HTMLDivElement, string>>(new WeakMap());
+  const activePostIdRef         = useRef(activePostId);
   const observerRef             = useRef<IntersectionObserver | null>(null);
   const { lightweightPush, lightweightReplace } = useSafeUrlSync("/");
 
@@ -116,12 +117,29 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
     ensureHydrated(ids);
   }, [activePostId, queue, ensureHydrated]);
 
-  // Keyboard close
+  // Keep ref in sync so the keyboard handler never reads stale activePostId.
+  useEffect(() => { activePostIdRef.current = activePostId; }, [activePostId]);
+
+  // Keyboard navigation: Escape closes; Arrow keys step through the queue.
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const h = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+        e.preventDefault();
+        const idx = queue.findIndex((p) => p.id === activePostIdRef.current);
+        const next = queue[Math.min(idx + 1, queue.length - 1)];
+        if (next) cellRefs.current.get(next.id)?.scrollIntoView({ behavior: "smooth" });
+      } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        const idx = queue.findIndex((p) => p.id === activePostIdRef.current);
+        const prev = queue[Math.max(idx - 1, 0)];
+        if (prev) cellRefs.current.get(prev.id)?.scrollIntoView({ behavior: "smooth" });
+      }
+    };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
+  }, [onClose, queue]);
 
   // URL masking via History API. Push-once rule: lightweightPush fires EXACTLY
   // ONCE per Theater session so the Home feed is the single "save point" in

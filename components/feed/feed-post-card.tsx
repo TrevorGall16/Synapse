@@ -411,18 +411,6 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
             <span style={r.style}>{r.displayText}</span>
           </div>
         ))}
-        {/* Typography scrim — deeper bottom-half ramp to support the larger
-            handle + title text. Dark stop now starts at 50% (was 76%) so the
-            bottom block of copy reads on any frame, including bright videos.
-            A short top vignette keeps the upper badge row legible. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 25%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.65) 78%, rgba(0,0,0,0.95) 100%)",
-          }}
-        />
 
         {pool && isHot(post, pool) && (
           <span className="absolute left-2.5 top-2.5 flex items-center gap-0.5 rounded-full bg-amber-400/90 px-1.5 py-0.5 text-[8px] font-bold uppercase text-black">
@@ -491,13 +479,6 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
         {/* Grid-mode hover: stronger gradient backdrop + tags float to top */}
         {!autoplayInView && (
           <>
-            {/* Reinforced bottom-to-top gradient — activates on hover so username
-                and title have contrast against bright video frames */}
-            <div
-              aria-hidden
-              className={`pointer-events-none absolute inset-0 transition-opacity duration-200 ${hovered ? "opacity-100" : "opacity-0"}`}
-              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.35) 50%, rgba(0,0,0,0.10) 100%)" }}
-            />
 
             {/* Tags float to the TOP so they never overlap the avatar/username below */}
             <div className={`absolute left-0 right-0 top-0 flex flex-col gap-1 p-3 transition-all duration-200 ${hovered ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1"}`}>

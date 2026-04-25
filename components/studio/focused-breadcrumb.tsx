@@ -36,7 +36,7 @@ export function FocusedBreadcrumb({ onNavigateDashboard }: FocusedBreadcrumbProp
   };
 
   return (
-    <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-white/10 bg-[#161616] px-3">
+    <div className="flex h-10 shrink-0 items-center gap-1.5 border-b border-white/10 bg-[#121014] px-3">
       <button
         onClick={onNavigateDashboard}
         className="text-[11px] font-semibold text-white/40 transition-colors hover:text-brand-text"

@@ -138,7 +138,7 @@ export default function StudioPage() {
   }
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#1a1a1a] text-white">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#121014] text-white">
       {showSettings && <ProjectSettingsModal onClose={() => setShowSettings(false)} />}
       <VolumeHud />
       {isFocused ? (
@@ -148,48 +148,48 @@ export default function StudioPage() {
       )}
       <div className="flex-1 overflow-hidden min-h-0">
       <Group orientation="vertical">
-        {/* Top half: Media Pool/Inspector + Preview Monitor */}
-        <Panel defaultSize={50} minSize={25} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
+        {/* Top section: Media Pool/Inspector + Preview Monitor */}
+        <Panel defaultSize={57} minSize={25} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
           <Group orientation="horizontal">
-            <Panel defaultSize={45} minSize={20} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
+            <Panel defaultSize={30} minSize={18} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
               {/* Tab bar */}
-              <div className="flex shrink-0 border-b border-white/10">
+              <div className="flex shrink-0 items-center gap-1 border-b border-white/10 px-2 py-1.5">
                 <button
                   onClick={() => setLeftTab("pool")}
-                  className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                     leftTab === "pool"
-                      ? "border-b-2 border-white/60 text-white/80"
-                      : "text-white/40 hover:text-white/60"
+                      ? "bg-white/10 text-white"
+                      : "text-white/40 hover:bg-white/5 hover:text-white/70"
                   }`}
                 >
                   Media Bin
                 </button>
                 <button
                   onClick={() => setLeftTab("inspector")}
-                  className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                     leftTab === "inspector"
-                      ? "border-b-2 border-white/60 text-white/80"
-                      : "text-white/40 hover:text-white/60"
+                      ? "bg-white/10 text-white"
+                      : "text-white/40 hover:bg-white/5 hover:text-white/70"
                   }`}
                 >
                   Inspector
                 </button>
                 <button
                   onClick={() => setLeftTab("history")}
-                  className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                     leftTab === "history"
-                      ? "border-b-2 border-white/60 text-white/80"
-                      : "text-white/40 hover:text-white/60"
+                      ? "bg-white/10 text-white"
+                      : "text-white/40 hover:bg-white/5 hover:text-white/70"
                   }`}
                 >
                   History
                 </button>
                 <button
                   onClick={() => setLeftTab("presets")}
-                  className={`px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                     leftTab === "presets"
-                      ? "border-b-2 border-white/60 text-white/80"
-                      : "text-white/40 hover:text-white/60"
+                      ? "bg-white/10 text-white"
+                      : "text-white/40 hover:bg-white/5 hover:text-white/70"
                   }`}
                 >
                   Presets
@@ -201,23 +201,23 @@ export default function StudioPage() {
                 {leftTab === "inspector" && inspectingTrackType === "video" && (
                   <>
                     {/* Video sub-tab bar */}
-                    <div className="flex shrink-0 border-b border-white/10">
+                    <div className="flex shrink-0 items-center gap-1 border-b border-white/10 px-2 py-1">
                       <button
                         onClick={() => setInspectorSubTab("pancrop")}
-                        className={`px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider transition-colors ${
+                        className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                           inspectorSubTab === "pancrop"
-                            ? "border-b border-blue-400/60 text-white/80"
-                            : "text-white/40 hover:text-white/60"
+                            ? "bg-white/10 text-white"
+                            : "text-white/40 hover:bg-white/5 hover:text-white/70"
                         }`}
                       >
                         Pan/Crop
                       </button>
                       <button
                         onClick={() => setInspectorSubTab("videofx")}
-                        className={`px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider transition-colors ${
+                        className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                           inspectorSubTab === "videofx"
-                            ? "border-b border-blue-400/60 text-white/80"
-                            : "text-white/40 hover:text-white/60"
+                            ? "bg-white/10 text-white"
+                            : "text-white/40 hover:bg-white/5 hover:text-white/70"
                         }`}
                       >
                         Video FX
@@ -235,7 +235,7 @@ export default function StudioPage() {
                   fxMaskEditingClipId ? <PanCropWindow /> : <FxInspector />
                 )}
                 {leftTab === "inspector" && !inspectingTrackType && (
-                  <div className="flex h-full flex-col items-center justify-center bg-[#1a1a1a] p-4">
+                  <div className="flex h-full flex-col items-center justify-center p-4">
                     <span className="text-xs text-white/30">Select a clip to inspect</span>
                   </div>
                 )}
@@ -243,25 +243,25 @@ export default function StudioPage() {
                 {leftTab === "presets" && <PresetPanel />}
               </div>
             </Panel>
-            <Separator className="w-1 bg-white/10 transition-colors hover:bg-white/30" />
-            <Panel defaultSize={60} minSize={25} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
+            <Separator className="w-1.5 bg-white/5 transition-colors hover:bg-[#ff007a]/40 cursor-col-resize" />
+            <Panel defaultSize={70} minSize={25} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
               <PreviewMonitor />
             </Panel>
           </Group>
         </Panel>
 
         {/* Horizontal resize handle */}
-        <Separator className="h-1 bg-white/10 transition-colors hover:bg-white/30" />
+        <Separator className="h-1.5 bg-white/5 transition-colors hover:bg-[#ff007a]/40 cursor-row-resize" />
 
-        {/* Middle: Timeline */}
-        <Panel defaultSize={40} minSize={15} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
+        {/* Timeline */}
+        <Panel defaultSize={35} minSize={15} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
           <Timeline />
         </Panel>
 
-        <Separator className="h-1 bg-white/10 transition-colors hover:bg-white/30" />
+        <Separator className="h-1.5 bg-white/5 transition-colors hover:bg-[#ff007a]/40 cursor-row-resize" />
 
-        {/* Bottom: Audio Mixer */}
-        <Panel defaultSize={10} minSize={8} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
+        {/* Audio Mixer */}
+        <Panel defaultSize={8} minSize={6} className="flex flex-col h-full w-full overflow-hidden min-w-0 min-h-0">
           <AudioMixer />
         </Panel>
       </Group>
