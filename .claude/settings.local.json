@@ -96,7 +96,8 @@
       "Bash(curl -fs -o /dev/null http://localhost:3000/)",
       "Bash(npm list *)",
       "Bash(npm i *)",
-      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('scripts', {}\\).get\\('lint', 'NOT_FOUND'\\)\\)\")"
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('scripts', {}\\).get\\('lint', 'NOT_FOUND'\\)\\)\")",
+      "Bash(bash *)"
     ]
   }
 }

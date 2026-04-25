@@ -1,0 +1,218 @@
+<h2>Studio Layout Direction</h2>
+<p class="subtitle">The current Studio splits preview/inspector 50/50 vertically. Which direction should the facelift take?</p>
+
+<div class="cards">
+
+  <!-- Option A -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#0d0b10">
+      <!-- Mockup A: Monitor Dominant -->
+      <div style="display:flex;flex-direction:column;gap:3px;height:200px;font-size:9px;font-family:monospace">
+        <!-- Breadcrumb bar -->
+        <div style="height:18px;background:#1a1720;border-radius:4px;display:flex;align-items:center;padding:0 8px;color:#ffffff55;font-size:8px;flex-shrink:0">Studio Dashboard › Untitled Project</div>
+        <!-- Main area -->
+        <div style="display:flex;gap:3px;flex:1;min-height:0">
+          <!-- Left panel: narrow icon rail + labels -->
+          <div style="width:22%;background:#161320;border-radius:4px;display:flex;flex-direction:column;gap:2px;padding:4px 3px">
+            <div style="background:#ffffff10;border-radius:3px;padding:3px 4px;color:#ffffff60;font-size:7px">Media Bin</div>
+            <div style="background:#ffffff05;border-radius:3px;padding:3px 4px;color:#ffffff30;font-size:7px">Inspector</div>
+            <div style="background:#ffffff05;border-radius:3px;padding:3px 4px;color:#ffffff30;font-size:7px">History</div>
+            <div style="flex:1"></div>
+            <div style="background:#ffffff08;border-radius:3px;height:60px;display:flex;align-items:center;justify-content:center;color:#ffffff25;font-size:7px">Clip<br>List</div>
+          </div>
+          <!-- Preview: king -->
+          <div style="flex:1;background:#0a0a0a;border-radius:8px;display:flex;flex-direction:column;overflow:hidden;border:1px solid #ffffff15">
+            <div style="height:16px;background:#161320;display:flex;align-items:center;justify-content:space-between;padding:0 8px;flex-shrink:0">
+              <span style="color:#ffffff40;font-size:7px">PREVIEW</span>
+              <span style="color:#ffffff30;font-size:7px">Fit · Auto</span>
+            </div>
+            <div style="flex:1;display:flex;align-items:center;justify-content:center;background:#080808">
+              <div style="width:70%;aspect-ratio:9/16;max-height:100%;background:#1a1720;border-radius:4px;display:flex;align-items:center;justify-content:center;border:1px solid #ffffff10">
+                <span style="color:#ffffff20;font-size:8px">▶ 9:16</span>
+              </div>
+            </div>
+            <div style="height:22px;background:#161320;display:flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0">
+              <span style="color:#ffffff30;font-size:10px">⏮ ◀ ▶ ▶ ⏭</span>
+              <span style="color:#ffffff40;font-size:7px;margin-left:4px">00:00:00</span>
+            </div>
+          </div>
+        </div>
+        <!-- Timeline: full width, chunky -->
+        <div style="height:52px;background:#161320;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;border:1px solid #ffffff10">
+          <div style="height:14px;background:#1a1720;display:flex;align-items:center;gap:6px;padding:0 6px;flex-shrink:0">
+            <div style="width:30px;height:7px;background:#7c3aed55;border-radius:2px"></div>
+            <div style="width:20px;height:7px;background:#22d3ee33;border-radius:2px"></div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px;padding:2px 4px">
+            <div style="height:10px;background:#7c3aed33;border-radius:2px;width:70%"></div>
+            <div style="height:10px;background:#22d3ee22;border-radius:2px;width:55%;margin-left:10%"></div>
+          </div>
+        </div>
+        <!-- Audio strip: very thin -->
+        <div style="height:12px;background:#12101a;border-radius:3px;display:flex;align-items:center;gap:3px;padding:0 6px;flex-shrink:0">
+          <span style="color:#ffffff25;font-size:6px">AUDIO MIXER</span>
+          <div style="flex:1;height:4px;background:#7c3aed22;border-radius:2px"><div style="width:65%;height:100%;background:#7c3aed66;border-radius:2px"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Monitor Dominant</h3>
+      <p>Left panel shrinks to ~22%. Preview expands to fill. Timeline spans full width. Audio mixer collapses to a thin strip. Maximum screen real estate for the video.</p>
+    </div>
+  </div>
+
+  <!-- Option B -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#0d0b10">
+      <!-- Mockup B: Better Proportions Same Structure -->
+      <div style="display:flex;flex-direction:column;gap:3px;height:200px;font-size:9px;font-family:monospace">
+        <!-- Breadcrumb bar -->
+        <div style="height:18px;background:#1a1720;border-radius:4px;display:flex;align-items:center;padding:0 8px;color:#ffffff55;font-size:8px;flex-shrink:0">Studio Dashboard › Untitled Project</div>
+        <!-- Top: left + preview -->
+        <div style="display:flex;gap:3px;flex:1.4;min-height:0">
+          <!-- Left panel: wider, premium tabs -->
+          <div style="width:32%;background:#161320;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;border:1px solid #ffffff10">
+            <div style="height:18px;background:#1a1720;display:flex;align-items:center;gap:1px;padding:0 4px;flex-shrink:0">
+              <div style="background:#7c3aed40;border-radius:3px;padding:2px 5px;color:#ccaaff;font-size:6px;font-weight:700">MEDIA</div>
+              <div style="padding:2px 5px;color:#ffffff30;font-size:6px">FX</div>
+              <div style="padding:2px 5px;color:#ffffff30;font-size:6px">TEXT</div>
+            </div>
+            <div style="flex:1;padding:4px;display:flex;flex-direction:column;gap:2px">
+              <div style="height:28px;background:#ffffff08;border-radius:4px;border:1px dashed #ffffff15;display:flex;align-items:center;justify-content:center;color:#ffffff25;font-size:7px">Drop media here</div>
+              <div style="height:18px;background:#1a1720;border-radius:3px;display:flex;align-items:center;padding:0 5px;gap:3px">
+                <div style="width:12px;height:8px;background:#7c3aed66;border-radius:1px"></div>
+                <span style="color:#ffffff60;font-size:6px">clip_01.mp4</span>
+              </div>
+              <div style="height:18px;background:#1a1720;border-radius:3px;display:flex;align-items:center;padding:0 5px;gap:3px">
+                <div style="width:12px;height:8px;background:#7c3aed44;border-radius:1px"></div>
+                <span style="color:#ffffff40;font-size:6px">clip_02.mp4</span>
+              </div>
+            </div>
+          </div>
+          <!-- Preview: takes 68% -->
+          <div style="flex:1;background:#0a0a0a;border-radius:8px;display:flex;flex-direction:column;overflow:hidden;border:1.5px solid #ffffff20">
+            <div style="height:16px;background:#161320;display:flex;align-items:center;justify-content:space-between;padding:0 8px;flex-shrink:0">
+              <span style="color:#ffffff40;font-size:7px">PREVIEW</span>
+              <span style="color:#ffffff30;font-size:7px">Fit · Auto</span>
+            </div>
+            <div style="flex:1;display:flex;align-items:center;justify-content:center;background:#080808">
+              <div style="width:55%;aspect-ratio:9/16;max-height:100%;background:#1a1720;border-radius:4px;display:flex;align-items:center;justify-content:center;border:1px solid #ffffff15">
+                <span style="color:#ffffff20;font-size:8px">▶</span>
+              </div>
+            </div>
+            <div style="height:24px;background:#1a1720;display:flex;align-items:center;justify-content:center;gap:4px;flex-shrink:0">
+              <div style="width:18px;height:18px;background:#ffffff10;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px">⏮</div>
+              <div style="width:18px;height:18px;background:#ffffff10;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px">◀</div>
+              <div style="width:22px;height:22px;background:#7c3aed55;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;border:1px solid #7c3aed80">▶</div>
+              <div style="width:18px;height:18px;background:#ffffff10;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px">▶</div>
+              <div style="width:18px;height:18px;background:#ffffff10;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px">⏭</div>
+              <span style="color:#ffffff40;font-size:7px;margin-left:4px">00:00:00</span>
+            </div>
+          </div>
+        </div>
+        <!-- Timeline: taller, more premium -->
+        <div style="flex:1;background:#161320;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;border:1px solid #ffffff10">
+          <div style="height:14px;background:#1a1720;display:flex;align-items:center;justify-content:space-between;padding:0 6px;flex-shrink:0">
+            <div style="display:flex;gap:3px">
+              <div style="width:22px;height:7px;background:#7c3aed55;border-radius:2px"></div>
+              <div style="width:16px;height:7px;background:#22d3ee33;border-radius:2px"></div>
+            </div>
+            <div style="color:#ffffff20;font-size:6px">TIMELINE</div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px;padding:2px 4px">
+            <div style="height:10px;background:#7c3aed44;border-radius:2px;width:80%"></div>
+            <div style="height:10px;background:#22d3ee33;border-radius:2px;width:60%;margin-left:8%"></div>
+            <div style="height:10px;background:#f59e0b22;border-radius:2px;width:40%;margin-left:5%"></div>
+          </div>
+        </div>
+        <!-- Audio -->
+        <div style="height:14px;background:#12101a;border-radius:3px;display:flex;align-items:center;gap:4px;padding:0 6px;flex-shrink:0">
+          <span style="color:#ffffff25;font-size:6px">MIX</span>
+          <div style="flex:1;height:5px;background:#ffffff08;border-radius:2px"><div style="width:70%;height:100%;background:#7c3aed55;border-radius:2px"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Proportional Boost</h3>
+      <p>Same 2-column + timeline structure, but tuned: preview gets 65–70% of top width, top section gets 58% of height, timeline is taller. Big gains from restyling tabs, buttons, and borders alone.</p>
+    </div>
+  </div>
+
+  <!-- Option C -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px;background:#0d0b10">
+      <!-- Mockup C: Cinema / FCP-style -->
+      <div style="display:flex;flex-direction:column;gap:3px;height:200px;font-size:9px;font-family:monospace">
+        <!-- Breadcrumb bar -->
+        <div style="height:18px;background:#1a1720;border-radius:4px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;color:#ffffff55;font-size:8px;flex-shrink:0">
+          <span>Studio Dashboard › Untitled Project</span>
+          <div style="display:flex;gap:4px">
+            <div style="background:#ffffff10;border-radius:3px;padding:1px 5px;color:#ffffff50;font-size:7px">Media</div>
+            <div style="background:#7c3aed30;border-radius:3px;padding:1px 5px;color:#ccaaff;font-size:7px">Inspector</div>
+            <div style="background:#ffffff10;border-radius:3px;padding:1px 5px;color:#ffffff50;font-size:7px">Export</div>
+          </div>
+        </div>
+        <!-- Main: preview + right drawer -->
+        <div style="display:flex;gap:3px;flex:1.2;min-height:0">
+          <!-- Icon rail: very slim -->
+          <div style="width:14px;background:#12101a;border-radius:4px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0">
+            <div style="width:8px;height:8px;background:#7c3aed66;border-radius:2px"></div>
+            <div style="width:8px;height:8px;background:#ffffff15;border-radius:2px"></div>
+            <div style="width:8px;height:8px;background:#ffffff10;border-radius:2px"></div>
+          </div>
+          <!-- Preview: almost full width -->
+          <div style="flex:1;background:#060408;border-radius:8px;display:flex;flex-direction:column;overflow:hidden;border:1.5px solid #7c3aed30">
+            <div style="flex:1;display:flex;align-items:center;justify-content:center;background:#060408">
+              <div style="width:40%;aspect-ratio:9/16;background:#1a1720;border-radius:6px;display:flex;align-items:center;justify-content:center;border:1px solid #7c3aed40;box-shadow:0 0 30px #7c3aed22">
+                <span style="color:#7c3aed70;font-size:10px">▶</span>
+              </div>
+            </div>
+            <div style="height:26px;background:#12101a;display:flex;align-items:center;justify-content:center;gap:5px;flex-shrink:0;border-top:1px solid #7c3aed20">
+              <div style="width:18px;height:18px;background:#ffffff10;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px">⏮</div>
+              <div style="width:18px;height:18px;background:#ffffff10;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px">◀</div>
+              <div style="width:24px;height:24px;background:#7c3aed;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;box-shadow:0 0 8px #7c3aed88">▶</div>
+              <div style="width:18px;height:18px;background:#ffffff10;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px">▶</div>
+              <div style="width:18px;height:18px;background:#ffffff10;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:8px">⏭</div>
+              <span style="color:#ffffff40;font-size:7px;margin-left:4px">00:00:00</span>
+            </div>
+          </div>
+          <!-- Floating right inspector (only when clip selected) -->
+          <div style="width:28%;background:#161320;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;border:1px solid #ffffff10">
+            <div style="height:16px;background:#1a1720;display:flex;align-items:center;padding:0 5px;flex-shrink:0">
+              <span style="color:#ffffff50;font-size:6px;font-weight:700">INSPECTOR</span>
+            </div>
+            <div style="flex:1;padding:4px;display:flex;flex-direction:column;gap:3px">
+              <div style="font-size:6px;color:#ffffff40">Pan / Crop</div>
+              <div style="height:4px;background:#ffffff08;border-radius:2px"><div style="width:50%;height:100%;background:#7c3aed55;border-radius:2px"></div></div>
+              <div style="font-size:6px;color:#ffffff40">Brightness</div>
+              <div style="height:4px;background:#ffffff08;border-radius:2px"><div style="width:75%;height:100%;background:#22d3ee44;border-radius:2px"></div></div>
+              <div style="font-size:6px;color:#ffffff40">Opacity</div>
+              <div style="height:4px;background:#ffffff08;border-radius:2px"><div style="width:90%;height:100%;background:#ffffff30;border-radius:2px"></div></div>
+            </div>
+          </div>
+        </div>
+        <!-- Timeline: shorter but full width, very premium -->
+        <div style="flex:1;background:#12101a;border-radius:6px;display:flex;flex-direction:column;overflow:hidden;border:1px solid #7c3aed20">
+          <div style="height:13px;background:#1a1720;display:flex;align-items:center;justify-content:space-between;padding:0 6px;flex-shrink:0;border-bottom:1px solid #7c3aed15">
+            <div style="display:flex;gap:3px">
+              <div style="color:#ffffff30;font-size:6px">TIMELINE</div>
+            </div>
+            <div style="display:flex;gap:2px">
+              <div style="width:14px;height:7px;background:#ffffff10;border-radius:2px"></div>
+              <div style="width:14px;height:7px;background:#ffffff10;border-radius:2px"></div>
+            </div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px;padding:2px 4px">
+            <div style="height:9px;background:#7c3aed55;border-radius:2px;width:75%"></div>
+            <div style="height:9px;background:#22d3ee33;border-radius:2px;width:50%;margin-left:10%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Cinema Mode</h3>
+      <p>Left panel collapses to a slim icon rail. Inspector becomes a right-side panel that only appears when a clip is selected. Preview is near full-width. Closest to Final Cut Pro's clean aesthetic.</p>
+    </div>
+  </div>
+
+</div>
