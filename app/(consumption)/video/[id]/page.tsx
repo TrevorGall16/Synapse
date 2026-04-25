@@ -24,7 +24,7 @@ export default function VideoPage() {
   );
 
   const handleClose = useCallback(() => {
-    router.push("/");
+    router.back();
   }, [router]);
 
   const handleRemix = useCallback(() => {
