@@ -6,15 +6,7 @@ import { Compass } from "lucide-react";
 import { NICHE_CATEGORIES, NICHE_TAGS, type NicheCategory } from "@/lib/config/taxonomy";
 import { useFeedStore, type FeedPost } from "@/lib/store/feed-store";
 
-type MediaType = "all" | "videos" | "gifs" | "images";
 type SortOption = "trending" | "latest" | "top";
-
-const MEDIA_TYPES: { id: MediaType; label: string }[] = [
-  { id: "all",    label: "All" },
-  { id: "videos", label: "Videos" },
-  { id: "gifs",   label: "GIFs" },
-  { id: "images", label: "Images" },
-];
 
 const SORT_OPTIONS: SortOption[] = ["trending", "latest", "top"];
 
@@ -77,7 +69,6 @@ function CategoryCard({ cat, previewPost }: { cat: NicheCategory; previewPost: F
 // ── Browse / Explore Page ─────────────────────────────────────────────────────
 
 export default function BrowsePage() {
-  const [mediaType, setMediaType] = useState<MediaType>("all");
   const [sort, setSort] = useState<SortOption>("trending");
   const allPosts = useFeedStore((s) => s.userPosts);
 
@@ -112,20 +103,6 @@ export default function BrowsePage() {
           </div>
         </div>
 
-        {/* Media type pills */}
-        <div className="flex gap-1.5">
-          {MEDIA_TYPES.map(({ id, label }) => (
-            <button
-              key={id}
-              onClick={() => setMediaType(id)}
-              className={`rounded-full px-3.5 py-1.5 text-[11px] font-semibold transition-all ${
-                mediaType === id
-                  ? "bg-[#ff007a]/20 text-[#ff007a] ring-1 ring-[#ff007a]/40"
-                  : "bg-white/6 text-white/50 hover:bg-white/10 hover:text-white/80"
-              }`}
-            >{label}</button>
-          ))}
-        </div>
       </div>
 
       {/* Scrollable content */}

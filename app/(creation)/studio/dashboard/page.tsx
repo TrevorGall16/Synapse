@@ -69,9 +69,9 @@ export default function StudioDashboardPage() {
     `/studio?workspace=focused&projectId=${projectId}&from=dashboard${projectFilter !== "all" ? `&dashFilter=${projectFilter}` : ""}`;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
+    <div className="flex h-full flex-col overflow-hidden bg-[#121014]">
       {/* Header */}
-      <div className="z-10 shrink-0 border-b border-white/10 bg-[#141414]/95 backdrop-blur-sm">
+      <div className="z-10 shrink-0 border-b border-white/10 bg-[#121014]/95 backdrop-blur-sm">
         <div className="flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2.5">
             <Layers size={15} className="text-brand-accent" />

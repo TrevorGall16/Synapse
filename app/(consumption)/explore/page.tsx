@@ -408,9 +408,9 @@ export default function ExplorePage() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-[#141414]">
+    <div className="flex h-full flex-col overflow-y-auto bg-[#121014]">
       {/* Header */}
-      <div className="z-10 shrink-0 flex items-center gap-2 border-b border-white/10 bg-[#141414]/95 px-5 py-3 backdrop-blur-sm">
+      <div className="z-10 shrink-0 flex items-center gap-2 border-b border-white/10 bg-[#121014]/95 px-5 py-3 backdrop-blur-sm">
         <GitBranch size={13} className="text-purple-400" />
         <h1 className="text-sm font-bold text-white">Explore</h1>
         <span className="rounded-full bg-purple-500/18 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-purple-300">Community</span>

@@ -9,7 +9,7 @@ export default function NicheIndexPage() {
   const router = useRouter();
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
+    <div className="flex h-full flex-col overflow-hidden bg-[#121014]">
       {/* Header */}
       <div className="shrink-0 border-b border-white/8 px-6 py-4">
         <div className="flex items-center gap-3">

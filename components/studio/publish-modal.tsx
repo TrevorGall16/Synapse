@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { smoothStep } from "@/lib/utils/easing";
 import { useRouter } from "next/navigation";
 import { registerTickCallback, unregisterTickCallback } from "@/lib/store/global-ticker";
 import { Confetti } from "@/components/ui/confetti";
-import { X, Globe, Check, ArrowRight, GitBranch } from "lucide-react";
+import { X, Globe, Check, ArrowRight, GitBranch, AlertTriangle } from "lucide-react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore } from "@/lib/store/feed-store";
 import { useUserStore, XP_AWARDS } from "@/lib/store/user-store";
@@ -21,6 +21,8 @@ import type { Track, ClipEvent, MediaPoolItem } from "@/lib/store/types";
 // Stable empty array reference — prevents Zustand getSnapshot infinite loop
 // when the selector conditionally returns [] in non-preset mode.
 const EMPTY_MEDIA_ARRAY: MediaPoolItem[] = [];
+
+const CLIP_CAP_MICROS = 90_000_000; // 90-second hard cap for standard users
 
 // ── Animated impact counter (GlobalTicker) ────────────────────────────────────
 function ImpactCounter({ target }: { target: number }) {
@@ -124,6 +126,23 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
   const [channels, setChannels]       = useState<string[]>([]);
   const [scope, setScope]             = useState<"timeline" | "selection">("timeline");
   const [published, setPublished]     = useState(false);
+
+  // Reactive duration for the cap check — reads tracks live so the warning
+  // updates instantly as the user trims or adds clips.
+  const liveTracksForCap  = useProjectStore((s) => s.tracks);
+  const liveProjectDuration = useProjectStore((s) => s.duration);
+  const liveSelStart  = usePlaybackStore((s) => s.selectionStart);
+  const liveSelEnd    = usePlaybackStore((s) => s.selectionEnd);
+
+  const effectivePublishDuration = useMemo(() => {
+    if (scope === "selection" && liveSelStart != null && liveSelEnd != null && liveSelEnd > liveSelStart) {
+      return liveSelEnd - liveSelStart;
+    }
+    const maxEnd = liveTracksForCap.flatMap((t) => t.clips).reduce((mx, c) => Math.max(mx, c.startTime + c.duration), 0);
+    return maxEnd > 0 ? maxEnd : liveProjectDuration;
+  }, [scope, liveSelStart, liveSelEnd, liveTracksForCap, liveProjectDuration]);
+
+  const overCap = !presetMode && effectivePublishDuration > CLIP_CAP_MICROS;
   const [publishedId, setPublishedId] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [impactScore, setImpactScore]   = useState(0);
@@ -578,7 +597,19 @@ export function PublishModal({ onClose, presetMode }: PublishModalProps) {
                 )}
               </div>
 
-              <button onClick={handlePublish} disabled={!title.trim()}
+              {overCap && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-400" />
+                  <div>
+                    <p className="text-[11px] font-semibold text-amber-300">Clip exceeds 90-second limit</p>
+                    <p className="mt-0.5 text-[10px] leading-relaxed text-amber-300/65">
+                      Standard clips are capped at 1:30. Trim your timeline or use a Ruler Selection under 90s.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <button onClick={handlePublish} disabled={!title.trim() || overCap}
                 className="mt-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold text-white transition-all disabled:opacity-35"
                 style={{ background: "#7c3aedcc" }}>
                 <Globe size={13} />{presetMode ? "Share Preset" : "Publish to Feed"}

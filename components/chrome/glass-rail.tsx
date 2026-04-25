@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Compass, Hash, Bookmark, LayoutGrid, Rows3, User, Zap } from "lucide-react";
+import { Home, Compass, Bookmark, LayoutGrid, Rows3, User, Zap } from "lucide-react";
 import { useUiStore } from "@/lib/store/ui-store";
 import { useUserStore } from "@/lib/store/user-store";
 
@@ -15,8 +15,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: "/",       label: "Home",   Icon: Home },
-  { href: "/browse", label: "Browse", Icon: Compass,  prefixes: ["/browse", "/explore"] },
-  { href: "/niche",  label: "Niche",  Icon: Hash,     prefixes: ["/niche"] },
+  { href: "/browse", label: "Browse", Icon: Compass,  prefixes: ["/browse", "/explore", "/niche"] },
   { href: "/vault",  label: "Vault",  Icon: Bookmark },
   { href: "/studio", label: "Studio", Icon: Zap,      prefixes: ["/studio", "/upload", "/session"] },
 ];

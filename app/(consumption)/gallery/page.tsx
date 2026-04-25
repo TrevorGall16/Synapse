@@ -283,9 +283,9 @@ export default function GalleryPage() {
   const sorted = [...projects].sort((a, b) => b.lastEdited - a.lastEdited);
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-[#141414]">
+    <div className="flex h-full flex-col overflow-y-auto bg-[#121014]">
       {/* Header */}
-      <div className="z-10 shrink-0 flex items-center justify-between border-b border-white/10 bg-[#141414]/95 px-5 py-3 backdrop-blur-sm">
+      <div className="z-10 shrink-0 flex items-center justify-between border-b border-white/10 bg-[#121014]/95 px-5 py-3 backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <Layers size={13} className="text-white/35" />
           <h1 className="text-sm font-bold text-white">Gallery</h1>

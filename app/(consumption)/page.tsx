@@ -334,7 +334,7 @@ export default function DiscoveryFeedPage() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#0a0a0a]">
+    <div className="flex h-full flex-col overflow-hidden bg-[#121014]">
       {/* Sort + Niche filter bar.
           Nav + global actions now live in the unified TopBar (see
           components/chrome/top-bar.tsx); this row is pure feed control. */}

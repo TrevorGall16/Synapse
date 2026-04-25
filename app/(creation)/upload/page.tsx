@@ -326,9 +326,9 @@ export default function UploadPage() {
   const progressPct = stageProgress;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
+    <div className="flex h-full flex-col overflow-hidden bg-[#121014]">
       {/* Header + Tab Bar */}
-      <div className="z-10 shrink-0 border-b border-white/10 bg-[#141414]/95 backdrop-blur-sm">
+      <div className="z-10 shrink-0 border-b border-white/10 bg-[#121014]/95 backdrop-blur-sm">
         <div className="flex items-center justify-between px-6 py-3">
           <div className="flex items-center gap-2.5">
             <Upload size={14} className="text-brand-accent" />
