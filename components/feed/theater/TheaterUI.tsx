@@ -13,7 +13,7 @@
 import React, { useState } from "react";
 import {
   Zap, Heart, Share2, Play, Pause,
-  MessageCircle, Users, GitBranch, WifiOff, Pencil,
+  Eye, MessageCircle, Users, GitBranch, WifiOff, Pencil,
 } from "lucide-react";
 import type { FeedPost } from "@/lib/store/feed-store";
 import type { MediaPoolItem } from "@/lib/store/types";
@@ -276,24 +276,33 @@ export function TheaterUI({
       <div className="absolute bottom-14 right-3 z-[40] flex flex-col items-center gap-3">
         {/* Like */}
         <button onClick={onToggleLike} className="flex flex-col items-center gap-1">
-          <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${liked ? "border-red-500/40 bg-red-500/30" : "border-white/15 bg-[#0a0a0a]/40 hover:bg-white/12"}`}>
-            <Heart size={20} className={liked ? "fill-red-400 text-red-400" : "text-white"} />
+          <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${liked ? "border-[#ff007a]/50 bg-[#ff007a]/25" : "border-white/15 bg-[#0a0a0a]/40 hover:bg-white/12"}`}>
+            <Heart size={20} className={liked ? "fill-[#ff007a] text-[#ff007a]" : "text-[#ff007a]/70"} />
           </div>
           <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.likes + (liked ? 1 : 0))}</span>
         </button>
-        {/* Comment — hidden when creator disables comments */}
-        {post.comments_enabled !== false && (
-          <button onClick={onToggleComments} className="flex flex-col items-center gap-1">
-            <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${
-              isCommentsOpen
-                ? "border-brand-accent/40 bg-brand/25"
-                : "border-white/15 bg-[#0a0a0a]/40 hover:bg-white/12"
-            }`}>
-              <MessageCircle size={20} className={isCommentsOpen ? "text-brand-text" : "text-white"} />
-            </div>
-            <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.comments)}</span>
-          </button>
-        )}
+        {/* Views — mirrors Feed Pillar metric */}
+        <div className="flex flex-col items-center gap-1">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#0a0a0a]/40 backdrop-blur-sm">
+            <Eye size={20} className="text-[#f59e0b]" />
+          </div>
+          <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.likes * 10 + post.comments * 20)}</span>
+        </div>
+        {/* Comment button — code preserved, hidden until comment feature ships */}
+        <span className="hidden">
+          {post.comments_enabled !== false && (
+            <button onClick={onToggleComments} className="flex flex-col items-center gap-1">
+              <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${
+                isCommentsOpen
+                  ? "border-brand-accent/40 bg-brand/25"
+                  : "border-white/15 bg-[#0a0a0a]/40 hover:bg-white/12"
+              }`}>
+                <MessageCircle size={20} className={isCommentsOpen ? "text-brand-text" : "text-white"} />
+              </div>
+              <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.comments)}</span>
+            </button>
+          )}
+        </span>
         {/* Share — uses the shared <ShareSheet> so behavior matches Profile. */}
         <div className="relative">
           <button
@@ -304,7 +313,7 @@ export function TheaterUI({
             className="flex cursor-pointer flex-col items-center gap-1"
           >
             <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#0a0a0a]/40 backdrop-blur-sm hover:bg-white/12">
-              <Share2 size={20} className="text-white" />
+              <Share2 size={20} className="text-[#a855f7]" />
             </div>
             <span className="text-[9px] font-semibold text-white" style={TX}>Share</span>
           </button>
@@ -354,7 +363,7 @@ export function TheaterUI({
         onClick={(e) => e.stopPropagation()}
         className={`absolute bottom-0 left-0 right-0 z-[50] h-2 cursor-pointer touch-none bg-white/15 hover:h-3 transition-all duration-300 ${isIdle && isPlaying ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"}`}
       >
-        <div className="pointer-events-none h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: post.accent }} />
+        <div className="pointer-events-none h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: "#ff007a" }} />
       </div>
 
       {/* Action toast */}

@@ -89,9 +89,9 @@ export default function BrowsePage() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[#141414]">
+    <div className="flex h-full flex-col overflow-hidden bg-[#121014]">
       {/* Header */}
-      <div className="z-10 shrink-0 border-b border-white/10 bg-[#141414]/95 px-6 py-3 backdrop-blur-sm">
+      <div className="z-10 shrink-0 border-b border-white/10 bg-[#121014]/95 px-6 py-3 backdrop-blur-sm">
         <div className="mb-3 flex items-center justify-between gap-2.5">
           <div className="flex items-center gap-2">
             <Compass size={15} className="text-brand-accent" />
@@ -102,9 +102,9 @@ export default function BrowsePage() {
               <button
                 key={id}
                 onClick={() => setSort(id)}
-                className={`rounded-full px-3 py-1 text-[10px] font-semibold capitalize transition-colors ${
+                className={`rounded-full px-3 py-1 text-[10px] font-semibold capitalize transition-all ${
                   sort === id
-                    ? "bg-white/14 text-white ring-1 ring-white/20"
+                    ? "bg-[#ff007a]/20 text-[#ff007a] ring-1 ring-[#ff007a]/40"
                     : "text-white/35 hover:text-white/65"
                 }`}
               >{id}</button>
@@ -120,7 +120,7 @@ export default function BrowsePage() {
               onClick={() => setMediaType(id)}
               className={`rounded-full px-3.5 py-1.5 text-[11px] font-semibold transition-all ${
                 mediaType === id
-                  ? "bg-brand-accent/20 text-brand-accent ring-1 ring-brand-accent/40"
+                  ? "bg-[#ff007a]/20 text-[#ff007a] ring-1 ring-[#ff007a]/40"
                   : "bg-white/6 text-white/50 hover:bg-white/10 hover:text-white/80"
               }`}
             >{label}</button>
@@ -152,7 +152,7 @@ export default function BrowsePage() {
               <Link
                 key={tag}
                 href={`/?tag=${encodeURIComponent(tag.slice(1))}`}
-                className="rounded-full border border-white/12 bg-white/6 px-4 py-2 text-sm font-semibold text-white/70 transition-colors hover:border-white/25 hover:bg-white/12 hover:text-white"
+                className="rounded-full border border-[#ff007a]/20 bg-[#ff007a]/8 px-4 py-2 text-sm font-semibold text-white/70 transition-all hover:border-[#ff007a]/45 hover:bg-[#ff007a]/15 hover:text-[#ff007a]"
               >{tag}</Link>
             ))}
           </div>

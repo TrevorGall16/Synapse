@@ -1,15 +1,13 @@
 "use client";
 
-import { useRef, useState, useMemo, useEffect, useCallback, useSyncExternalStore } from "react";
-import { Heart, Share2, Zap, Play, Flame, WifiOff, Trash2, GitBranch, Download, Eye, MoreHorizontal } from "lucide-react";
-import { type FeedPost, isBlobUrl, useFeedStore, FALLBACK_VIDEO_URL } from "@/lib/store/feed-store";
+import { useRef, useState, useMemo, useEffect, useSyncExternalStore } from "react";
+import { Play, Flame, WifiOff, Trash2, GitBranch } from "lucide-react";
+import { type FeedPost, isBlobUrl, FALLBACK_VIDEO_URL } from "@/lib/store/feed-store";
 import { useUserStore } from "@/lib/store/user-store";
-import { canRemix } from "@/lib/policy";
 import { clipCssTransform } from "@/lib/utils/svg-filters";
 import { buildTextStyle, buildFxFilter } from "@/lib/utils/preview-helpers";
 import { registerTickCallback, unregisterTickCallback } from "@/lib/store/global-ticker";
 import type { ClipEvent } from "@/lib/store/types";
-import { buildPostShareUrl } from "@/lib/utils/share";
 import { isHot } from "@/lib/social";
 import { observeViewport } from "@/lib/utils/intersection-observer-pool";
 import { loadThumbnailUrl, saveThumbnail } from "@/lib/store/thumbnail-idb";
@@ -38,11 +36,6 @@ interface FeedPostCardProps {
 
 export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImport, showDelete, pool, autoplayInView = false }: FeedPostCardProps) {
   const currentUsername = useUserStore((s) => s.profile?.username);
-  // Per-post subscription — cards re-render only when their own like flips,
-  // not when any other card's like does. Zustand compares by reference
-  // identity, and boolean primitives are referentially stable across renders.
-  const liked = useFeedStore((s) => s.likedPostIds.includes(post.id));
-  const toggleLike = useFeedStore((s) => s.toggleLike);
   const following = useUserStore((s) => s.following);
   const followCreator = useUserStore((s) => s.followCreator);
   const unfollowCreator = useUserStore((s) => s.unfollowCreator);
@@ -60,12 +53,6 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     () => false,
   );
   const [toast, setToast] = useState<string | null>(null);
-  const [shareOpen, setShareOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const sharePopRef = useRef<HTMLDivElement>(null);
-  const sharePopPillarRef = useRef<HTMLDivElement>(null);
-  const moreMenuRef = useRef<HTMLDivElement>(null);
-  const [moreOpen, setMoreOpen] = useState(false);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const isBlob = isBlobUrl(post.videoUrl);
   // Durable thumbnail URL resolved from IndexedDB. When present it wins over
@@ -112,6 +99,13 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     };
   }, [post.projectSnapshot, post.videoUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Clip-bounded playback: prefer exported demoStartTime/demoDuration over raw source offsets.
+  // Mirrors the coordinate system Theater uses so the feed and Theater play the same window.
+  const clipStartSec = post.demoStartTime != null && post.demoStartTime > 0
+    ? post.demoStartTime / 1_000_000
+    : firstClipOffset;
+  const clipDurationSec: number | null = post.demoDuration ? post.demoDuration / 1_000_000 : null;
+
   // Text overlays visible at the preview frame offset
   // Also checks embeddedTextClips on video clips (remix baking)
   const textOverlays = useMemo(() => {
@@ -132,10 +126,23 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !firstClipSrc) return;
-    const onMeta = () => { v.currentTime = firstClipOffset; };
+    const onMeta = () => { v.currentTime = clipStartSec; };
     v.addEventListener("loadedmetadata", onMeta);
     return () => v.removeEventListener("loadedmetadata", onMeta);
-  }, [firstClipSrc, firstClipOffset]);
+  }, [firstClipSrc, clipStartSec]);
+
+  // Loop guard — when exported clip bounds are set, reset to clipStartSec before
+  // the source video reaches the end of the clip window. Native `loop` handles the
+  // full-source fallback; this guard fires first for bounded clips.
+  useEffect(() => {
+    if (clipDurationSec === null) return;
+    const v = videoRef.current;
+    if (!v) return;
+    const loopEnd = clipStartSec + clipDurationSec;
+    const guard = () => { if (v.currentTime >= loopEnd) v.currentTime = clipStartSec; };
+    v.addEventListener("timeupdate", guard);
+    return () => v.removeEventListener("timeupdate", guard);
+  }, [clipStartSec, clipDurationSec]);
 
   // ── Durable thumbnail pipeline ───────────────────────────────────────
   // On mount (and whenever the source identity changes) try the durable
@@ -206,6 +213,8 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
         v.pause();
         v.removeAttribute("src");
         v.load();
+        const bar = progressBarRef.current;
+        if (bar) bar.style.width = "0%";
       }
     }, "400px");
     return unobserve;
@@ -283,71 +292,24 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     };
   }, [fxActive, activeEffectClips, firstClipStart, firstClipMediaOffsetUs, firstClipTransform]);
 
-  useEffect(() => {
-    if (!shareOpen) return;
-    const onClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const inGrid = sharePopRef.current?.contains(target) ?? false;
-      const inPillar = sharePopPillarRef.current?.contains(target) ?? false;
-      if (!inGrid && !inPillar) setShareOpen(false);
-    };
-    document.addEventListener("pointerdown", onClickOutside);
-    return () => document.removeEventListener("pointerdown", onClickOutside);
-  }, [shareOpen]);
-
   // Glass Wire progress bar — direct DOM write via GlobalTicker, zero React re-renders.
+  // Math mirrors Theater: (currentTime - clipStart) / clipDuration so the bar tracks
+  // the exported clip window, not the full source file.
   useEffect(() => {
     if (!autoplayInView) return;
     const id = registerTickCallback(() => {
       const v = videoRef.current;
       const bar = progressBarRef.current;
       if (!v || !bar || !v.duration || isNaN(v.duration)) return;
-      bar.style.width = `${(v.currentTime / v.duration) * 100}%`;
+      if (clipDurationSec !== null) {
+        const pct = Math.min(Math.max((v.currentTime - clipStartSec) / clipDurationSec, 0), 1);
+        bar.style.width = `${pct * 100}%`;
+      } else {
+        bar.style.width = `${(v.currentTime / v.duration) * 100}%`;
+      }
     });
     return () => unregisterTickCallback(id);
-  }, [autoplayInView]);
-
-  const handleCopyLink = useCallback(() => {
-    if (!post.id) { setToast("Cannot share — post has no ID"); setTimeout(() => setToast(null), 2000); setShareOpen(false); return; }
-    const url = buildPostShareUrl(post.id);
-    navigator.clipboard.writeText(url).then(
-      () => { setCopied(true); setTimeout(() => setCopied(false), 1500); },
-      () => { setToast("Failed to copy link"); setTimeout(() => setToast(null), 2000); },
-    );
-    setTimeout(() => setShareOpen(false), 800);
-  }, [post.id]);
-
-  const handleShareTwitter = useCallback(() => {
-    if (!post.id) { setToast("Cannot share — post has no ID"); setTimeout(() => setToast(null), 2000); setShareOpen(false); return; }
-    const url = buildPostShareUrl(post.id);
-    const text = `Check out "${post.title}" on Synapse`;
-    window.open(
-      `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-    setShareOpen(false);
-  }, [post.id, post.title]);
-
-  const handleShareReddit = useCallback(() => {
-    if (!post.id) { setToast("Cannot share — post has no ID"); setTimeout(() => setToast(null), 2000); setShareOpen(false); return; }
-    const url = buildPostShareUrl(post.id);
-    window.open(
-      `https://www.reddit.com/submit?url=${encodeURIComponent(url)}&title=${encodeURIComponent(post.title)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-    setShareOpen(false);
-  }, [post.id, post.title]);
-
-  useEffect(() => {
-    if (!moreOpen) return;
-    const onOut = (e: MouseEvent) => {
-      if (!(moreMenuRef.current?.contains(e.target as Node) ?? false)) setMoreOpen(false);
-    };
-    document.addEventListener("pointerdown", onOut);
-    return () => document.removeEventListener("pointerdown", onOut);
-  }, [moreOpen]);
+  }, [autoplayInView, clipStartSec, clipDurationSec]);
 
   const handleMouseEnter = () => {
     setHovered(true);
@@ -357,7 +319,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     // Seamlessly "inherit" the currently-playing stream instead of slamming
     // currentTime back to 0 — that caused a visible re-buffer on hover.
     if (autoplayInView && !v.paused) return;
-    v.currentTime = firstClipOffset;
+    v.currentTime = clipStartSec;
     v.play().catch(() => {});
   };
   const handleMouseLeave = () => {
@@ -367,7 +329,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     // Autoplay feed keeps the stream running until it scrolls out of view.
     if (autoplayInView) return;
     v.pause();
-    v.currentTime = firstClipOffset;
+    v.currentTime = clipStartSec;
   };
 
   return (
@@ -377,7 +339,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
       // rectangle in CSS, so the browser reserves the correct card box before
       // the virtualizer's row math settles. Stripping this made cards collapse
       // to a square during the first paint on wide monitors.
-      className={`group relative aspect-[9/16] h-auto w-full cursor-pointer overflow-hidden rounded-xl transition-transform duration-300 ease-out ${autoplayInView ? "" : "hover:z-10 hover:scale-[1.05]"}`}
+      className={`group relative aspect-[9/16] h-auto w-full cursor-pointer overflow-hidden rounded-3xl transition-transform duration-300 ease-out ${autoplayInView ? "" : "hover:z-10 hover:scale-[1.05]"}`}
       style={{ willChange: "transform" }}
       onClick={() => { videoRef.current?.play().catch(() => {}); onOpen(); }}
       onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}
@@ -480,10 +442,10 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           </div>
         </div>
 
-        {/* Persistent bottom-left metadata — always visible; hover overlay sits on top without covering it */}
+        {/* Persistent bottom-left metadata — always visible */}
         <div
           className="absolute bottom-0 left-0 right-0 p-3"
-          style={autoplayInView ? { paddingRight: "4.5rem", paddingBottom: "1rem" } : undefined}
+          style={autoplayInView ? { paddingBottom: "1.25rem" } : undefined}
         >
           <div className="mb-1.5 flex items-center gap-2">
             <button onClick={(e) => { e.stopPropagation(); onCreator(); }} className="flex cursor-pointer items-center gap-1.5 hover:underline">
@@ -491,7 +453,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
                 className={`flex shrink-0 items-center justify-center rounded-full font-bold text-white ${autoplayInView ? "h-12 w-12 text-base" : "h-5 w-5 text-[9px]"}`}
                 style={{ background: `hsl(${post.user.hue} 55% 30%)` }}
               >{post.user.initial}</div>
-              <span className={`font-semibold text-white/85 drop-shadow-md ${autoplayInView ? "text-xl" : "text-base"}`}>@{post.user.handle}</span>
+              <span className={`font-bold text-white/85 drop-shadow-md ${autoplayInView ? "text-xl" : "text-base"}`}>@{post.user.handle}</span>
             </button>
             {autoplayInView && currentUsername !== post.user.handle && (
               <button
@@ -510,47 +472,36 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
               <span className="flex items-center gap-0.5 text-[8px] text-purple-300/70"><GitBranch size={7} />Remix of @{post.remixedFromHandle}{post.rootParentHandle && <> • Original by @{post.rootParentHandle}</>}</span>
             </div>
           )}
+          {/* Static tags — single-column only, max 3 shown permanently */}
+          {autoplayInView && (post.tags.length > 0 || (post.channels && post.channels.length > 0)) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              {[...(post.channels ?? []), ...post.tags].slice(0, 3).map((tag, i) => (
+                <span key={i} className="glass-surface-ghost rounded-full px-2.5 py-0.5 text-xs font-medium text-white/80">
+                  {tag.startsWith("#") ? tag : tag}
+                </span>
+              ))}
+              {((post.channels?.length ?? 0) + post.tags.length) > 3 && (
+                <span className="self-center text-xs font-medium text-white/40">...</span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Hover overlay — transparent layer; tags stack above the persistent metadata (sandwich).
-            No background here — the permanent scrim handles readability. */}
-        <div className={`absolute inset-0 flex flex-col justify-end p-3 transition-all duration-200 ${autoplayInView ? "pr-16" : ""} ${hovered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
-          {post.channels && post.channels.length > 0 && (
-            <div className="mb-1.5 flex flex-wrap gap-1">
-              {post.channels.map((ch) => <span key={ch} className="rounded-full border border-purple-500/25 bg-purple-500/15 px-2.5 py-0.5 text-sm font-bold tracking-wide text-purple-200">{ch}</span>)}
-            </div>
-          )}
-          {post.tags.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-1">
-              {post.tags.map((t) => <span key={t} className="glass-surface-ghost rounded-full px-2.5 py-0.5 text-sm font-medium text-white/80">{t}</span>)}
-            </div>
-          )}
-          <div className={`flex items-center ${autoplayInView ? "justify-end" : "justify-between"}`}>
-            {!autoplayInView && (
+        {/* Grid-mode hover overlay — tags + like/share in grid view only */}
+        {!autoplayInView && (
+          <div className={`absolute inset-0 flex flex-col justify-end p-3 transition-all duration-200 ${hovered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
+            {post.channels && post.channels.length > 0 && (
+              <div className="mb-1.5 flex flex-wrap gap-1">
+                {post.channels.map((ch) => <span key={ch} className="rounded-full border border-purple-500/25 bg-purple-500/15 px-2.5 py-0.5 text-sm font-bold tracking-wide text-purple-200">{ch}</span>)}
+              </div>
+            )}
+            {post.tags.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                {post.tags.map((t) => <span key={t} className="glass-surface-ghost rounded-full px-2.5 py-0.5 text-sm font-medium text-white/80">{t}</span>)}
+              </div>
+            )}
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <button onClick={(e) => { e.stopPropagation(); toggleLike(post.id); }} className="flex items-center gap-0.5 text-[10px] text-white/60 transition-colors hover:text-red-400">
-                  <Heart size={11} className={liked ? "fill-red-400 text-red-400" : ""} /><span>{fmtK(post.likes + (liked ? 1 : 0))}</span>
-                </button>
-                <div className="relative" ref={sharePopRef}>
-                  <button onClick={(e) => { e.stopPropagation(); setShareOpen((v) => !v); }} className="text-white/60 hover:text-white/90"><Share2 size={11} /></button>
-                  {shareOpen && (
-                    <div
-                      className="absolute left-1/2 bottom-full mb-1.5 z-[60] min-w-[150px] -translate-x-1/2 rounded-xl border border-white/20 py-1.5 shadow-2xl"
-                      style={{ background: "rgba(30,30,30,0.75)", backdropFilter: "blur(16px) saturate(180%)", WebkitBackdropFilter: "blur(16px) saturate(180%)" }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button onClick={handleCopyLink} className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10">
-                        {copied ? <span className="text-emerald-400">✓ Copied!</span> : "Copy Link"}
-                      </button>
-                      <button onClick={handleShareTwitter} className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10">
-                        Share to X
-                      </button>
-                      <button onClick={handleShareReddit} className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10">
-                        Share to Reddit
-                      </button>
-                    </div>
-                  )}
-                </div>
                 {onDelete && showDelete && (
                   <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
                     className="flex items-center gap-0.5 text-[10px] text-white/40 transition-colors hover:text-red-400">
@@ -558,87 +509,14 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
                   </button>
                 )}
               </div>
-            )}
-          </div>
-        </div>
-        {/* Single-column action pillar — persistent social triggers, no backdrop-filter blur (mobile GPU guardrail) */}
-        {autoplayInView && (
-          <div className="absolute bottom-28 right-3 z-20 flex flex-col items-center gap-5">
-            <button onClick={(e) => { e.stopPropagation(); toggleLike(post.id); }} className="flex flex-col items-center gap-1">
-              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white drop-shadow-md">
-                <Heart size={20} className={liked ? "fill-red-400 text-red-400" : ""} />
-              </div>
-              <span className="text-[9px] font-bold text-white drop-shadow-md">{fmtK(post.likes + (liked ? 1 : 0))}</span>
-            </button>
-            <div className="relative flex flex-col items-center gap-1" ref={sharePopPillarRef}>
-              <button onClick={(e) => { e.stopPropagation(); setShareOpen((v) => !v); }} className="flex flex-col items-center gap-1">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white drop-shadow-md">
-                  <Share2 size={20} />
-                </div>
-                <span className="text-[9px] font-bold text-white drop-shadow-md">Share</span>
-              </button>
-              {shareOpen && (
-                <div
-                  className="absolute right-full bottom-0 z-[60] mr-2 min-w-[150px] rounded-xl border border-white/20 py-1.5 shadow-2xl"
-                  style={{ background: "rgba(30,30,30,0.75)", backdropFilter: "blur(16px) saturate(180%)", WebkitBackdropFilter: "blur(16px) saturate(180%)" }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button onClick={handleCopyLink} className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10">
-                    {copied ? <span className="text-emerald-400">✓ Copied!</span> : "Copy Link"}
-                  </button>
-                  <button onClick={handleShareTwitter} className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10">
-                    Share to X
-                  </button>
-                  <button onClick={handleShareReddit} className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-[11px] font-medium text-white/90 transition-colors hover:bg-white/10">
-                    Share to Reddit
-                  </button>
-                </div>
-              )}
             </div>
-            <div className="flex flex-col items-center gap-1">
-              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white drop-shadow-md">
-                <Eye size={20} />
-              </div>
-              <span className="text-[9px] font-bold text-white drop-shadow-md">{fmtK(post.likes * 10 + post.comments * 20)}</span>
-            </div>
-            {/* Three-dots: Remix + Import */}
-            {(canRemix(post) || onImport) && (
-              <div className="relative flex flex-col items-center gap-1" ref={moreMenuRef}>
-                <button onClick={(e) => { e.stopPropagation(); setMoreOpen((v) => !v); }} className="flex flex-col items-center gap-1">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white drop-shadow-md">
-                    <MoreHorizontal size={20} />
-                  </div>
-                  <span className="text-[9px] font-bold text-white drop-shadow-md">More</span>
-                </button>
-                {moreOpen && (
-                  <div
-                    className="absolute right-full bottom-0 z-[60] mr-2 min-w-[140px] rounded-xl border border-white/20 py-1.5 shadow-2xl"
-                    style={{ background: "rgba(30,30,30,0.82)", backdropFilter: "blur(16px) saturate(180%)", WebkitBackdropFilter: "blur(16px) saturate(180%)" }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {canRemix(post) && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setMoreOpen(false); onRemix(); }}
-                        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
-                      ><Zap size={13} style={{ color: post.accent }} />Remix</button>
-                    )}
-                    {onImport && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setMoreOpen(false); onImport(); }}
-                        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
-                      ><Download size={13} className="text-white/60" />Import</button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
 
-        {/* Glass Wire progress bar — GlobalTicker writes width directly, zero React re-renders */}
+        {/* Electric progress bar — GlobalTicker writes width directly, zero React re-renders */}
         {autoplayInView && (
-          <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 h-[2px] bg-white/10">
-            <div ref={progressBarRef} className="h-full bg-white/60" style={{ width: "0%" }} />
+          <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-20 h-[10px] bg-black/30">
+            <div ref={progressBarRef} className="h-full bg-[#ff007a]" style={{ width: "0%", boxShadow: "0 0 10px #ff007a, 0 0 20px #ff007a66" }} />
           </div>
         )}
 

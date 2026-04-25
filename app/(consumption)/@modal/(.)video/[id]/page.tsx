@@ -50,11 +50,13 @@ export default function InterceptedVideoPage() {
       onClick={dismiss}
     >
       {/* transform: translateZ(0) creates a CSS containing block so TheaterMode's
-          position:fixed is confined to this portrait box, not the full viewport.
-          On desktop this leaves visible backdrop edges left/right that are
-          clickable to dismiss. lg:rounded-3xl clips TheaterMode to the box. */}
+          position:fixed is confined to this box, not the full viewport.
+          Mobile: full-screen (h-screen w-screen).
+          Desktop: wide 16:9 cinema (w-[90vw] aspect-video) — leaves backdrop
+          bands ~96px each side and ~54px top/bottom on a 1920×1080 display,
+          all of which are clickable to dismiss. */}
       <div
-        className="relative h-screen w-full overflow-hidden lg:w-auto lg:aspect-[9/16] lg:rounded-3xl"
+        className="relative h-screen w-screen overflow-hidden lg:h-screen lg:w-auto lg:aspect-video"
         style={{ transform: "translateZ(0)" }}
         onClick={(e) => e.stopPropagation()}
       >
