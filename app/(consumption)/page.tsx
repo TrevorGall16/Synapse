@@ -8,7 +8,6 @@ import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useSearchStore } from "@/lib/store/search-store";
 import { useUserStore } from "@/lib/store/user-store";
-import { TheaterMode, primeTheaterGesture } from "@/components/feed/theater-mode";
 import { FeedGrid } from "@/components/feed/feed-grid";
 import { FeedSingleColumn } from "@/components/feed/feed-single-column";
 import { useUiStore } from "@/lib/store/ui-store";
@@ -18,7 +17,6 @@ import { normalizeTag } from "@/lib/mock-posts";
 import { rankPosts } from "@/lib/search-index";
 import { CHANNELS, channelSlug, type Channel } from "@/lib/config/taxonomy";
 import { rankByWindow, TIME_WINDOWS, TIME_WINDOW_LABEL, DEFAULT_WINDOW_FOR_SORT, type TimeWindow } from "@/lib/ranking";
-import { navigateToCreator } from "@/lib/nav/theater-nav";
 
 // ── Demo snapshot ─────────────────────────────────────────────────────────────
 function buildDemoSnapshot(id: string, title: string) {
@@ -71,7 +69,6 @@ export default function DiscoveryFeedPage() {
   const router = useRouter();
   const { heavyReplace } = useSafeUrlSync("/");
   const searchParams = useSearchParams();
-  const [theaterPostId, setTheaterPostId] = useState<string | null>(null);
   const [activeTag, setActiveTag]     = useState<string | null>(null);
   // URL is the single source of truth for the channel filter. Any mutation
   // goes through router.replace(params); activeChannel is a pure derivation
@@ -138,11 +135,6 @@ export default function DiscoveryFeedPage() {
   // posts. Preset posts are excluded because they have no video and would
   // render as "Media Offline" on the discovery grid.
   const allPosts = useMemo(() => userPosts.filter((p) => !p.type || p.type === "video"), [userPosts]);
-  // Derive reactively so TheaterMode always gets fresh URLs after GlobalHydrator finishes
-  const theaterPost = useMemo(
-    () => (theaterPostId ? allPosts.find((p) => p.id === theaterPostId) ?? null : null),
-    [theaterPostId, allPosts],
-  );
   // Stable Set for O(1) membership checks in scoring + re-ordering.
   const followedSet = useMemo(() => new Set(followingList), [followingList]);
 
@@ -221,28 +213,6 @@ export default function DiscoveryFeedPage() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   /* eslint-enable react-hooks/set-state-in-effect */
-
-  // Popstate mirror: treat window.location as the single source of truth for
-  // Theater open/close. Reads window.location.pathname directly (not
-  // useSearchParams / usePathname — those trail lightweight history writes).
-  // Pathname matches /video/:id → Theater open (Forward button). Otherwise →
-  // closed (Back button). Lives here rather than in TheaterMode so it survives
-  // across open sessions and handles Forward-button reopen.
-  /* eslint-disable-next-line react-hooks/set-state-in-effect -- Why: popstate is
-     the browser's authoritative signal, so setTheaterPostId is the UI sync. */
-  useEffect(() => {
-    const onPopState = () => {
-      const match = window.location.pathname.match(/^\/video\/([^/]+)$/);
-      if (match) {
-        primeTheaterGesture(match[1]);
-        setTheaterPostId(match[1]);
-      } else {
-        setTheaterPostId(null);
-      }
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
 
   // Back-to-top visibility
   const handleScroll = useCallback(() => {
@@ -443,7 +413,7 @@ export default function DiscoveryFeedPage() {
                 posts={sortedPosts}
                 scrollRef={scrollContainerRef}
                 currentUsername={currentProfile?.username}
-                onOpen={(post) => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
+                onOpen={(post) => router.push(`/video/${post.id}`)}
                 onRemix={handleRemix}
                 onImport={handleImport}
                 onCreator={(post) => router.push(`/profile/${post.user.handle}`)}
@@ -454,7 +424,7 @@ export default function DiscoveryFeedPage() {
                 posts={sortedPosts}
                 scrollRef={scrollContainerRef}
                 currentUsername={currentProfile?.username}
-                onOpen={(post) => { primeTheaterGesture(post.id); setTheaterPostId(post.id); }}
+                onOpen={(post) => router.push(`/video/${post.id}`)}
                 onRemix={handleRemix}
                 onImport={handleImport}
                 onCreator={(post) => router.push(`/profile/${post.user.handle}`)}
@@ -493,24 +463,6 @@ export default function DiscoveryFeedPage() {
         </div>
       </div>
 
-      {/* Overlays */}
-      {theaterPost && (
-        <TheaterMode
-          post={theaterPost!}
-          onClose={() => setTheaterPostId(null)}
-          onRemix={(p) => { handleRemix(p); setTheaterPostId(null); }}
-          onCreator={(activePost) => navigateToCreator(router, activePost, () => setTheaterPostId(null))}
-          onHashtagClick={(tag) => {
-            const normalised = tag.startsWith("#") ? tag : `#${tag}`;
-            setTheaterPostId(null);
-            setActiveTag(normalised);
-            scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-          }}
-          allPosts={allPosts}
-          lockedQueue={sortedPosts}
-          onNavigate={(p) => setTheaterPostId(p.id)}
-        />
-      )}
       {toast && <Toast msg={toast} />}
 
       {/* Back to top */}

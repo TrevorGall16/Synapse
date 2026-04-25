@@ -37,17 +37,21 @@ export function GlassRail() {
   return (
     <aside
       aria-label="Primary navigation"
-      className="hidden lg:flex fixed left-0 top-0 z-30 h-screen w-20 flex-col items-center gap-3 glass-surface border-r border-white/10 py-4"
+      className="hidden lg:flex fixed left-0 top-0 z-30 h-screen w-60 flex-col gap-1 glass-surface border-r border-white/10 py-4"
     >
+      {/* Brand wordmark */}
       <Link
         href="/"
         aria-label="Synapse home"
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm font-bold tracking-wide text-white transition-colors hover:bg-white/20"
+        className="mx-3 mb-3 flex h-10 items-center gap-3 rounded-xl px-3 text-white transition-colors hover:bg-white/10"
       >
-        S
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm font-bold">
+          S
+        </div>
+        <span className="text-base font-bold tracking-wide">Synapse</span>
       </Link>
 
-      <nav className="mt-2 flex w-full flex-col items-center gap-0.5 px-2">
+      <nav className="flex w-full flex-col gap-0.5 px-3">
         {NAV.map(({ href, label, Icon, prefixes }) => {
           const active = isActive(pathname, { href, label, Icon, prefixes });
           return (
@@ -57,14 +61,14 @@ export function GlassRail() {
               aria-label={label}
               data-testid={`glass-rail-nav-${label.toLowerCase()}`}
               className={[
-                "flex w-full flex-col items-center gap-0.5 rounded-xl py-2 transition-colors",
+                "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 transition-colors",
                 active
                   ? "bg-white/15 text-white"
                   : "text-white/50 hover:bg-white/10 hover:text-white/80",
               ].join(" ")}
             >
               <Icon size={18} />
-              <span className="text-[8px] font-medium tracking-wide">{label}</span>
+              <span className="text-sm font-medium">{label}</span>
             </Link>
           );
         })}
@@ -75,10 +79,10 @@ export function GlassRail() {
         onClick={toggleMode}
         aria-label={mode === "single" ? "Switch to grid view" : "Switch to single-column view"}
         aria-pressed={mode === "grid"}
-        className="mx-2 flex w-[calc(100%-1rem)] flex-col items-center gap-0.5 rounded-xl py-2 text-white/50 transition-colors hover:bg-white/10 hover:text-white/80"
+        className="mx-3 flex items-center gap-3 rounded-xl px-3 py-2.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white/80"
       >
         {mode === "single" ? <LayoutGrid size={18} /> : <Rows3 size={18} />}
-        <span className="text-[8px] font-medium tracking-wide">{mode === "single" ? "Grid" : "Feed"}</span>
+        <span className="text-sm font-medium">{mode === "single" ? "Grid View" : "Feed View"}</span>
       </button>
 
       <div className="flex-1" />
@@ -86,9 +90,10 @@ export function GlassRail() {
       <Link
         href={avatarHref}
         aria-label={profile ? "Open profile" : "Sign in"}
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+        className="mx-3 flex items-center gap-3 rounded-xl px-3 py-2.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
       >
         <User size={18} />
+        <span className="text-sm font-medium">{profile ? profile.username : "Sign in"}</span>
       </Link>
     </aside>
   );

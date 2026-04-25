@@ -22,7 +22,7 @@ export default function ConsumptionLayout({
       <GlassIsland />
       <main
         ref={scrollRef as React.RefObject<HTMLElement>}
-        className="glass-scroll h-screen w-full overflow-y-auto bg-[#141414] lg:pl-20"
+        className="glass-scroll h-screen w-full overflow-y-auto bg-[#121014] lg:pl-60"
       >
         <TopBar />
         <HydrationBarrier>{children}</HydrationBarrier>
