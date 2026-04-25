@@ -43,15 +43,20 @@ function handleFiles(files: FileList | File[]) {
           el.ontimeupdate = null;
           el.currentTime = 0;
           finish(el.duration);
+          el.src = "";
         };
       } else {
         finish(el.duration);
+        el.onloadedmetadata = null;
+        el.src = "";
       }
     };
     el.onerror = () => {
       const item: MediaPoolItem = { id: crypto.randomUUID(), name: file.name, type, duration: 5_000_000, sizeBytes: file.size, previewUrl };
       addMediaItem(item);
       saveMediaToDB(file, item).catch(console.warn);
+      el.onerror = null;
+      el.src = "";
     };
   }
 }

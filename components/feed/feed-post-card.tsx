@@ -382,6 +382,7 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
 
         {/* Video */}
         <video ref={videoRef} src={firstClipSrc || undefined}
+          {...(autoplayInView ? { "data-feed-video": "true" } : {})}
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[150ms] ${firstClipSrc && !mediaOffline && (hovered || autoplayInView) ? "opacity-100" : thumbUrl ? "opacity-0" : firstClipSrc && !mediaOffline ? "opacity-100" : "opacity-0"}`}
           // The hover tick loop owns `filter` and `transform` while hovered and
           // clears them on exit. Do not set them inline here or React re-renders
@@ -487,30 +488,49 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
           )}
         </div>
 
-        {/* Grid-mode hover overlay — tags + like/share in grid view only */}
+        {/* Grid-mode hover: stronger gradient backdrop + tags float to top */}
         {!autoplayInView && (
-          <div className={`absolute inset-0 flex flex-col justify-end p-3 transition-all duration-200 ${hovered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
-            {post.channels && post.channels.length > 0 && (
-              <div className="mb-1.5 flex flex-wrap gap-1">
-                {post.channels.map((ch) => <span key={ch} className="rounded-full border border-purple-500/25 bg-purple-500/15 px-2.5 py-0.5 text-sm font-bold tracking-wide text-purple-200">{ch}</span>)}
-              </div>
-            )}
-            {post.tags.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-1">
-                {post.tags.map((t) => <span key={t} className="glass-surface-ghost rounded-full px-2.5 py-0.5 text-sm font-medium text-white/80">{t}</span>)}
-              </div>
-            )}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {onDelete && showDelete && (
-                  <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
-                    className="flex items-center gap-0.5 text-[10px] text-white/40 transition-colors hover:text-red-400">
-                    <Trash2 size={11} />
-                  </button>
-                )}
-              </div>
+          <>
+            {/* Reinforced bottom-to-top gradient — activates on hover so username
+                and title have contrast against bright video frames */}
+            <div
+              aria-hidden
+              className={`pointer-events-none absolute inset-0 transition-opacity duration-200 ${hovered ? "opacity-100" : "opacity-0"}`}
+              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.35) 50%, rgba(0,0,0,0.10) 100%)" }}
+            />
+
+            {/* Tags float to the TOP so they never overlap the avatar/username below */}
+            <div className={`absolute left-0 right-0 top-0 flex flex-col gap-1 p-3 transition-all duration-200 ${hovered ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1"}`}>
+              {post.channels && post.channels.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {post.channels.map((ch) => (
+                    <span key={ch} className="rounded-full border border-purple-500/25 bg-purple-500/15 px-2.5 py-0.5 text-[10px] font-bold tracking-wide text-purple-200">
+                      {ch}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {post.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {post.tags.map((t) => (
+                    <span key={t} className="glass-surface-ghost rounded-full px-2.5 py-0.5 text-[10px] font-medium text-white/75">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
+
+            {/* Delete — bottom-right, positioned above the persistent text block */}
+            {onDelete && showDelete && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+                className={`absolute bottom-[88px] right-3 transition-all duration-200 ${hovered ? "opacity-100" : "opacity-0"}`}
+              >
+                <Trash2 size={13} className="text-white/40 hover:text-red-400 transition-colors" />
+              </button>
+            )}
+          </>
         )}
 
         {/* Electric progress bar — GlobalTicker writes width directly, zero React re-renders */}

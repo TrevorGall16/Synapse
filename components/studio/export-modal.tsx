@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { X, FolderOpen, Download, CheckCircle } from "lucide-react";
+import { X, FolderOpen, Download, CheckCircle, AlertTriangle } from "lucide-react";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { PROJECT_PRESETS } from "@/lib/store/types";
@@ -68,6 +68,8 @@ export function ExportModal({ onClose }: ExportModalProps) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const unsubRef = useRef<(() => void) | null>(null);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
   // Fallback interval for stub path
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -99,6 +101,7 @@ export function ExportModal({ onClose }: ExportModalProps) {
 
   const stopEverything = () => {
     clearInterval(intervalRef.current ?? undefined);
+    clearTimeout(watchdogRef.current ?? undefined);
     if (recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
     if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
     const pb = usePlaybackStore.getState();
@@ -151,6 +154,7 @@ export function ExportModal({ onClose }: ExportModalProps) {
       stream = (videoEl as HTMLVideoElement & { captureStream(fps?: number): MediaStream }).captureStream(exportFps);
     } catch (err) {
       console.error("[Export] captureStream failed:", err);
+      setRenderError("Could not capture the preview stream. Play the video in the Preview Monitor first, then try again.");
       return;
     }
 
@@ -158,7 +162,14 @@ export function ExportModal({ onClose }: ExportModalProps) {
     recorderRef.current = recorder;
 
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    recorder.onerror = (e) => {
+      console.error("[Export] MediaRecorder error:", e);
+      stopEverything();
+      setIsRendering(false);
+      setRenderError("Recording error — the browser could not encode this stream. Try a shorter clip or a different browser.");
+    };
     recorder.onstop = () => {
+      clearTimeout(watchdogRef.current ?? undefined);
       const blob = new Blob(chunksRef.current, { type: mimeType });
       setLastBlob(blob); setLastExt(ext);
       triggerDownload(blob, `${fileName}.${ext}`);
@@ -173,7 +184,12 @@ export function ExportModal({ onClose }: ExportModalProps) {
     pb.setPlayhead(startMicros);
     if (!pb.isPlaying) pb.togglePlayback();
 
-    setIsRendering(true); setCurrentSec(0);
+    watchdogRef.current = setTimeout(() => {
+      stopEverything();
+      setIsRendering(false);
+      setRenderError("Export timed out. This can happen with very long projects — try exporting a Ruler Selection instead.");
+    }, (totalSecs * 2 + 15) * 1000);
+    setIsRendering(true); setCurrentSec(0); setRenderError(null);
     recorder.start(250); // collect chunks every 250 ms
 
     // Subscribe to the playback store to track progress and detect end-of-range
@@ -191,7 +207,7 @@ export function ExportModal({ onClose }: ExportModalProps) {
 
   const onCancel = () => {
     stopEverything();
-    setIsRendering(false); setCurrentSec(0); setIsDone(false);
+    setIsRendering(false); setCurrentSec(0); setIsDone(false); setRenderError(null);
   };
 
   return (
@@ -306,6 +322,12 @@ export function ExportModal({ onClose }: ExportModalProps) {
           )}
 
           <div className="mt-4">
+            {renderError && (
+              <div className="mb-3 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0 text-red-400" />
+                <p className="text-[11px] leading-relaxed text-red-300">{renderError}</p>
+              </div>
+            )}
             {!isRendering && !isDone && (
               <button data-testid="export-render-btn" onClick={onRender}
                 className="w-full rounded bg-white/15 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/25">

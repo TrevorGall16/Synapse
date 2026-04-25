@@ -204,6 +204,8 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
   closeTab: (id) => set((s) => {
     const ids = s.openProjectIds.filter((x) => x !== id);
     if (id !== s.projectId) {
+      const removed = s.savedProjects[id];
+      if (removed?.mediaPool) revokeMediaPool(removed.mediaPool);
       const { [id]: _d, ...rest } = s.savedProjects;
       return { openProjectIds: ids, savedProjects: rest };
     }

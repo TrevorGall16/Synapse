@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { create } from "zustand"; import { persist } from "zustand/middleware";
 import { useProjectStore } from "./project-store";
 import { retainMedia } from "./media-pool-db";
 import { canRemix } from "../policy";
@@ -69,7 +69,8 @@ export interface PlaybackState {
   ) => void;
 }
 
-export const usePlaybackStore = create<PlaybackState>((set) => ({
+export const usePlaybackStore = create<PlaybackState>()(persist(
+  (set) => ({
   playheadPosition: 0,
   isPlaying: false,
   zoomLevel: 1,
@@ -161,4 +162,12 @@ export const usePlaybackStore = create<PlaybackState>((set) => ({
       selectionEnd:     endMicros,
     });
   },
-}));
+  }),
+  {
+    name: "synapse-playback-selection",
+    partialize: (s) => ({
+      selectionStart: s.selectionStart,
+      selectionEnd: s.selectionEnd,
+    }),
+  }
+));

@@ -203,6 +203,9 @@ export function FeedSingleColumn({
   onCreator,
   onDelete,
 }: Props) {
+  const rowRefsRef = useRef<(HTMLElement | null)[]>([]);
+  const activeIdxRef = useRef(0);
+
   useEffect(() => {
     const parent = scrollRef.current;
     if (!parent) return;
@@ -211,6 +214,55 @@ export function FeedSingleColumn({
       parent.style.scrollSnapType = "";
     };
   }, [scrollRef]);
+
+  // Track which post is currently snapped into center view — used for keyboard nav.
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            const idx = rowRefsRef.current.indexOf(entry.target as HTMLElement);
+            if (idx !== -1) activeIdxRef.current = idx;
+          }
+        }
+      },
+      { threshold: 0.5 },
+    );
+    rowRefsRef.current.forEach((el) => { if (el) observer.observe(el); });
+    return () => observer.disconnect();
+  }, [posts]);
+
+  // Keyboard shortcuts:
+  //   ↑ / ↓  — snap to prev / next post
+  //   Space  — play / pause the active post's video (prevents native scroll-down)
+  useEffect(() => {
+    const scrollToIdx = (idx: number) => {
+      const clamped = Math.max(0, Math.min(idx, posts.length - 1));
+      rowRefsRef.current[clamped]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        scrollToIdx(activeIdxRef.current + 1);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        scrollToIdx(activeIdxRef.current - 1);
+      } else if (e.key === " ") {
+        e.preventDefault();
+        const activeRow = rowRefsRef.current[activeIdxRef.current];
+        const video = activeRow?.querySelector<HTMLVideoElement>("video[data-feed-video]");
+        if (video) {
+          if (video.paused) video.play().catch(() => {});
+          else video.pause();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [posts]);
 
   return (
     <>
@@ -226,9 +278,10 @@ export function FeedSingleColumn({
       />
 
       <div className="relative z-[2] flex flex-col items-center pt-2">
-        {posts.map((post) => (
+        {posts.map((post, idx) => (
           <div
             key={post.id}
+            ref={(el) => { rowRefsRef.current[idx] = el; }}
             className="relative flex w-full items-center justify-center px-3 py-3"
             style={{ height: "calc(100svh - 160px)", scrollSnapAlign: "center" }}
           >
