@@ -4,6 +4,7 @@ import { GlobalHydrator } from "@/components/GlobalHydrator";
 import { GlobalSvgFilters } from "@/components/GlobalSvgFilters";
 import { AppBootstrap } from "@/components/AppBootstrap";
 import { SaveBarrierOverlay } from "@/components/SaveBarrierOverlay";
+import { GlassCapabilityMount } from "@/components/chrome/glass-capability-mount";
 import "./globals.css";
 
 // Fonts vendored in public/fonts/ — see docs/build-strategy.md for rationale
@@ -40,6 +41,7 @@ export default function RootLayout({
         <GlobalSvgFilters />
         <GlobalHydrator />
         <AppBootstrap />
+        <GlassCapabilityMount />
         <SaveBarrierOverlay />
         {children}
       </body>
