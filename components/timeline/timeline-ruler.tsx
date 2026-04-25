@@ -173,11 +173,12 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
       return;
     }
 
-    // New selection drag
+    // Always scrub the playhead during drag for real-time Monitor updates.
+    // Selection is created only after the 5px deadzone to distinguish scrub from range-select.
+    setPlayhead(micros);
     if (Math.abs(e.clientX - startClientX.current) > 5) {
       isSelecting.current = true;
       setSelection(startMicros.current, micros);
-      setPlayhead(micros);
     }
   }, [hitTestBracketAt, microsFromClientX, setSelection, setPlayhead]);
 
@@ -227,7 +228,7 @@ export function TimelineRuler({ scrollContainerRef }: TimelineRulerProps) {
       // directly. Without these, dragging across tick labels highlights the
       // numerals and tears the timeline.
       className="relative h-6 shrink-0 cursor-pointer select-none touch-none border-b border-white/10 bg-[#1a1a1a]"
-      style={{ width: totalWidth, userSelect: "none", WebkitUserSelect: "none", touchAction: "none" }}
+      style={{ width: "100%", minWidth: totalWidth, userSelect: "none", WebkitUserSelect: "none", touchAction: "none" }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

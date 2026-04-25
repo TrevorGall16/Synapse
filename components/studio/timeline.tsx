@@ -99,6 +99,7 @@ export function Timeline() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const trackAreaRef = useRef<HTMLDivElement>(null);
+  const headersRef = useRef<HTMLDivElement>(null);
   const scrollDirtyRef = useRef(false);
   const scrollTickIdRef = useRef<number | null>(null);
 
@@ -162,6 +163,12 @@ export function Timeline() {
 
   const onScroll = useCallback(() => {
     scrollDirtyRef.current = true;
+    // Sync Track Headers vertical scroll to Timeline vertical scroll immediately.
+    // overflow-y-hidden on the headers prevents independent user scrolling;
+    // we control their scrollTop here to keep them pixel-perfectly aligned.
+    const headers = headersRef.current;
+    const container = scrollContainerRef.current;
+    if (headers && container) headers.scrollTop = container.scrollTop;
   }, []);
 
   useEffect(() => {
@@ -323,8 +330,9 @@ export function Timeline() {
 
       {/* Header/Canvas split */}
       <div className="flex h-full w-full flex-1 overflow-hidden min-w-0 min-h-0">
-        {/* Left Column: Track Headers */}
-        <div className="w-48 shrink-0 flex flex-col overflow-y-auto overflow-x-hidden border-r border-white/10">
+        {/* Left Column: Track Headers — overflow-y-hidden prevents independent user scroll;
+            scrollTop is driven by the Timeline's scroll via onScroll for perfect sync. */}
+        <div ref={headersRef} className="w-48 shrink-0 flex flex-col overflow-y-hidden overflow-x-hidden border-r border-white/10">
           <div className="h-6 shrink-0 border-b border-white/10" />
           {tracks.map((track, idx) => {
             const effectiveHeight = track.collapsed ? COLLAPSED_HEIGHT : track.height;

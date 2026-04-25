@@ -107,7 +107,9 @@ export function PreviewVideoLayer({
     if (isPreroll) return;
     const video = videoRef.current;
     if (!video) return;
-    const localTime = (playheadPosition - clip.startTime) / MICROS_PER_SECOND;
+    // NLE offset math: timeline position + source in-point (mediaOffset) gives the
+    // correct frame in the source file when the clip has been trimmed from its start.
+    const localTime = (playheadPosition - clip.startTime + clip.mediaOffset) / MICROS_PER_SECOND;
 
     if (fadeDirection === "out") {
       // Outgoing clip: freeze at 1.0 — no pitch shifting, no rate adjustment
@@ -120,11 +122,13 @@ export function PreviewVideoLayer({
     (video as HTMLVideoElement & { preservesPitch: boolean }).preservesPitch = false;
 
     if (!isPlaying) {
-      if (Math.abs(video.currentTime - localTime) > 0.05) video.currentTime = localTime;
+      // No threshold when paused: every scrub position update seeks immediately for
+      // real-time frame accuracy. Paused seeks hit I-frames and are fast.
+      video.currentTime = localTime;
     } else {
       if (Math.abs(video.currentTime - localTime) > 0.25) video.currentTime = localTime;
     }
-  }, [playheadPosition, clip.startTime, clip.playbackRate, clip.fxParams?.pitch, isPlaying, isPreroll, fadeDirection]);
+  }, [playheadPosition, clip.startTime, clip.mediaOffset, clip.playbackRate, clip.fxParams?.pitch, isPlaying, isPreroll, fadeDirection]);
 
   // Level × crossfade opacity — pre-roll is fully transparent
   const visualOpacity = isPreroll ? 0 : opacity * ((clip.level ?? 100) / 100);

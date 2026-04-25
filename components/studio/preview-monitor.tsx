@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useMemo } from "react";
+import { memo, useRef, useEffect, useState, useMemo } from "react";
 import { useGlobalTick } from "@/lib/hooks/use-global-tick";
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
@@ -30,7 +30,7 @@ function isMasked(c: ClipEvent): boolean {
   return !!m?.maskType && m.maskType !== "none";
 }
 
-export function PreviewMonitor() {
+function PreviewMonitorInner() {
   const [quality, setQuality] = useState<PreviewQuality>("Auto");
   const [zoom, setZoom] = useState<ZoomMode>("Fit");
   const hadEffectsRef = useRef(false); // tracks whether FX were active last frame
@@ -499,6 +499,11 @@ export function PreviewMonitor() {
     </div>
   );
 }
+
+// Memoized export: prevents StudioPage re-renders (tab switches, clip selection,
+// store updates) from triggering Monitor remounts. Internal store subscriptions
+// still fire normally for playback and timeline changes.
+export const PreviewMonitor = memo(PreviewMonitorInner);
 
 function TransportBtn({ icon, label, onClick, accent }: { icon: React.ReactNode; label: string; onClick: () => void; accent?: boolean }) {
   return (
