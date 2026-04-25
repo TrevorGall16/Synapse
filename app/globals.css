@@ -22,7 +22,17 @@
      (active chips, volume fill, search focus, theater like/follow). Kept
      separate from --color-brand so we can lean into the "Electric" vibe
      without retuning the purple identity. Alpha via /NN arbitrary-value. */
-  --color-electric: #ff007a;
+  --color-electric: #bf00ff;
+
+  /* ── Action icon palette ─────────────────────────────────────────────────
+     Edit only these four lines to retheme every Like / Share / Views / More
+     icon across the Home Feed and Theater in one place. Components reference
+     these tokens via text-icon-heart, text-icon-share, etc. so you never
+     need to hunt for hex codes inside component files. */
+  --color-icon-heart: #ff0000;
+  --color-icon-share: #dd00ff;
+  --color-icon-views: #ffbf00;
+  --color-icon-more: #ffffff;
 }
 
 body {

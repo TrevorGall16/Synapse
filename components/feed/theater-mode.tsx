@@ -323,9 +323,9 @@ export function TheaterMode({ post, onClose, onRemix, onCreator, onHashtagClick,
             </button>
             <button
               onClick={onClose}
-              className="flex h-16 w-16 items-center justify-center rounded-full bg-black/55 backdrop-blur-md transition-all hover:bg-white/15 hover:scale-105 active:scale-95"
+              className="flex h-20 w-20 items-center justify-center rounded-full bg-black/55 backdrop-blur-md transition-all hover:bg-white/15 hover:scale-105 active:scale-95"
             >
-              <X size={32} strokeWidth={2.5} className="text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]" />
+              <X size={40} strokeWidth={2.5} className="text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]" />
             </button>
           </div>
 

@@ -94,8 +94,8 @@ function FeedPillar({ post, onRemix, onImport }: PillarProps) {
         onClick={(e) => { e.stopPropagation(); toggleLike(post.id); }}
         className="flex flex-col items-center gap-1.5"
       >
-        <div className={`flex h-14 w-14 items-center justify-center rounded-2xl backdrop-blur-sm drop-shadow-lg transition-all ${liked ? "bg-[#ff007a]/25 ring-1 ring-[#ff007a]/50" : "bg-white/10"}`}>
-          <Heart size={26} className={liked ? "fill-[#ff007a] text-[#ff007a]" : "text-[#ff007a]/70"} />
+        <div className={`flex h-14 w-14 items-center justify-center rounded-2xl backdrop-blur-sm drop-shadow-lg transition-all ${liked ? "bg-icon-heart/25 ring-1 ring-icon-heart/50" : "bg-white/10"}`}>
+          <Heart size={26} className={liked ? "fill-icon-heart text-icon-heart" : "text-icon-heart/70"} />
         </div>
         <span className="text-[10px] font-bold text-white drop-shadow-md">{fmtK(post.likes + (liked ? 1 : 0))}</span>
       </button>
@@ -107,7 +107,7 @@ function FeedPillar({ post, onRemix, onImport }: PillarProps) {
           className="flex flex-col items-center gap-1.5"
         >
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm drop-shadow-lg">
-            <Share2 size={26} className="text-[#a855f7]" />
+            <Share2 size={26} className="text-icon-share" />
           </div>
           <span className="text-[10px] font-bold text-white drop-shadow-md">Share</span>
         </button>
@@ -129,7 +129,7 @@ function FeedPillar({ post, onRemix, onImport }: PillarProps) {
       {/* Views */}
       <div className="flex flex-col items-center gap-1.5">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm drop-shadow-lg">
-          <Eye size={26} className="text-[#f59e0b]" />
+          <Eye size={26} className="text-icon-views" />
         </div>
         <span className="text-[10px] font-bold text-white drop-shadow-md">{fmtK(post.likes * 10 + post.comments * 20)}</span>
       </div>
@@ -142,7 +142,7 @@ function FeedPillar({ post, onRemix, onImport }: PillarProps) {
             className="flex flex-col items-center gap-1.5"
           >
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm drop-shadow-lg">
-              <MoreHorizontal size={26} className="text-[#22d3ee]" />
+              <MoreHorizontal size={26} className="text-icon-more" />
             </div>
             <span className="text-[10px] font-bold text-white drop-shadow-md">More</span>
           </button>
@@ -230,7 +230,7 @@ export function FeedSingleColumn({
           <div
             key={post.id}
             className="relative flex w-full items-center justify-center px-3 py-3"
-            style={{ height: "calc(100svh - 116px)", scrollSnapAlign: "center" }}
+            style={{ height: "calc(100svh - 160px)", scrollSnapAlign: "center" }}
           >
             {/* Card + Pillar centered as a unit — pillar floats 16px to the right.
                 Card width accounts for the pillar (4rem ≈ 64px) + gap (16px) so the
@@ -238,7 +238,7 @@ export function FeedSingleColumn({
             <div className="flex items-end gap-4">
               <div
                 className="relative flex-none"
-                style={{ width: "min(calc((100svh - 112px) * 9 / 16 - 2rem), calc(100vw - 24px - 4rem - 16px), 720px)" }}
+                style={{ width: "min(calc((100svh - 156px) * 9 / 16 - 2rem), calc(100vw - 24px - 4rem - 16px), 720px)" }}
               >
                 <FeedPostCard
                   post={post}

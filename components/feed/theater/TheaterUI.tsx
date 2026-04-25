@@ -10,10 +10,10 @@
  * no refs, no playback logic. Pure rendering layer.
  */
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Zap, Heart, Share2, Play, Pause,
-  Eye, MessageCircle, Users, GitBranch, WifiOff, Pencil,
+  Eye, MessageCircle, Users, GitBranch, WifiOff, Pencil, MoreHorizontal,
 } from "lucide-react";
 import type { FeedPost } from "@/lib/store/feed-store";
 import type { MediaPoolItem } from "@/lib/store/types";
@@ -94,6 +94,17 @@ export function TheaterUI({
 }: TheaterUIProps) {
   const [toast, setToast] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onOut = (e: MouseEvent) => {
+      if (!(moreRef.current?.contains(e.target as Node) ?? false)) setMoreOpen(false);
+    };
+    document.addEventListener("pointerdown", onOut);
+    return () => document.removeEventListener("pointerdown", onOut);
+  }, [moreOpen]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -276,15 +287,15 @@ export function TheaterUI({
       <div className="absolute bottom-14 right-3 z-[40] flex flex-col items-center gap-3">
         {/* Like */}
         <button onClick={onToggleLike} className="flex flex-col items-center gap-1">
-          <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${liked ? "border-[#ff007a]/50 bg-[#ff007a]/25" : "border-white/15 bg-[#0a0a0a]/40 hover:bg-white/12"}`}>
-            <Heart size={20} className={liked ? "fill-[#ff007a] text-[#ff007a]" : "text-[#ff007a]/70"} />
+          <div className={`flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-sm transition-all ${liked ? "border-icon-heart/50 bg-icon-heart/25" : "border-white/15 bg-[#0a0a0a]/40 hover:bg-white/12"}`}>
+            <Heart size={20} className={liked ? "fill-icon-heart text-icon-heart" : "text-icon-heart/70"} />
           </div>
           <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.likes + (liked ? 1 : 0))}</span>
         </button>
         {/* Views — mirrors Feed Pillar metric */}
         <div className="flex flex-col items-center gap-1">
           <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#0a0a0a]/40 backdrop-blur-sm">
-            <Eye size={20} className="text-[#f59e0b]" />
+            <Eye size={20} className="text-icon-views" />
           </div>
           <span className="text-[9px] font-semibold text-white" style={TX}>{fmtKLocal(post.likes * 10 + post.comments * 20)}</span>
         </div>
@@ -313,7 +324,7 @@ export function TheaterUI({
             className="flex cursor-pointer flex-col items-center gap-1"
           >
             <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#0a0a0a]/40 backdrop-blur-sm hover:bg-white/12">
-              <Share2 size={20} className="text-[#a855f7]" />
+              <Share2 size={20} className="text-icon-share" />
             </div>
             <span className="text-[9px] font-semibold text-white" style={TX}>Share</span>
           </button>
@@ -324,31 +335,43 @@ export function TheaterUI({
             positionClassName="absolute right-full mr-2 bottom-0"
           />
         </div>
-        {/* Edit (own posts) */}
-        {isOwn && (
-          <button onClick={() => onRemix(post)} className="flex flex-col items-center gap-1">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#0a0a0a]/40 backdrop-blur-sm hover:bg-white/15">
-              <Pencil size={15} className="text-white/80" />
-            </div>
-            <span className="text-[9px] font-semibold text-white/70" style={TX}>Edit</span>
-          </button>
-        )}
-        {/* Remix */}
-        <button
-          onClick={remixAllowed ? () => onRemix(post) : undefined}
-          className={`flex flex-col items-center gap-1 ${remixAllowed ? "" : "opacity-35 cursor-not-allowed"}`}
-        >
-          <div
-            className="flex h-14 w-14 items-center justify-center rounded-full transition-all active:scale-95"
-            style={remixAllowed
-              ? { background: post.accent, boxShadow: `0 0 28px ${post.accent}99` }
-              : { background: "#333" }
-            }
-          >
-            <Zap size={26} className="text-white" fill="white" />
+        {/* More (Edit / Remix) */}
+        {(isOwn || true) && (
+          <div className="relative flex flex-col items-center gap-1" ref={moreRef}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setMoreOpen((v) => !v); }}
+              className="flex flex-col items-center gap-1"
+            >
+              <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#0a0a0a]/40 backdrop-blur-sm hover:bg-white/12">
+                <MoreHorizontal size={20} className="text-icon-more" />
+              </div>
+              <span className="text-[9px] font-semibold text-white" style={TX}>More</span>
+            </button>
+            {moreOpen && (
+              <div
+                className="absolute bottom-0 right-full z-[60] mr-3 min-w-[140px] rounded-xl border border-white/20 py-1.5 shadow-2xl"
+                style={{ background: "rgba(30,30,30,0.85)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {isOwn && (
+                  <button
+                    onClick={() => { setMoreOpen(false); onRemix(post); }}
+                    className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm font-semibold text-white/90 hover:bg-white/10"
+                  >
+                    <Pencil size={13} className="text-white/60" />Edit
+                  </button>
+                )}
+                <button
+                  onClick={remixAllowed ? () => { setMoreOpen(false); onRemix(post); } : undefined}
+                  className={`flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm font-semibold hover:bg-white/10 ${remixAllowed ? "text-white/90" : "cursor-not-allowed text-white/30"}`}
+                >
+                  <Zap size={13} style={{ color: remixAllowed ? post.accent : undefined }} />
+                  {remixAllowed ? "Remix" : "No Remix"}
+                </button>
+              </div>
+            )}
           </div>
-          <span className="text-[9px] font-bold text-white" style={TX}>{remixAllowed ? "Remix" : "No Remix"}</span>
-        </button>
+        )}
       </div>
 
       {/* Scrubber — pointer-captured for smooth drag-scrub.
@@ -363,7 +386,7 @@ export function TheaterUI({
         onClick={(e) => e.stopPropagation()}
         className={`absolute bottom-0 left-0 right-0 z-[50] h-2 cursor-pointer touch-none bg-white/15 hover:h-3 transition-all duration-300 ${isIdle && isPlaying ? "opacity-0 pointer-events-none" : "opacity-100 pointer-events-auto"}`}
       >
-        <div className="pointer-events-none h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: "#ff007a" }} />
+        <div className="pointer-events-none h-full rounded-r-full transition-none" style={{ width: `${progress}%`, background: "var(--color-icon-heart)" }} />
       </div>
 
       {/* Action toast */}
