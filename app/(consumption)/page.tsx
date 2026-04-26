@@ -340,17 +340,8 @@ export default function DiscoveryFeedPage() {
           components/chrome/top-bar.tsx); this row is pure feed control. */}
       <div className="shrink-0 overflow-x-auto border-b border-white/8 px-4 py-2 scrollbar-none">
         <div className="flex items-center gap-1.5" style={{ width: "max-content" }}>
-          {offlineCount > 0 && (
-            <>
-              <button
-                onClick={cleanupOffline}
-                className="flex items-center gap-1.5 rounded-full bg-orange-500/14 px-2.5 py-1.5 text-[11px] font-semibold text-orange-300/80 transition-colors hover:bg-orange-500/24 hover:text-orange-200"
-              >
-                <Trash2 size={10} />Clean Up ({offlineCount})
-              </button>
-              <div className="mx-1 w-px self-stretch bg-white/10" />
-            </>
-          )}
+          {/* Cleanup developer button removed — offline-recovery happens
+              automatically through hydrateAllPosts; no user action needed. */}
           {/* Sort pills — always visible at start */}
           {(["latest", "popular", "trending"] as const).map((s) => (
             <button key={s} onClick={() => handleSortChange(s)}

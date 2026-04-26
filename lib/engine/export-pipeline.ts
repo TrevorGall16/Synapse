@@ -27,7 +27,32 @@ export interface ExportConfig {
   audioBitrate: number;
   /** Total export duration in microseconds. */
   durationMicros: MicrosecondTime;
+  /**
+   * Realtime mode: caller is updating `sourceCanvas` in wall-clock time
+   * (e.g. via a rAF compositor synced to live playback). Forces the
+   * MediaRecorder path so the encoder samples the canvas as it changes,
+   * instead of WebCodecs racing through the frame loop synchronously.
+   */
+  realtime?: boolean;
+  /**
+   * Container format. "mp4" tries `video/mp4;codecs=avc1.42E01F,mp4a.40.2`
+   * (Chrome 130+, Safari 14.1+) and falls back to WebM only when the browser
+   * cannot encode MP4. "webm" always uses WebM. Defaults to "webm".
+   */
+  format?: "mp4" | "webm";
 }
+
+/** Mime + extension actually used by MediaRecorder — surfaced to the caller. */
+export interface RecorderEncoding {
+  mimeType: string;
+  extension: "mp4" | "webm";
+}
+
+/**
+ * Synapse hard cap: a single .SYNAPSE clip cannot exceed 90 seconds.
+ * Enforced at the export boundary so callers cannot bypass it.
+ */
+export const MAX_CLIP_DURATION_MICROS: MicrosecondTime = 90 * 1_000_000;
 
 /** Deterministic presets indexed by common labels. */
 export const EXPORT_PRESETS: Record<string, ExportConfig> = {
@@ -139,6 +164,48 @@ export interface ExportCallbacks {
 export interface ExportResult {
   blob: Blob;
   report: AvSyncReport;
+  /** Mime type + extension actually produced — caller uses this for the download filename. */
+  encoding: RecorderEncoding;
+}
+
+/**
+ * Pick the MediaRecorder mime/extension for the requested format.
+ *
+ * When the caller asks for MP4 we no longer fall back silently — if the browser
+ * can't encode MP4 we throw so the UI surfaces the truth instead of saving a
+ * WebM payload behind an .mp4 (or .webm-renamed-to-.mp4) filename. WebM, on the
+ * other hand, is universally supported, so the WebM path retains its sequence
+ * of fallbacks.
+ */
+function pickRecorderEncoding(format: "mp4" | "webm"): RecorderEncoding {
+  if (typeof MediaRecorder === "undefined") {
+    throw new Error("MediaRecorder is unavailable in this browser. Export cannot proceed.");
+  }
+  if (format === "mp4") {
+    const mp4Candidates = [
+      "video/mp4;codecs=avc1.42E01F,mp4a.40.2",
+      "video/mp4;codecs=avc1.42E01F",
+      "video/mp4;codecs=h264,aac",
+      "video/mp4",
+    ];
+    for (const m of mp4Candidates) {
+      if (MediaRecorder.isTypeSupported(m)) return { mimeType: m, extension: "mp4" };
+    }
+    throw new Error(
+      "MP4 export is not supported by this browser's MediaRecorder. Use Chrome 130+/Safari 14.1+ or pick the WebM format.",
+    );
+  }
+  const webmCandidates = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm",
+  ];
+  for (const m of webmCandidates) {
+    if (MediaRecorder.isTypeSupported(m)) return { mimeType: m, extension: "webm" };
+  }
+  return { mimeType: "video/webm", extension: "webm" };
 }
 
 /**
@@ -236,7 +303,7 @@ async function exportViaWebCodecs(
     const report = buildSyncReport(syncEntries, toleranceMicros);
     logSyncReport(report, config);
     callbacks?.onComplete?.(blob, report);
-    return { blob, report };
+    return { blob, report, encoding: { mimeType: "video/webm", extension: "webm" } };
 
   } finally {
     if (videoEncoder && videoEncoder.state !== "closed") videoEncoder.close();
@@ -256,28 +323,82 @@ async function exportViaMediaRecorder(
   const totalFrames = Math.ceil(microsToSeconds(config.durationMicros) * config.fps);
   const toleranceMicros = frameDurationMicros;
 
+  // pickRecorderEncoding can throw (MP4 strict mode) — surface as a rejection
+  // before allocating any media graph nodes so the caller cleans up properly.
+  const encoding = pickRecorderEncoding(config.format ?? "webm");
+
+  // Wake the audio context if it was suspended by the autoplay policy. A
+  // suspended context produces a track that emits no samples, which Chrome
+  // interprets as "stream not yet ready" and flushes 0 bytes of video too.
+  if (audioCtx.state === "suspended") {
+    try { await audioCtx.resume(); } catch { /* ignore — silent track fallback below */ }
+  }
+
   return new Promise<ExportResult>((resolve, reject) => {
-    const stream = sourceCanvas.captureStream(config.fps);
+    const videoStream = sourceCanvas.captureStream(config.fps);
+    const videoTracks = videoStream.getVideoTracks();
+    if (videoTracks.length === 0) {
+      reject(new Error("Canvas captureStream produced no video track. The export canvas is not paintable."));
+      return;
+    }
+
+    // Build the recording stream from scratch — adding tracks to an existing
+    // captured stream is unreliable across browsers. The video track is moved,
+    // not copied, so we don't end up with two MediaStreams pointing at the
+    // same source.
+    const stream = new MediaStream();
+    videoTracks.forEach((t) => stream.addTrack(t));
+
+    // Audio: connect a silent oscillator to the destination so the recorder
+    // always sees a continuously-flowing audio track, even when the project
+    // has no audio clips. Without this Chrome sometimes never emits its first
+    // chunk and `recorder.stop()` flushes a 0-byte file.
     const audioDestNode = audioCtx.createMediaStreamDestination();
-    audioDestNode.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
+    let keepaliveOsc: OscillatorNode | null = null;
+    let keepaliveGain: GainNode | null = null;
+    try {
+      keepaliveOsc = audioCtx.createOscillator();
+      keepaliveGain = audioCtx.createGain();
+      keepaliveGain.gain.value = 0; // truly silent — does not pollute the export audio
+      keepaliveOsc.connect(keepaliveGain).connect(audioDestNode);
+      keepaliveOsc.start();
+    } catch (err) {
+      console.warn("[SynapseExport] keepalive oscillator failed to start:", err);
+    }
+    audioDestNode.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
 
     const chunks: BlobPart[] = [];
-    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-      ? "video/webm;codecs=vp9,opus"
-      : "video/webm";
 
-    const recorder = new MediaRecorder(stream, {
-      mimeType,
-      videoBitsPerSecond: config.videoBitrate,
-      audioBitsPerSecond: config.audioBitrate,
-    });
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream, {
+        mimeType: encoding.mimeType,
+        videoBitsPerSecond: config.videoBitrate,
+        audioBitsPerSecond: config.audioBitrate,
+      });
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error("Failed to create MediaRecorder."));
+      return;
+    }
+
+    let stopped = false;
+    let progressInterval: ReturnType<typeof setInterval> | null = null;
+    let stopTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const teardownAudio = () => {
+      try { keepaliveOsc?.stop(); } catch { /* node already stopped */ }
+      try { keepaliveOsc?.disconnect(); } catch { /* */ }
+      try { keepaliveGain?.disconnect(); } catch { /* */ }
+    };
 
     recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
+      if (e.data && e.data.size > 0) chunks.push(e.data);
     };
 
     recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: "video/webm" });
+      teardownAudio();
+      if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+      const blob = new Blob(chunks, { type: encoding.mimeType });
       // MediaRecorder sync: PTS derived from capture time — build estimated entries
       const syncEntries: AvSyncEntry[] = Array.from({ length: totalFrames }, (_, i) => {
         const pts = i * frameDurationMicros;
@@ -285,29 +406,66 @@ async function exportViaMediaRecorder(
       });
       const report = buildSyncReport(syncEntries, toleranceMicros);
       logSyncReport(report, config);
+      // 0-byte safety net — propagate as an error rather than calling onComplete
+      // with garbage so the UI shows a fixable message instead of saving an
+      // unopenable file.
+      if (blob.size === 0) {
+        const err = new Error(
+          "Export produced 0 bytes. The browser dropped every frame from MediaRecorder — try playing the project once in the Preview Monitor before exporting, or reduce the frame rate.",
+        );
+        callbacks?.onError?.(err);
+        reject(err);
+        return;
+      }
       callbacks?.onComplete?.(blob, report);
-      resolve({ blob, report });
+      resolve({ blob, report, encoding });
     };
 
     recorder.onerror = (e) => {
-      const err = new Error(`MediaRecorder error: ${(e as ErrorEvent).message ?? "unknown"}`);
+      teardownAudio();
+      if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+      if (stopTimeout) { clearTimeout(stopTimeout); stopTimeout = null; }
+      const message =
+        (e as { error?: DOMException }).error?.message
+        ?? (e as ErrorEvent).message
+        ?? "unknown";
+      const err = new Error(`MediaRecorder error: ${message}`);
       callbacks?.onError?.(err);
       reject(err);
     };
 
-    recorder.start(100); // 100ms chunks
+    try {
+      recorder.start(100); // 100ms chunks
+    } catch (err) {
+      teardownAudio();
+      reject(err instanceof Error ? err : new Error("MediaRecorder.start() threw."));
+      return;
+    }
 
     // Simulate progress based on duration
     const durationMs = microsToSeconds(config.durationMicros) * 1000;
     const startTime = Date.now();
-    const progressInterval = setInterval(() => {
+    progressInterval = setInterval(() => {
       const elapsed = Date.now() - startTime;
       callbacks?.onProgress?.(Math.min(elapsed / durationMs, 0.99));
     }, 200);
 
-    setTimeout(() => {
-      clearInterval(progressInterval);
-      recorder.stop();
+    stopTimeout = setTimeout(() => {
+      stopTimeout = null;
+      if (stopped) return;
+      stopped = true;
+      try {
+        // Force a final dataavailable BEFORE stop so any in-flight buffer is
+        // flushed — without this Chrome occasionally drops the last 100ms,
+        // and on very short exports that "last 100ms" was the entire file.
+        if (recorder.state === "recording") {
+          try { recorder.requestData(); } catch { /* not all impls support it */ }
+          recorder.stop();
+        }
+      } catch (err) {
+        teardownAudio();
+        reject(err instanceof Error ? err : new Error("recorder.stop() threw."));
+      }
     }, durationMs);
   });
 }
@@ -331,8 +489,21 @@ export async function exportProject(
   config: ExportConfig,
   callbacks?: ExportCallbacks,
 ): Promise<ExportResult> {
-  const useWebCodecs = await isWebCodecsAvailable();
-  console.info(`[SynapseExport] Starting export via ${useWebCodecs ? "WebCodecs" : "MediaRecorder (fallback)"}`);
+  // 90-second clip ceiling — non-negotiable per the .SYNAPSE spec. Reject before
+  // any encoder is allocated so the caller fails fast and surfaces the limit.
+  if (config.durationMicros > MAX_CLIP_DURATION_MICROS) {
+    const err = new Error(
+      `Export exceeds the 90-second clip limit (${microsToSeconds(config.durationMicros).toFixed(2)}s requested).`,
+    );
+    callbacks?.onError?.(err);
+    throw err;
+  }
+
+  // Realtime captures must use MediaRecorder so the encoder samples the live
+  // canvas. WebCodecs iterates frames synchronously, which would race ahead of
+  // the compositor and bake whatever stale pixels happen to be present.
+  const useWebCodecs = !config.realtime && (await isWebCodecsAvailable());
+  console.info(`[SynapseExport] Starting export via ${useWebCodecs ? "WebCodecs" : "MediaRecorder (realtime)"}`);
   console.info(`[SynapseExport] Config: ${config.width}x${config.height} @ ${config.fps}fps | video=${config.videoBitrate / 1000}kbps | audio=${config.audioBitrate / 1000}kbps | duration=${microsToSeconds(config.durationMicros).toFixed(2)}s`);
 
   if (useWebCodecs) {

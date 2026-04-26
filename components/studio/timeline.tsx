@@ -19,6 +19,7 @@ import { requestAudioPeaks } from "@/lib/utils/media-extractor";
 import type { TrackType } from "@/lib/store/types";
 import { pointerToMicros, screenPxToTimelinePx } from "@/lib/utils/coords";
 import { ScrollNavigator } from "@/components/timeline/scroll-navigator";
+import { QaLabel } from "@/lib/dev/qa-labels";
 
 const COLLAPSED_HEIGHT = 24;
 
@@ -300,7 +301,8 @@ export function Timeline() {
   }, [selectedClipIds, ungroupClips]);
 
   return (
-    <section className="flex h-full w-full flex-col overflow-hidden min-w-0 min-h-0 border-t border-white/20 bg-[#1a1a1a]">
+    <section className="relative flex h-full w-full flex-col overflow-hidden min-w-0 min-h-0 border-t border-white/20 bg-[#1a1a1a]">
+      <QaLabel text="TIMELINE" />
       {/* Toolbar */}
       <div className="flex h-8 shrink-0 items-center justify-between border-b border-white/10">
         <div className="flex w-48 shrink-0 items-center border-r border-white/10">
@@ -332,7 +334,8 @@ export function Timeline() {
       <div className="flex h-full w-full flex-1 overflow-hidden min-w-0 min-h-0">
         {/* Left Column: Track Headers — overflow-y-hidden prevents independent user scroll;
             scrollTop is driven by the Timeline's scroll via onScroll for perfect sync. */}
-        <div ref={headersRef} className="w-48 shrink-0 flex flex-col overflow-y-hidden overflow-x-hidden border-r border-white/10">
+        <div ref={headersRef} className="relative w-48 shrink-0 flex flex-col overflow-y-hidden overflow-x-hidden border-r border-white/10">
+          <QaLabel text="TRACK HEADERS" />
           <div className="h-6 shrink-0 border-b border-white/10" />
           {tracks.map((track, idx) => {
             const effectiveHeight = track.collapsed ? COLLAPSED_HEIGHT : track.height;

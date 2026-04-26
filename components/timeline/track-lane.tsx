@@ -271,14 +271,52 @@ export function TrackLane({ trackId, trackHeight: trackHeightProp }: TrackLanePr
       if (media.type === "video" && currentTrack.type !== "video") return;
       if (media.type === "audio" && currentTrack.type !== "audio") return;
 
-      // Drop positioning uses committed pixelsPerSecond only — transient cssZoomScale excluded.
-      const rawX = e.nativeEvent.offsetX;
-      const startTime = Math.max(0, Math.round((rawX / pixelsPerSecond) * 1_000_000));
+      // Drop positioning must include the timeline's horizontal scroll offset.
+      // `e.nativeEvent.offsetX` is unreliable: it's relative to whatever child
+      // element the pointer was over at drop time (often a clip block, not the
+      // lane), and it does not account for `scrollLeft`. Routing through the
+      // canonical screenXToTimeMicros helper — same path ruler/clip drag use —
+      // reads scrollLeft from the live DOM scroll container so the absolute
+      // X-coordinate maps to the correct timeline microsecond, even when the
+      // user is scrolled deep into a long project.
+      const lane = laneRef.current;
+      if (!lane) return;
+      const container = lane.closest("[data-timeline-scroll-container]");
+      const containerRect = container?.getBoundingClientRect() ?? lane.getBoundingClientRect();
+      const sl = container instanceof HTMLElement ? container.scrollLeft : 0;
+      const startTime = Math.max(
+        0,
+        Math.round(screenXToTimeMicros(e.clientX, containerRect, sl, pixelsPerSecond, 1)),
+      );
 
       if (media.type === "video" && currentTrack.type === "video") {
         const groupId = crypto.randomUUID();
         addClip(trackId, { id: crypto.randomUUID(), trackId, sourceId: mediaId, groupId, startTime, duration: media.duration, mediaOffset: 0 });
-        const audioTrack = useProjectStore.getState().tracks.find((t) => t.type === "audio");
+        // ── Track Leash ──────────────────────────────────────────────────
+        // Audio half MUST land on the audio track at the SAME positional index
+        // as the video track the clip just landed on (Video N → Audio N). The
+        // legacy "video2 → audio2" string-replace path was broken because all
+        // tracks are now created with crypto.randomUUID() ids, so the replace
+        // always returned a non-matching id and we fell through to the first
+        // audio track. We resolve by index instead, and synthesize a paired
+        // audio track if the project doesn't yet have one at the right index.
+        const stateNow = useProjectStore.getState();
+        const allTracks = stateNow.tracks;
+        const videoTracks = allTracks.filter((t) => t.type === "video");
+        const audioTracks = allTracks.filter((t) => t.type === "audio");
+        const videoIdx = videoTracks.findIndex((t) => t.id === trackId);
+        let audioTrack = videoIdx >= 0 ? audioTracks[videoIdx] : null;
+        if (!audioTrack) {
+          // Create the missing audio track(s) so the leash always lands on
+          // the matching index. addTrack appends, so we may need to add
+          // several to fill the gap when the user dropped on Video 3 with
+          // only one existing audio track.
+          while (useProjectStore.getState().tracks.filter((t) => t.type === "audio").length <= videoIdx) {
+            stateNow.addTrack("audio");
+          }
+          const refreshed = useProjectStore.getState().tracks.filter((t) => t.type === "audio");
+          audioTrack = refreshed[videoIdx] ?? refreshed[refreshed.length - 1] ?? null;
+        }
         if (audioTrack) {
           addClip(audioTrack.id, { id: crypto.randomUUID(), trackId: audioTrack.id, sourceId: mediaId, groupId, startTime, duration: media.duration, mediaOffset: 0 });
           if (media.previewUrl) requestAudioPeaks(media.previewUrl, media.id);

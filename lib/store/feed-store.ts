@@ -36,6 +36,10 @@ export interface FeedPost {
   likes: number;
   comments: number;
   featured: boolean;
+  /** Unix-ms timestamp set the moment the user pins this post to their profile.
+   *  Profile sorts pinned posts by `pinnedAt` descending so the most recently
+   *  pinned post is always the first card. Cleared when the post is unpinned. */
+  pinnedAt?: number;
   videoUrl?: string;
   /** Present on type="preset" posts — the draggable FX recipe */
   presetData?: PresetData;
@@ -80,6 +84,9 @@ interface FeedState {
    *  Throws if any IDB delete fails; state is left unchanged on error. */
   removePosts: (ids: string[]) => Promise<void>;
   toggleLike: (postId: string) => void;
+  /** Pin / unpin a post on the author's profile. Pinning sets `pinnedAt = now`
+   *  and `featured = true`; unpinning clears both. Persisted to IDB. */
+  togglePin: (postId: string) => void;
   hydrateAllPosts: () => Promise<void>;
 }
 
@@ -109,6 +116,27 @@ export const useFeedStore = create<FeedState>()(
           ? s.likedPostIds.filter((id) => id !== postId)
           : [...s.likedPostIds, postId],
       })),
+
+      togglePin: (postId) => {
+        const now = Date.now();
+        let mutated: FeedPost | null = null;
+        set((s) => ({
+          userPosts: enrichWithHeatTiers(
+            s.userPosts.map((p) => {
+              if (p.id !== postId) return p;
+              const isPinned = !!p.pinnedAt;
+              const next: FeedPost = isPinned
+                ? { ...p, featured: false, pinnedAt: undefined }
+                : { ...p, featured: true,  pinnedAt: now };
+              mutated = next;
+              return next;
+            }),
+          ),
+        }));
+        // Persist the changed post — fire-and-forget, the store is the source
+        // of truth and the IDB write is best-effort.
+        if (mutated) savePostToIDB(mutated).catch((err) => console.error("[FeedStore] togglePin IDB save failed:", err));
+      },
 
       removePost: (id) => {
         const post = get().userPosts.find((p) => p.id === id);

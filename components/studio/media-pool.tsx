@@ -4,6 +4,7 @@ import { useRef, useState, useCallback } from "react";
 import { useProjectStore } from "@/lib/store/project-store";
 import { saveMediaToDB } from "@/lib/store/media-pool-db";
 import type { MediaPoolItem } from "@/lib/store/types";
+import { QaLabel } from "@/lib/dev/qa-labels";
 
 function mediaTypeFromMime(mime: string): "video" | "audio" | "image" {
   if (mime.startsWith("audio/")) return "audio";
@@ -90,11 +91,12 @@ export function MediaPool() {
 
   return (
     <div
-      className="flex h-full flex-col border-t border-white/20 bg-[#1a1a1a]"
+      className="relative flex h-full flex-col border-t border-white/20 bg-[#1a1a1a]"
       onDrop={onDrop}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
     >
+      <QaLabel text="ASSETS PANEL" />
       <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-white/60">
           Media Pool

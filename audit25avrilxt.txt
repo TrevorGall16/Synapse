@@ -1,0 +1,91 @@
+Synapse Studio: Master Audit & Tech Debt List
+🔴 Phase 1: The Integrity Pass (Critical / Severity 1)
+These bugs break user trust and core functionality. We fix these before anything else.
+
+1. The "Fake Export" Bug (The Golden Thread)
+
+The Issue: The Studio Export button is just screen-recording the base video (MediaRecorder). It completely ignores text overlays, visual effects, and stacked layers. The current export uses captureStream on a single tag. We must switch to a Canvas-based Compositor or the WebCodecs engine to 'flatten' all layers into the final file.
+
+The Fix: Abandon MediaRecorder. Wire the Export Modal to use the dedicated exportProject (WebCodecs) engine that already exists in the codebase.
+
+2. Timeline "Blindness" (Scroll Offset Math)
+
+The Issue: If you scroll to the right on the timeline and drop a clip, it lands in the wrong spot. The code calculates the drop based on your screen, but forgets to add the distance you scrolled.
+
+The Fix: Inject container.scrollLeft into the drop zone and seek math calculations.
+
+3. Silent Save Failures (Database Crashing)
+
+The Issue: If the user's browser storage gets full or errors out, the database (IndexedDB) fails silently. The user thinks their project is saving, but it isn't.
+
+The Fix: Add proper error propagation (try/catch) to the save functions so the UI throws an error toast if saving fails.
+
+4. The "Media Offline" Feed Bug
+The Issue: Because the Studio and Feed share the same "Media Pool," the app sometimes tries to use a temporary Studio "Blob" to play a video on the Home Page. If that Blob has been revoked/cleared, the video on the Home Page shows a black screen or "Media Offline" error.
+
+The Fix: Ensure the FeedPostCard always prioritizes the "Canonical URL" (the actual link to the video) over the "Snapshot URL" (the temporary Studio version).
+
+🟠 Phase 2: Memory & Scalability (Major / Severity 2)
+These bugs cause browser crashes and lag spikes during long editing sessions.
+
+1. The "Blob" Memory Leaks
+
+The Issue: Every time a user imports a video or closes a tab, the app holds onto the temporary video memory (Blob URLs). Eventually, the browser tab will crash.
+
+The Fix: Ensure URL.revokeObjectURL() is called inside MediaBin after metadata is read, and inside the removeProject function when tabs are closed.
+
+2. Database Lag Spikes (Over-saving)
+
+The Issue: Currently, making a 1-pixel trim triggers a save of every open tab and project, which multiplies the database write volume and causes lag.
+
+The Fix: Debounce the save state and ensure it only writes the active project's changes.
+
+3. Export UI Deception
+
+The Issue: The Export menu lets users pick "MP4" or "WebM", and change audio settings, but the system actually ignores those buttons and forces WebM anyway.
+
+The Fix: Either remove the fake options from the UI, or wire them up correctly when we rebuild the WebCodecs export in Phase 1.
+
+🟡 Phase 3: Interaction Physics (Moderate / Severity 3)
+These bugs make the timeline feel clunky or confusing to click.
+
+1. Shift-Click Conflict
+
+The Issue: Shift+Click is currently mapped to two different things at once: selecting multiple clips AND selecting a time range on the timeline. Doing one triggers the other accidentally.
+
+The Fix: Separate the event handlers or stop the click event from bubbling up from the clips to the timeline container.
+
+2. Zoom Math Drift
+
+The Issue: Dragging crossfade handles feels "slippery" because it uses a different zoom math calculation (cssZoomScale) than dragging a normal clip trim.
+
+The Fix: Standardize the math so all timeline handles use the committed pixelsPerSecond logic.
+
+3. Undo History Pollution
+The Issue: Every time you click or touch a clip (pointer down), the app creates a "Snapshot" for the Undo button, even if you don't actually move or change anything.
+
+The Result: Your "Undo" history gets filled with "nothing" changes, making it frustrating for the user to step back to a meaningful edit.
+
+The Fix: Delay the history snapshot until a specific "drag threshold" (e.g., 5 pixels) is crossed.
+
+4.The "Ghosting" QA Mode
+The Goal: You specifically asked for this in your last session to help with your own Q&A.
+
+The Item: Implement a "Debug Overlay" toggle that renders bright text labels over the Monitor, Track Headers, Assets Panel, and Timeline.
+
+The Fix: A simple global state toggle that adds absolute-positioned <span> labels to the main Studio containers.
+
+🔵 Phase 4: UI & Polish (Minor / Severity 4)
+Visual annoyances that don't break the app, but look unpolished.
+
+1. Vertical Track Desync (The "Glue" Bug)
+
+The Issue: Scrolling vertically to the very bottom of the timeline reveals a sub-pixel mismatch between the left Track Headers and the main Timeline clips.
+
+The Fix: Audit the CSS padding, borders, and margins of both columns to ensure they are mathematically identical.
+
+2. Thumbnail Jank on Feed
+
+The Issue: Extracting video thumbnails happens on the "main thread," which can cause scrolling to stutter on weak mobile phones.
+
+The Fix: Optimize thumbnail extraction or move it to a Web Worker.

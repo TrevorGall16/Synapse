@@ -13,8 +13,35 @@ import { useCommentStore } from "@/lib/store/comment-store";
 import { saveMediaToDB } from "@/lib/store/media-pool-db";
 import { TITLE_MAX, DESCRIPTION_MAX } from "@/lib/schema";
 import { ProjectsTab } from "@/components/studio/projects-tab";
-import type { MediaPoolItem } from "@/lib/store/types";
+import type { MediaPoolItem, Track, ProjectSettings } from "@/lib/store/types";
 import { CHANNELS } from "@/lib/config/taxonomy";
+import { MAX_CLIP_DURATION_MICROS } from "@/lib/engine/export-pipeline";
+
+/**
+ * Probe a video file's duration without committing it to state. Returns the
+ * duration in microseconds (matching the project's micros time base) or null
+ * when the metadata can't be parsed (corrupt file, codec the browser refuses).
+ */
+async function probeVideoDurationMicros(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const probe = document.createElement("video");
+    probe.preload = "metadata";
+    probe.muted = true;
+    const cleanup = () => {
+      probe.removeAttribute("src");
+      probe.load();
+      URL.revokeObjectURL(url);
+    };
+    probe.onloadedmetadata = () => {
+      const secs = probe.duration;
+      cleanup();
+      resolve(Number.isFinite(secs) && secs > 0 ? Math.round(secs * 1_000_000) : null);
+    };
+    probe.onerror = () => { cleanup(); resolve(null); };
+    probe.src = url;
+  });
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -133,6 +160,12 @@ export default function UploadPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fileDurationMicros, setFileDurationMicros] = useState<number | null>(null);
+  const [durationError, setDurationError] = useState<string | null>(null);
+  /** Start of the user-selected 90s window (in microseconds). Only relevant when
+   *  the file is longer than the 90s clip cap — defaults to 0 for files that
+   *  fit. The end of the window is always startMicros + MAX_CLIP_DURATION_MICROS. */
+  const [trimStartMicros, setTrimStartMicros] = useState(0);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -179,48 +212,47 @@ export default function UploadPage() {
 
   // ── File handling ──────────────────────────────────────────────────────────
 
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] ?? null;
+  /**
+   * Common ingest path — used by both the file picker and drag/drop. Probes
+   * the file's duration. Files past the 90s cap are NOT rejected anymore;
+   * instead the UI surfaces a range slider so the user can pick a 90s window
+   * to ingest. Only the chosen window lands in the published post — the
+   * upstream cap is still honored at the .SYNAPSE level via mediaOffset +
+   * duration on the clip itself.
+   */
+  const ingestFile = useCallback(async (f: File | null) => {
     setFile(f);
+    setFileDurationMicros(null);
+    setDurationError(null);
+    setTrimStartMicros(0);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    // Clean up old thumbnails
     thumbCleanupRef.current?.();
     thumbnails.forEach((t) => URL.revokeObjectURL(t.url));
     setThumbnails([]);
     setThumbnailIdx(0);
 
-    if (f) {
-      const url = URL.createObjectURL(f);
-      setPreviewUrl(url);
-      // Kick off async thumbnail generation
-      thumbCleanupRef.current = generateThumbnails(url, (results) => {
-        setThumbnails(results);
-        setThumbnailIdx(0);
-      });
-    } else {
-      setPreviewUrl(null);
-    }
+    if (!f) { setPreviewUrl(null); return; }
+
+    const durMicros = await probeVideoDurationMicros(f);
+    setFileDurationMicros(durMicros);
+
+    const url = URL.createObjectURL(f);
+    setPreviewUrl(url);
+    thumbCleanupRef.current = generateThumbnails(url, (results) => {
+      setThumbnails(results);
+      setThumbnailIdx(0);
+    });
   }, [previewUrl, thumbnails]);
+
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    void ingestFile(e.target.files?.[0] ?? null);
+  }, [ingestFile]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const f = e.dataTransfer.files[0];
-    if (f && f.type.startsWith("video/")) {
-      setFile(f);
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      thumbCleanupRef.current?.();
-      thumbnails.forEach((t) => URL.revokeObjectURL(t.url));
-      setThumbnails([]);
-      setThumbnailIdx(0);
-
-      const url = URL.createObjectURL(f);
-      setPreviewUrl(url);
-      thumbCleanupRef.current = generateThumbnails(url, (results) => {
-        setThumbnails(results);
-        setThumbnailIdx(0);
-      });
-    }
-  }, [previewUrl, thumbnails]);
+    if (f && f.type.startsWith("video/")) void ingestFile(f);
+  }, [ingestFile]);
 
   const clearFile = useCallback(() => {
     setFile(null);
@@ -256,8 +288,77 @@ export default function UploadPage() {
 
   const handlePublish = useCallback(async () => {
     if (!title.trim() || !profile) return;
+
     setStage("preparing");
     setStageProgress(0);
+
+    // ── Durable media: save to media-pool-db so the post survives a refresh ──
+    // The previous flow set `videoUrl` to a fresh `URL.createObjectURL(file)`
+    // and left it at that. The blob URL is revoked on tab close, persistence
+    // strips blob: URLs, and on next boot the post would render the FALLBACK
+    // placeholder (the "Ghost Feed" bug). By saving the file via saveMediaToDB
+    // and emitting a minimal projectSnapshot.mediaPool entry, hydrateAllPosts
+    // re-issues a fresh blob URL on every boot.
+    //
+    // ── 90s trim window ────────────────────────────────────────────────────
+    // For files longer than the cap, the user has picked a `trimStartMicros`
+    // window via the slider. We bake that into the clip's mediaOffset/duration
+    // so playback stays inside [trimStartMicros, trimStartMicros+90s). The
+    // .SYNAPSE clip duration is always ≤ MAX_CLIP_DURATION_MICROS, even when
+    // the underlying media file is hours long.
+    let projectSnapshot: { tracks: Track[]; duration: number; projectSettings: ProjectSettings; mediaPool?: MediaPoolItem[] } | undefined;
+    let livePreviewUrl: string | undefined;
+    let demoStartTime: number | undefined;
+    let demoDuration: number | undefined;
+    if (file) {
+      const mediaId = crypto.randomUUID();
+      const fullDurMicros = fileDurationMicros ?? 30_000_000;
+      const isOversize = fullDurMicros > MAX_CLIP_DURATION_MICROS;
+      const trimStart = isOversize
+        ? Math.max(0, Math.min(trimStartMicros, fullDurMicros - MAX_CLIP_DURATION_MICROS))
+        : 0;
+      const clipDurMicros = isOversize
+        ? MAX_CLIP_DURATION_MICROS
+        : fullDurMicros;
+      livePreviewUrl = URL.createObjectURL(file);
+      const mediaItem: MediaPoolItem = {
+        id: mediaId,
+        name: file.name,
+        type: "video",
+        // The mediaPool stores the FULL file duration so a future Studio
+        // session can re-trim freely; the clip itself constrains playback.
+        duration: fullDurMicros,
+        previewUrl: livePreviewUrl,
+      };
+      try {
+        await saveMediaToDB(file, mediaItem);
+      } catch (err) {
+        console.warn("[Upload] saveMediaToDB failed — post will still publish but may not survive a refresh:", err);
+      }
+      const trackId = "video1";
+      projectSnapshot = {
+        tracks: [
+          {
+            id: trackId, type: "video", name: "Video 1", color: "#3b82f6",
+            height: 60, collapsed: false, locked: false, isMuted: false, isSolo: false,
+            opacityOrVolume: 100,
+            clips: [{
+              id: crypto.randomUUID(),
+              trackId,
+              sourceId: mediaId,
+              startTime: 0,
+              duration: clipDurMicros,
+              mediaOffset: trimStart,
+            }],
+          },
+        ],
+        duration: clipDurMicros,
+        projectSettings: { width: 1920, height: 1080, fps: 30, pixelAspectRatio: 1.0, gammaTag: "sRGB" },
+        mediaPool: [mediaItem],
+      };
+      demoStartTime = 0;
+      demoDuration = clipDurMicros;
+    }
 
     await tick(400);
     setStageProgress(30);
@@ -283,18 +384,24 @@ export default function UploadPage() {
       likes: 0,
       comments: 0,
       featured,
-      videoUrl: file ? URL.createObjectURL(file) : undefined,
+      // Pin timestamp follows the same rule the Profile page expects — set
+      // when the user toggled "Pin to Profile Top" before publishing.
+      pinnedAt: featured ? Date.now() : undefined,
+      videoUrl: livePreviewUrl,
+      projectSnapshot,
       authorUsername: profile.username,
       createdAt: Date.now(),
       channels: channels.length > 0 ? channels : undefined,
       comments_enabled: commentsEnabled,
+      demoStartTime,
+      demoDuration,
     });
 
     useCommentStore.getState().initEmptyPost(postId);
     publishedIdRef.current = postId;
     setStageProgress(100);
     setStage("done");
-  }, [title, profile, tags, desc, file, featured, channels, commentsEnabled, addPost]);
+  }, [title, profile, tags, desc, file, fileDurationMicros, trimStartMicros, featured, channels, commentsEnabled, addPost]);
 
   // ── Open in Studio ────────────────────────────────────────────────────────
 
@@ -369,6 +476,10 @@ export default function UploadPage() {
           file={file}
           fileRef={fileRef}
           previewUrl={previewUrl}
+          durationError={durationError}
+          fileDurationMicros={fileDurationMicros}
+          trimStartMicros={trimStartMicros}
+          setTrimStartMicros={setTrimStartMicros}
           title={title}
           setTitle={setTitle}
           desc={desc}
@@ -413,6 +524,9 @@ interface UploadTabProps {
   file: File | null;
   fileRef: React.RefObject<HTMLInputElement | null>;
   previewUrl: string | null;
+  fileDurationMicros: number | null;
+  trimStartMicros: number;
+  setTrimStartMicros: (v: number) => void;
   title: string;
   setTitle: (v: string) => void;
   desc: string;
@@ -424,6 +538,7 @@ interface UploadTabProps {
   commitTag: (raw: string) => void;
   removeTag: (tag: string) => void;
   setTags: React.Dispatch<React.SetStateAction<string[]>>;
+  durationError: string | null;
   channels: string[];
   setChannels: React.Dispatch<React.SetStateAction<string[]>>;
   commentsEnabled: boolean;
@@ -447,13 +562,41 @@ interface UploadTabProps {
 
 function UploadTabContent(props: UploadTabProps) {
   const {
-    file, fileRef, previewUrl, title, setTitle, desc, setDesc,
+    file, fileRef, previewUrl, durationError,
+    fileDurationMicros, trimStartMicros, setTrimStartMicros,
+    title, setTitle, desc, setDesc,
     tags, tagInput, setTagInput, tagLimitReached, commitTag, removeTag, setTags,
     channels, setChannels, commentsEnabled, setCommentsEnabled, featured, setFeatured,
     thumbnails, thumbnailIdx, setThumbnailIdx,
     stage, isPublishing, canPublish, progressPct,
     handleFileChange, handleDrop, clearFile, handlePublish, handleOpenStudio, router,
   } = props;
+
+  const isOversize = fileDurationMicros !== null && fileDurationMicros > MAX_CLIP_DURATION_MICROS;
+  const maxStartMicros = isOversize && fileDurationMicros !== null
+    ? Math.max(0, fileDurationMicros - MAX_CLIP_DURATION_MICROS)
+    : 0;
+  const trimEndMicros = trimStartMicros + MAX_CLIP_DURATION_MICROS;
+  const fmtTime = (us: number) => {
+    const s = Math.floor(us / 1_000_000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  // Preview <video> ref + loop guard. When a trim window is active we seek the
+  // preview to trimStart and loop within [trimStart, trimEnd] so the user sees
+  // exactly what their post will play. For files that fit, behavior is unchanged.
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const v = previewVideoRef.current;
+    if (!v || !isOversize) return;
+    const startSec = trimStartMicros / 1_000_000;
+    const endSec = trimEndMicros / 1_000_000;
+    const seek = () => { v.currentTime = startSec; };
+    seek();
+    const guard = () => { if (v.currentTime < startSec || v.currentTime >= endSec) v.currentTime = startSec; };
+    v.addEventListener("timeupdate", guard);
+    return () => v.removeEventListener("timeupdate", guard);
+  }, [trimStartMicros, trimEndMicros, isOversize, previewUrl]);
 
   return (
     <>
@@ -482,6 +625,12 @@ function UploadTabContent(props: UploadTabProps) {
         <div className="flex w-1/2 flex-col border-r border-white/8 p-6 gap-5">
           <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={handleFileChange} />
 
+          {durationError && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-500/35 bg-red-500/10 px-3 py-2.5">
+              <AlertCircle size={14} className="mt-0.5 shrink-0 text-red-400" />
+              <p className="text-[11px] leading-relaxed text-red-200">{durationError}</p>
+            </div>
+          )}
           {!file ? (
             <button
               onClick={() => fileRef.current?.click()}
@@ -503,6 +652,7 @@ function UploadTabContent(props: UploadTabProps) {
               <div className="relative flex-1 overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a0a]">
                 {previewUrl && (
                   <video
+                    ref={previewVideoRef}
                     src={previewUrl}
                     muted
                     autoPlay
@@ -523,6 +673,37 @@ function UploadTabContent(props: UploadTabProps) {
                   <span className="text-[9px] text-white/30">{(file.size / 1_048_576).toFixed(1)} MB</span>
                 </div>
               </div>
+
+              {/* 90s trim window — only shown when the source exceeds the clip cap.
+                  The native range input keeps the UI dependency-free; the
+                  end of the window is always start + 90s, so a single slider
+                  is enough. The post will only ingest this 90s window. */}
+              {isOversize && fileDurationMicros !== null && (
+                <div className="shrink-0 rounded-2xl border border-amber-400/25 bg-amber-500/[0.06] px-4 py-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-300/85">
+                      Trim to 90s — pick a start time
+                    </p>
+                    <span className="text-[10px] tabular-nums text-amber-200/80">
+                      {fmtTime(trimStartMicros)} – {fmtTime(trimEndMicros)}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={maxStartMicros}
+                    step={100_000}
+                    value={Math.min(trimStartMicros, maxStartMicros)}
+                    onChange={(e) => setTrimStartMicros(Number(e.target.value))}
+                    className="w-full accent-amber-400"
+                    aria-label="Trim window start time"
+                  />
+                  <p className="mt-1 text-[10px] text-amber-200/55">
+                    Source is {fmtTime(fileDurationMicros)}. Only the highlighted
+                    {" "}90-second window will be published.
+                  </p>
+                </div>
+              )}
 
               {/* Thumbnail picker — async generated */}
               <div className="shrink-0">
@@ -697,17 +878,21 @@ function UploadTabContent(props: UploadTabProps) {
 
           {/* Toggles */}
           <div className="flex flex-col gap-3">
-            <Toggle
-              icon={<MessageCircle size={13} />}
-              label="Enable Comments"
-              sublabel="Allow viewers to comment on this post"
-              checked={commentsEnabled}
-              onChange={setCommentsEnabled}
-            />
+            {/* Enable Comments — UI hidden per Spec, state preserved so it
+                round-trips through addPost/IDB until product re-introduces it. */}
+            <div hidden>
+              <Toggle
+                icon={<MessageCircle size={13} />}
+                label="Enable Comments"
+                sublabel="Allow viewers to comment on this post"
+                checked={commentsEnabled}
+                onChange={setCommentsEnabled}
+              />
+            </div>
             <Toggle
               icon={<Star size={13} />}
-              label="Featured"
-              sublabel="Mark as a featured post"
+              label="Pin to Profile Top"
+              sublabel="Surface this post at the top of your Profile grid"
               checked={featured}
               onChange={setFeatured}
             />

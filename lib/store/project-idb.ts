@@ -31,8 +31,14 @@ export interface IDBProjectRecord {
   projectStatus?: "draft" | "published";
 }
 
-export async function saveProjectToIDB(record: IDBProjectRecord): Promise<void> {
-  await idbSafeSet(record.projectId, record, projectsDb);
+/**
+ * Persist a project record. Returns `true` on success, `false` when the IDB
+ * write was rejected (quota, broken store, etc.). `idbSafeSet` already raises
+ * a user-visible toast on failure — callers should propagate the boolean so
+ * the dirty/save-barrier state stays accurate instead of falsely clearing.
+ */
+export async function saveProjectToIDB(record: IDBProjectRecord): Promise<boolean> {
+  return idbSafeSet(record.projectId, record, projectsDb);
 }
 
 export async function loadProjectFromIDB(projectId: string): Promise<IDBProjectRecord | null> {
@@ -52,8 +58,8 @@ export async function saveHistoryToIDB(
   projectId: string,
   past: HistorySnapshot[],
   future: HistorySnapshot[],
-): Promise<void> {
-  await idbSafeSet(projectId, { past, future }, historyDb);
+): Promise<boolean> {
+  return idbSafeSet(projectId, { past, future }, historyDb);
 }
 
 export async function loadHistoryFromIDB(

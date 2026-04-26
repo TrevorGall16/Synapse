@@ -19,6 +19,7 @@ import {
 } from "@/lib/utils/preview-helpers";
 import { collectSvgDefs, buildFeatheredMask } from "@/lib/utils/svg-filters";
 import { SkipBack, SkipForward, ChevronLeft, ChevronRight, Play, Pause } from "lucide-react";
+import { QaLabel } from "@/lib/dev/qa-labels";
 
 type PreviewQuality = "Draft" | "Auto" | "Good" | "Best";
 type ZoomMode = "Fit" | "25%" | "50%" | "100%" | "200%";
@@ -406,7 +407,8 @@ function PreviewMonitorInner() {
   const tunnelClipPath = useMemo(() => computeTunnelClipPath(activeEffectClips), [activeEffectClips]);
 
   return (
-    <div className="flex h-full flex-col border-t border-white/10 bg-[#121014]">
+    <div className="relative flex h-full flex-col border-t border-white/10 bg-[#121014]">
+      <QaLabel text="MONITOR" />
       <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-white/60">Preview</h2>
         <div className="flex items-center gap-2">

@@ -89,8 +89,20 @@ export function FeedPostCard({ post, onOpen, onRemix, onCreator, onDelete, onImp
     const firstEfx = active[0];
     const firstEfxFxParams = firstEfx?.fxParams ?? {};
     const firstClipTransform = firstEfx ? (firstEfx.renderedCss?.transform ?? clipCssTransform(firstEfxFxParams)) : "";
+    // Source priority: canonical hosted videoUrl WINS over the snapshot's
+    // mediaPool previewUrl. Studio writes blob: URLs into previewUrl during
+    // editing, but those URLs are revoked when the Studio session ends — using
+    // them in the feed produced the "Media Offline" flash. The canonical
+    // post.videoUrl is the durable, hostable source; only fall back to the
+    // pool's previewUrl when the canonical URL is absent OR is itself a
+    // doomed blob: reference (saves the post from rendering nothing at all).
+    const poolPreview = pool.find((m) => m.id === fc.sourceId)?.previewUrl;
+    const canonicalIsUsable = post.videoUrl && !post.videoUrl.startsWith("blob:");
+    const firstClipSrc = canonicalIsUsable
+      ? post.videoUrl
+      : (poolPreview ?? post.videoUrl);
     return {
-      firstClipSrc: pool.find((m) => m.id === fc.sourceId)?.previewUrl ?? post.videoUrl,
+      firstClipSrc,
       firstClipOffset: Math.max(0.001, (fc.mediaOffset ?? 0) / 1_000_000),
       firstClipTransform,
       firstClipStart: fc.startTime,

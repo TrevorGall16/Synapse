@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback, memo } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, WifiOff, Share2, Grid3X3, LayoutGrid, Clock, Layers, GitBranch, Instagram, Twitter, Youtube, Eye } from "lucide-react";
+import { ArrowLeft, Zap, Globe, Heart, Edit3, Users, Trash2, X, Check, Share2, Grid3X3, LayoutGrid, Clock, Instagram, Twitter, Youtube, Eye, Star } from "lucide-react";
 import { useUserStore, DEFAULT_PROFILE } from "@/lib/store/user-store";
 import { useFeedStore, type FeedPost, isBlobUrl } from "@/lib/store/feed-store";
 import { useProjectStore } from "@/lib/store/project-store";
@@ -15,6 +15,7 @@ import { canRemix, getRemixMode } from "@/lib/policy";
 import { validateSerializedProject, DISPLAY_NAME_MAX, BIO_MAX } from "@/lib/schema";
 import { navigateToCreator } from "@/lib/nav/theater-nav";
 import { formatFollowerCount } from "@/lib/social";
+import { loadThumbnailUrl } from "@/lib/store/thumbnail-idb";
 
 // ── Mock creator profiles ─────────────────────────────────────────────────────
 // Wiped for launch — only the signed-in user's profile is populated. Lookups
@@ -25,9 +26,10 @@ const MOCK_ACCENT: Record<string, string> = {};
 const MOCK_BG: Record<string, string> = {};
 
 // ── Unified post card ─────────────────────────────────────────────────────────
-const PostCard = memo(function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, onDelete, views, createdAt }: {
+const PostCard = memo(function PostCard({ title, accentColor, bgColor, index, videoUrl, post, onOpen, onDelete, onTogglePin, views, createdAt }: {
   title: string; accentColor: string; bgColor: string; index: number; videoUrl?: string;
   post?: FeedPost | null; onOpen: () => void; onDelete?: () => void;
+  onTogglePin?: () => void;
   views?: number; createdAt?: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -35,6 +37,10 @@ const PostCard = memo(function PostCard({ title, accentColor, bgColor, index, vi
   const [hovered, setHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  // Durable thumbnail from IDB — same source feed-post-card uses, so the
+  // Profile grid never falls back to the dark "no preview" placeholder when
+  // we already have a real frame stored.
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
 
   // Lazy-mount video only when card enters viewport
   useEffect(() => {
@@ -47,6 +53,13 @@ const PostCard = memo(function PostCard({ title, accentColor, bgColor, index, vi
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!post?.id) { setThumbUrl(null); return; }
+    let cancelled = false;
+    loadThumbnailUrl(post.id).then((u) => { if (!cancelled) setThumbUrl(u ?? null); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [post?.id]);
 
   // Find first clip's source URL and frame offset from snapshot
   const firstClipSrc = useMemo(() => {
@@ -102,20 +115,51 @@ const PostCard = memo(function PostCard({ title, accentColor, bgColor, index, vi
             ))}
           </div>
         )}
+        {/* Durable IDB thumbnail behind the video — keeps the card from going
+            dark on grids where the lazy-mounted <video> hasn't decoded yet. */}
+        {thumbUrl && (
+          <img src={thumbUrl} alt="" aria-hidden draggable={false}
+            className="absolute inset-0 h-full w-full object-cover"
+            style={{ zIndex: 0 }} />
+        )}
         {firstClipSrc && isVisible && (
           <video ref={videoRef} src={firstClipSrc} muted loop playsInline preload="metadata"
-            className="absolute inset-0 h-full w-full object-cover"
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ${hovered || !thumbUrl ? "opacity-100" : "opacity-0"}`}
             onLoadedMetadata={() => { if (videoRef.current) videoRef.current.currentTime = firstClipOffset; }} />
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80" />
 
-        {/* Delete button — visible on hover when onDelete is provided */}
-        {onDelete && (
-          <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
-            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#0a0a0a]/60 text-white/40 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/30 hover:text-red-400">
-            <Trash2 size={10} />
-          </button>
+        {/* Pin badge — fades out on hover to make room for action buttons. */}
+        {post?.featured && (
+          <div
+            className={`pointer-events-none absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-amber-500 shadow-[0_2px_10px_rgba(251,191,36,0.55)] transition-opacity duration-200 ${hovered ? "opacity-0" : "opacity-100"}`}
+            aria-label="Pinned to profile"
+          >
+            <Star size={12} className="fill-white text-white drop-shadow" />
+          </div>
         )}
+
+        {/* Hover actions: pin (if author) + delete. Stacked top-right so they
+            don't fight for the same pixel. */}
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          {onTogglePin && (
+            <button onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+              title={post?.featured ? "Unpin from profile" : "Pin to profile"}
+              className={`flex h-6 w-6 items-center justify-center rounded-full backdrop-blur-sm transition-colors ${
+                post?.featured
+                  ? "bg-amber-500/80 text-white hover:bg-amber-500"
+                  : "bg-[#0a0a0a]/60 text-white/45 hover:bg-amber-500/35 hover:text-amber-300"
+              }`}>
+              <Star size={10} className={post?.featured ? "fill-white" : ""} />
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0a0a0a]/60 text-white/45 backdrop-blur-sm transition-colors hover:bg-red-500/30 hover:text-red-400">
+              <Trash2 size={10} />
+            </button>
+          )}
+        </div>
 
         <div className={`absolute inset-x-0 bottom-0 p-3 transition-all duration-200 ${hovered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}>
           <p className="mb-1.5 truncate text-[11px] font-bold text-white">{title}</p>
@@ -184,42 +228,23 @@ function EditProfileModal({ onClose }: { onClose: () => void }) {
 type ViewMode = "grid" | "compact";
 type Tab = "published" | "drafts" | "liked";
 
-// ── Helpers for Compact Row metadata ─────────────────────────────────────────
 
-function fmtDurationMicros(micros: number): string {
-  const secs = Math.floor(micros / 1_000_000);
-  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-}
-
-/** Derive remix count for a post by scanning the feed for posts whose remixedFromPostId matches. */
-function useRemixCount(postId: string, allPosts: FeedPost[]): number {
-  return useMemo(
-    () => allPosts.filter((p) => p.remixedFromPostId === postId).length,
-    [postId, allPosts]
-  );
-}
-
-// ── Compact Preview Row (56px, 16:9 static thumbnail + metadata) ─────────────
-function PostCompactRow({ item, allPosts, onOpen, onDelete, isMultiSelectMode = false, isSelected = false, onSelect }: {
+// ── Square tile (8-col visual wall — no metadata, hover plays the clip) ─────
+function PostSquareTile({ item, onOpen, isMultiSelectMode = false, isSelected = false, onSelect }: {
   item: { type: "feed" | "registry"; id: string; title: string; accent: string; bg: string; date: number; post: FeedPost | null };
-  allPosts: FeedPost[];
   onOpen: () => void;
-  onDelete?: () => void;
   isMultiSelectMode?: boolean;
   isSelected?: boolean;
   onSelect?: (id: string) => void;
 }) {
-  const thumbRef = useRef<HTMLDivElement>(null);
+  const tileRef = useRef<HTMLButtonElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
-  const snap = item.post?.projectSnapshot;
-  const trackCount = snap?.tracks.length ?? 0;
-  const durationMicros = snap?.duration ?? 0;
-  const remixCount = useRemixCount(item.id, allPosts);
+  const [hovered, setHovered] = useState(false);
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
 
-  // Thumbnail source from snapshot — same logic as PostCard
-  const thumbSrc = useMemo(() => {
+  const snap = item.post?.projectSnapshot;
+  const firstClipSrc = useMemo(() => {
     if (!snap) return item.post?.videoUrl;
     const pool = snap.mediaPool ?? [];
     const first = snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips)
@@ -227,94 +252,80 @@ function PostCompactRow({ item, allPosts, onOpen, onDelete, isMultiSelectMode = 
     return first ? (pool.find((m) => m.id === first.sourceId)?.previewUrl ?? item.post?.videoUrl) : item.post?.videoUrl;
   }, [snap, item.post?.videoUrl]);
 
-  const thumbOffset = useMemo(() => {
+  const firstClipOffset = useMemo(() => {
     if (!snap) return 0.001;
     const first = snap.tracks.filter((t) => t.type === "video").flatMap((t) => t.clips)
       .sort((a, b) => a.startTime - b.startTime)[0];
     return first ? Math.max(0.001, (first.mediaOffset ?? 0) / 1_000_000) : 0.001;
   }, [snap]);
 
-  // IntersectionObserver — lazy-mount video
   useEffect(() => {
-    const el = thumbRef.current;
+    const el = tileRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting) { setIsVisible(true); observer.disconnect(); } },
-      { rootMargin: "100px" }
+      { rootMargin: "200px" },
     );
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!item.post?.id) { setThumbUrl(null); return; }
+    let cancelled = false;
+    loadThumbnailUrl(item.post.id).then((u) => { if (!cancelled) setThumbUrl(u ?? null); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [item.post?.id]);
+
+  const isPinned = !!item.post?.featured;
+
   return (
-    <div
-      onClick={isMultiSelectMode ? () => onSelect?.(item.id) : undefined}
-      className={`group flex items-center gap-3 rounded-lg border px-2 py-1.5 transition-colors ${
-        isSelected
-          ? "border-red-500/30 bg-red-500/8"
-          : "border-white/6 bg-white/[0.02] hover:border-white/14 hover:bg-white/[0.04]"
-      } ${isMultiSelectMode ? "cursor-pointer" : ""}`}
+    <button
+      ref={tileRef}
+      onClick={isMultiSelectMode ? () => onSelect?.(item.id) : onOpen}
+      onMouseEnter={() => {
+        setHovered(true);
+        const v = videoRef.current;
+        if (v && firstClipSrc) { v.currentTime = firstClipOffset; v.play().catch(() => {}); }
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+        const v = videoRef.current;
+        if (v) { v.pause(); v.currentTime = firstClipOffset; }
+      }}
+      className={`group relative aspect-square w-full overflow-hidden rounded-md ring-1 ring-inset transition-all ${
+        isSelected ? "ring-red-400/70" : "ring-white/[0.04] hover:ring-white/15"
+      }`}
+      style={{ background: item.bg }}
+      title={item.title}
     >
-      {isMultiSelectMode && (
-        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-          isSelected ? "border-red-400 bg-red-500/30" : "border-white/20 bg-transparent"
-        }`}>
-          {isSelected && <Check size={9} className="text-red-300" />}
+      {thumbUrl && (
+        <img src={thumbUrl} alt="" aria-hidden draggable={false}
+          className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      {firstClipSrc && isVisible && (
+        <video ref={videoRef} src={firstClipSrc} muted loop playsInline preload="metadata"
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ${hovered || !thumbUrl ? "opacity-100" : "opacity-0"}`}
+          onLoadedMetadata={() => { if (videoRef.current) videoRef.current.currentTime = firstClipOffset; }} />
+      )}
+      {!firstClipSrc && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="h-2 w-2 rounded-sm" style={{ background: item.accent, opacity: 0.4 }} />
         </div>
       )}
-      {/* 16:9 thumbnail — 99×56px, static frame, no autoplay */}
-      <div ref={thumbRef} className="relative h-[56px] w-[99px] shrink-0 overflow-hidden rounded-md" style={{ background: item.bg }}>
-        {thumbSrc && isVisible && (
-          <video ref={videoRef} src={thumbSrc} muted playsInline preload="metadata"
-            className="absolute inset-0 h-full w-full object-cover"
-            onLoadedMetadata={() => { if (videoRef.current) videoRef.current.currentTime = thumbOffset; }} />
-        )}
-        {!thumbSrc && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-3 w-3 rounded-sm" style={{ background: item.accent, opacity: 0.3 }} />
-          </div>
-        )}
-      </div>
-
-      {/* Title + meta */}
-      <button onClick={onOpen} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-        <span className="truncate text-[11px] font-bold text-white/85">{item.title}</span>
-        <div className="flex items-center gap-3 text-[9px] text-white/35">
-          {trackCount > 0 && (
-            <span className="flex items-center gap-1"><Layers size={8} />{trackCount} tracks</span>
-          )}
-          {durationMicros > 0 && (
-            <span className="flex items-center gap-1"><Clock size={8} />{fmtDurationMicros(durationMicros)}</span>
-          )}
-          {remixCount > 0 && (
-            <span className="flex items-center gap-1"><GitBranch size={8} />{remixCount} remix{remixCount !== 1 ? "es" : ""}</span>
-          )}
-          {item.date > 0 && (
-            <span>{new Date(item.date).toLocaleDateString()}</span>
-          )}
+      {isPinned && (
+        <div className="pointer-events-none absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-amber-500 shadow-[0_1px_4px_rgba(251,191,36,0.55)]">
+          <Star size={8} className="fill-white text-white" />
         </div>
-      </button>
-
-      {/* Actions */}
-      <div className="flex shrink-0 items-center gap-1.5">
-        <button onClick={onOpen}
-          className="flex items-center gap-1 rounded-md bg-white/6 px-2 py-1 text-[9px] font-semibold text-white/50 opacity-0 transition-all group-hover:opacity-100 hover:bg-white/12 hover:text-white/75">
-          <Zap size={8} />Open
-        </button>
-        {onDelete && !confirmDelete && (
-          <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
-            className="flex h-6 w-6 items-center justify-center rounded-md text-white/25 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/15 hover:text-red-400">
-            <Trash2 size={9} />
-          </button>
-        )}
-        {confirmDelete && (
-          <div className="flex items-center gap-1">
-            <button onClick={() => setConfirmDelete(false)} className="rounded px-1.5 py-0.5 text-[9px] text-white/40 hover:bg-white/8">No</button>
-            <button onClick={() => onDelete?.()} className="rounded bg-red-500/20 px-1.5 py-0.5 text-[9px] font-bold text-red-400 hover:bg-red-500/30">Delete</button>
-          </div>
-        )}
-      </div>
-    </div>
+      )}
+      {isMultiSelectMode && (
+        <div className={`absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded border transition-colors ${
+          isSelected ? "border-red-400 bg-red-500/40" : "border-white/40 bg-black/30"
+        }`}>
+          {isSelected && <Check size={9} className="text-red-100" />}
+        </div>
+      )}
+    </button>
   );
 }
 
@@ -446,6 +457,7 @@ export default function ProfilePage() {
   const allUserPosts     = useFeedStore((s) => s.userPosts);
   const removePost   = useFeedStore((s) => s.removePost);
   const removePosts  = useFeedStore((s) => s.removePosts);
+  const togglePin    = useFeedStore((s) => s.togglePin);
   const registryProjects = useProjectsRegistry((s) => s.projects);
 
   const [tab, setTab]                  = useState<Tab>("published");
@@ -484,6 +496,11 @@ export default function ProfilePage() {
   // ── useMemo MUST come before any conditional return (Rules of Hooks) ────────
   // Public published posts — strictly status === "published" (or legacy posts with no status field).
   // NEVER mix in registry "Project Folders" / drafts here — those are private to the owner.
+  //
+  // Sort order: pinned posts first (by `pinnedAt` DESC — newest pin wins the
+  // top slot), then everything else by `createdAt` DESC. Legacy `featured`
+  // posts without a `pinnedAt` field fall in the pinned bucket but sort below
+  // posts that have a real timestamp.
   const publishedPosts = useMemo(() => {
     return allUserPosts
       .filter((p) => p.authorUsername === currentUser.username || (isOwnProfile && !p.authorUsername))
@@ -491,8 +508,20 @@ export default function ProfilePage() {
         const s = (p as unknown as { status?: string }).status;
         return s === undefined || s === "published";
       })
-      .map((p) => ({ type: "feed" as const, id: p.id, title: p.title, accent: p.accent, bg: p.bg, date: p.createdAt ?? 0, post: p }))
-      .sort((a, b) => b.date - a.date);
+      .map((p) => ({
+        type: "feed" as const,
+        id: p.id,
+        title: p.title,
+        accent: p.accent,
+        bg: p.bg,
+        date: p.createdAt ?? 0,
+        pinnedAt: p.pinnedAt ?? (p.featured ? 1 : 0),
+        post: p,
+      }))
+      .sort((a, b) => {
+        if (a.pinnedAt !== b.pinnedAt) return b.pinnedAt - a.pinnedAt;
+        return b.date - a.date;
+      });
   }, [allUserPosts, currentUser.username, isOwnProfile]);
 
   // Owner-only: Project Folders / drafts from the local registry. Never exposed to visitors.
@@ -643,12 +672,8 @@ export default function ProfilePage() {
           <ArrowLeft size={11} />Back
         </button>
         <span className="text-[11px] text-white/35">@{username}</span>
-        {isOwnProfile && offlinePosts.length > 0 && (
-          <button onClick={cleanupOffline}
-            className="ml-auto flex items-center gap-1.5 rounded-lg bg-orange-500/15 px-2.5 py-1.5 text-[11px] font-semibold text-orange-300/80 transition-colors hover:bg-orange-500/25 hover:text-orange-200">
-            <WifiOff size={10} />Clean Up Offline ({offlinePosts.length})
-          </button>
-        )}
+        {/* Cleanup developer button removed — hydrateAllPosts now repairs
+            offline blob URLs automatically on every boot. */}
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -859,7 +884,7 @@ export default function ProfilePage() {
                 </div>
               )}
               {isOwnProfile && publishedPosts.length > 0 && viewMode === "grid" && (
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                   {publishedPosts.map((item, i) => (
                     <PostCard key={item.id} title={item.title} accentColor={item.accent} bgColor={item.bg} index={i}
                       videoUrl={item.post?.videoUrl}
@@ -868,16 +893,18 @@ export default function ProfilePage() {
                       createdAt={item.date}
                       onOpen={() => handleOpenPost(item)}
                       onDelete={item.type === "feed" ? () => removePost(item.id) : undefined}
+                      onTogglePin={item.type === "feed" ? () => togglePin(item.id) : undefined}
                     />
                   ))}
                 </div>
               )}
-              {isOwnProfile && unifiedPosts.length > 0 && viewMode === "compact" && (
-                <div className="flex flex-col gap-1.5">
-                  {unifiedPosts.map((item) => (
-                    <PostCompactRow key={item.id} item={item} allPosts={allUserPosts}
+              {isOwnProfile && publishedPosts.length > 0 && viewMode === "compact" && (
+                <div className="grid grid-cols-4 gap-1 sm:grid-cols-6 md:grid-cols-8">
+                  {publishedPosts.map((item) => (
+                    <PostSquareTile
+                      key={item.id}
+                      item={item}
                       onOpen={() => handleOpenPost(item)}
-                      onDelete={item.type === "feed" ? () => removePost(item.id) : undefined}
                       isMultiSelectMode={isMultiSelect}
                       isSelected={selectedIds.has(item.id)}
                       onSelect={toggleSelect}
@@ -886,7 +913,7 @@ export default function ProfilePage() {
                 </div>
               )}
               {!isOwnProfile && (
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                   {Array.from({ length: Math.min(mockCount, 10) }).map((_, i) => (
                     <PostCard key={i} title={`Edit #${i + 1}`} accentColor={accent} bgColor={bannerBg} index={i} onOpen={() => router.push("/")} />
                   ))}
@@ -902,7 +929,7 @@ export default function ProfilePage() {
                 <p className="mt-1 text-[11px] text-white/20">Saved project folders will appear here — only you can see them.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                 {draftProjects.map((item, i) => (
                   <PostCard key={item.id} title={item.title} accentColor={item.accent} bgColor={item.bg} index={i}
                     post={item.post}

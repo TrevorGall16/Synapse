@@ -5,6 +5,9 @@ import { X, FolderOpen, Download, CheckCircle, AlertTriangle } from "lucide-reac
 import { usePlaybackStore } from "@/lib/store/playback-store";
 import { useProjectStore } from "@/lib/store/project-store";
 import { PROJECT_PRESETS } from "@/lib/store/types";
+import { audioEngine } from "@/lib/audio/audio-engine";
+import { exportProject, MAX_CLIP_DURATION_MICROS } from "@/lib/engine/export-pipeline";
+import { buildTextStyle } from "@/lib/utils/preview-helpers";
 
 type ExportTab = "general" | "video" | "audio";
 type Format = "MP4" | "WebM";
@@ -31,19 +34,72 @@ function triggerDownload(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Pick the best supported mimeType for MediaRecorder. */
-function getSupportedMimeType(): string {
-  const candidates = [
-    "video/webm;codecs=vp9,opus",
-    "video/webm;codecs=vp8,opus",
-    "video/webm;codecs=vp9",
-    "video/webm;codecs=vp8",
-    "video/webm",
-  ];
-  for (const m of candidates) {
-    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m)) return m;
+/**
+ * Composite every visible preview video element + active text overlays into a flat
+ * 2D canvas at project resolution. Called per rAF tick while the export is
+ * recording, so the canvas's MediaStream tracks all layers — not just the
+ * topmost <video> as the prior captureStream(videoEl) path did.
+ *
+ * Effect filters are inherited via `video.style.filter` (already maintained by
+ * the preview-monitor FX loop). Text overlays are drawn via Canvas 2D using the
+ * same `buildTextStyle` helper the preview pipeline uses, so the exported
+ * frame matches what the user sees.
+ */
+function compositePreviewIntoCanvas(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D): void {
+  const previewContainer = document.querySelector<HTMLElement>("[data-preview-container]");
+  if (!previewContainer) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Layer 1: video frames in DOM z-order. drawImage() is decoder-cheap and
+  // honors the per-clip `filter`/`transform` strings the FX loop already wrote.
+  const videos = previewContainer.querySelectorAll<HTMLVideoElement>("video");
+  for (const video of videos) {
+    if (video.readyState < 2 || video.videoWidth === 0) continue;
+    const dataOpacity = parseFloat(video.dataset.clipOpacity ?? "1");
+    if (!Number.isFinite(dataOpacity) || dataOpacity < 0.001) continue;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, dataOpacity);
+    ctx.filter = video.style.filter || "none";
+    try {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    } catch {
+      // Tainted canvas (e.g. cross-origin video) — skip this layer instead of
+      // poisoning the whole frame. The MediaStream will still flush.
+    }
+    ctx.restore();
   }
-  return "video/webm";
+
+  // Layer 2: active text overlays. Reading store state here keeps export
+  // deterministic against the live timeline without DOM scraping.
+  const projectState = useProjectStore.getState();
+  const playhead = usePlaybackStore.getState().playheadPosition;
+  const textClips: { startTime: number; duration: number; fxParams?: unknown }[] = [];
+  for (const t of projectState.tracks) {
+    if (t.type === "text") {
+      for (const c of t.clips) textClips.push(c);
+    }
+    if (t.type === "video") {
+      for (const vc of t.clips) {
+        for (const tc of vc.embeddedTextClips ?? []) textClips.push(tc);
+      }
+    }
+  }
+  for (const tc of textClips) {
+    if (playhead < tc.startTime || playhead >= tc.startTime + tc.duration) continue;
+    const styled = buildTextStyle(tc as Parameters<typeof buildTextStyle>[0], playhead);
+    if (!styled) continue;
+    const fontSize = Math.round(canvas.height * 0.06);
+    ctx.save();
+    ctx.font = `bold ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.fillStyle = (styled.style.color as string) ?? "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.6)";
+    ctx.shadowBlur = 6;
+    ctx.fillText(styled.displayText, canvas.width / 2, canvas.height / 2);
+    ctx.restore();
+  }
 }
 
 export function ExportModal({ onClose }: ExportModalProps) {
@@ -64,13 +120,14 @@ export function ExportModal({ onClose }: ExportModalProps) {
   const [lastBlob, setLastBlob] = useState<Blob | null>(null);
   const [lastExt, setLastExt] = useState("webm");
 
-  // MediaRecorder state
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  // Export pipeline state
   const unsubRef = useRef<(() => void) | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const compositorRafRef = useRef<number | null>(null);
+  const compositeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cancelExportRef = useRef<(() => void) | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
-  // Fallback interval for stub path
+  // Fallback interval for stub path (no preview content available)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const duration = useProjectStore((s) => s.duration);
@@ -87,10 +144,15 @@ export function ExportModal({ onClose }: ExportModalProps) {
   // Cleanup on unmount
   useEffect(() => () => {
     clearInterval(intervalRef.current ?? undefined);
-    if (recorderRef.current && recorderRef.current.state !== "inactive") {
-      recorderRef.current.stop();
-    }
+    if (compositorRafRef.current !== null) cancelAnimationFrame(compositorRafRef.current);
+    cancelExportRef.current?.();
     if (unsubRef.current) unsubRef.current();
+    // Detach the offscreen export canvas so we don't leak DOM nodes if the
+    // modal is opened/closed repeatedly.
+    if (compositeCanvasRef.current?.parentNode) {
+      compositeCanvasRef.current.parentNode.removeChild(compositeCanvasRef.current);
+    }
+    compositeCanvasRef.current = null;
   }, []);
 
   const applyPreset = (key: keyof typeof VIDEO_PRESETS) => {
@@ -102,7 +164,12 @@ export function ExportModal({ onClose }: ExportModalProps) {
   const stopEverything = () => {
     clearInterval(intervalRef.current ?? undefined);
     clearTimeout(watchdogRef.current ?? undefined);
-    if (recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
+    if (compositorRafRef.current !== null) {
+      cancelAnimationFrame(compositorRafRef.current);
+      compositorRafRef.current = null;
+    }
+    cancelExportRef.current?.();
+    cancelExportRef.current = null;
     if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
     const pb = usePlaybackStore.getState();
     if (pb.isPlaying) pb.togglePlayback();
@@ -117,13 +184,23 @@ export function ExportModal({ onClose }: ExportModalProps) {
     const endMicros = renderRange === "selection" && hasSelection
       ? Math.max(selectionStart!, selectionEnd!)
       : duration;
+    const exportMicros = endMicros - startMicros;
 
-    // Find the topmost preview video element via the container marker set in preview-monitor
-    const videoEl = document.querySelector<HTMLVideoElement>("[data-preview-container] video");
-    const canCapture = !!videoEl && "captureStream" in videoEl && typeof MediaRecorder !== "undefined";
+    // Honor the .SYNAPSE 90s clip ceiling at the UI boundary so the user gets
+    // a clear message instead of an engine throw.
+    if (exportMicros > MAX_CLIP_DURATION_MICROS) {
+      setRenderError(
+        `Selection is ${(exportMicros / 1_000_000).toFixed(1)}s. The .SYNAPSE clip limit is 90 seconds — trim the selection or use Ruler Selection to mark a shorter range.`,
+      );
+      return;
+    }
 
-    if (!canCapture) {
-      // ── Stub fallback: no live video in preview ────────────────────────
+    const previewContainer = document.querySelector<HTMLElement>("[data-preview-container]");
+    const hasPreview = !!previewContainer && previewContainer.querySelector("video") !== null;
+    const audioCtx = audioEngine.getContext();
+
+    if (!hasPreview || !audioCtx || typeof MediaRecorder === "undefined") {
+      // ── Stub fallback: no live preview pipeline available ────────────────
       setIsRendering(true); setCurrentSec(0);
       intervalRef.current = setInterval(() => {
         setCurrentSec((prev) => {
@@ -144,61 +221,118 @@ export function ExportModal({ onClose }: ExportModalProps) {
       return;
     }
 
-    // ── Real MediaRecorder path ────────────────────────────────────────
-    const mimeType = getSupportedMimeType();
-    const ext = "webm"; // MediaRecorder produces WebM; note in UI
-    chunksRef.current = [];
-
-    let stream: MediaStream;
-    try {
-      stream = (videoEl as HTMLVideoElement & { captureStream(fps?: number): MediaStream }).captureStream(exportFps);
-    } catch (err) {
-      console.error("[Export] captureStream failed:", err);
-      setRenderError("Could not capture the preview stream. Play the video in the Preview Monitor first, then try again.");
+    // ── Flattened-canvas export via WebCodecs/MediaRecorder engine ──────
+    // The composite canvas mirrors the entire preview composition (videos,
+    // text, FX) so all layers land in the encoded file. The previous path
+    // captured a single <video> element and silently dropped everything else.
+    const projW = useProjectStore.getState().projectSettings.width;
+    const projH = useProjectStore.getState().projectSettings.height;
+    let canvas = compositeCanvasRef.current;
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      // The canvas must be in the DOM (even hidden) for some browsers to
+      // emit a usable MediaStream; an unattached canvas can yield 0-byte
+      // recordings if the first captureStream() fires before any draw.
+      canvas.style.position = "fixed";
+      canvas.style.left = "-99999px";
+      canvas.style.top = "0";
+      canvas.style.pointerEvents = "none";
+      canvas.setAttribute("aria-hidden", "true");
+      document.body.appendChild(canvas);
+      compositeCanvasRef.current = canvas;
+    }
+    canvas.width = projW || exportWidth;
+    canvas.height = projH || exportHeight;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) {
+      setRenderError("Browser refused to allocate the export canvas. Reload and retry.");
       return;
     }
 
-    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
-    recorderRef.current = recorder;
+    // Draw one initial frame BEFORE captureStream() is invoked inside
+    // exportProject — without this, the recorder can flush 0 bytes when the
+    // duration is short or the first rAF tick is delayed by paint pressure.
+    compositePreviewIntoCanvas(canvas, ctx);
 
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    recorder.onerror = (e) => {
-      console.error("[Export] MediaRecorder error:", e);
-      stopEverything();
-      setIsRendering(false);
-      setRenderError("Recording error — the browser could not encode this stream. Try a shorter clip or a different browser.");
+    // Compositor — runs every rAF tick while the export is recording.
+    const tick = () => {
+      compositePreviewIntoCanvas(canvas!, ctx);
+      compositorRafRef.current = requestAnimationFrame(tick);
     };
-    recorder.onstop = () => {
-      clearTimeout(watchdogRef.current ?? undefined);
-      const blob = new Blob(chunksRef.current, { type: mimeType });
-      setLastBlob(blob); setLastExt(ext);
-      triggerDownload(blob, `${fileName}.${ext}`);
-      const frameTolerance = Math.round(1_000_000 / exportFps);
-      console.info(`[SynapseExport] SUMMARY fps=${exportFps} frames=${Math.round(totalSecs * exportFps)} maxDrift=0µs tolerance=${frameTolerance}µs status=PASS`);
-      setIsRendering(false); setIsDone(true);
-      recorderRef.current = null;
-    };
+    compositorRafRef.current = requestAnimationFrame(tick);
 
-    // Seek to start, kick off playback
+    setIsRendering(true); setCurrentSec(0); setRenderError(null);
+
+    // Drive playback so the compositor has live frames to flatten.
     const pb = usePlaybackStore.getState();
     pb.setPlayhead(startMicros);
     if (!pb.isPlaying) pb.togglePlayback();
 
+    // Watchdog — engine timeout = 2× duration + 15s headroom for encoder flush.
     watchdogRef.current = setTimeout(() => {
       stopEverything();
       setIsRendering(false);
-      setRenderError("Export timed out. This can happen with very long projects — try exporting a Ruler Selection instead.");
+      setRenderError("Export timed out. Try a shorter Ruler Selection or reduce the frame rate.");
     }, (totalSecs * 2 + 15) * 1000);
-    setIsRendering(true); setCurrentSec(0); setRenderError(null);
-    recorder.start(250); // collect chunks every 250 ms
 
-    // Subscribe to the playback store to track progress and detect end-of-range
+    let cancelled = false;
+    cancelExportRef.current = () => { cancelled = true; };
+
+    void exportProject(
+      canvas,
+      audioCtx,
+      {
+        width: canvas.width,
+        height: canvas.height,
+        fps: (exportFps as 24 | 30 | 60),
+        videoBitrate: 8_000_000,
+        audioBitrate: includeAudio ? 192_000 : 64_000,
+        durationMicros: exportMicros,
+        realtime: true,
+        // Format choice flows from the General tab through to the encoder.
+        // The engine picks the actual mime/extension (mp4 → avc1 when supported,
+        // otherwise webm) and surfaces the truth back via the result.encoding.
+        format: format === "MP4" ? "mp4" : "webm",
+      },
+      {
+        onProgress: (p) => {
+          setCurrentSec(Math.round(p * totalSecs));
+        },
+      },
+    ).then((result) => {
+      if (cancelled) return;
+      clearTimeout(watchdogRef.current ?? undefined);
+      if (compositorRafRef.current !== null) {
+        cancelAnimationFrame(compositorRafRef.current);
+        compositorRafRef.current = null;
+      }
+      if (pb.isPlaying) pb.togglePlayback();
+      const ext = result.encoding.extension;
+      // 0-byte safety net — better to surface the failure than auto-download a
+      // corrupted shell.
+      if (result.blob.size === 0) {
+        setIsRendering(false);
+        setRenderError("Export produced an empty file (0 KB). Try playing the project once in the Preview Monitor before exporting.");
+        return;
+      }
+      setLastBlob(result.blob); setLastExt(ext);
+      triggerDownload(result.blob, `${fileName}.${ext}`);
+      setIsRendering(false); setIsDone(true);
+    }).catch((err: unknown) => {
+      if (cancelled) return;
+      const message = err instanceof Error ? err.message : "Export failed.";
+      console.error("[Export] exportProject failed:", err);
+      stopEverything();
+      setIsRendering(false);
+      setRenderError(message);
+    });
+
+    // Stop playback when end-of-range is reached so the watchdog isn't the only safety net.
     const unsub = usePlaybackStore.subscribe((state) => {
       const pos = state.playheadPosition;
       setCurrentSec(Math.round(Math.max(0, pos - startMicros) / 1_000_000));
       if (pos >= endMicros) {
         if (state.isPlaying) usePlaybackStore.getState().togglePlayback();
-        if (recorder.state === "recording") recorder.stop();
         if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
       }
     });
@@ -253,7 +387,7 @@ export function ExportModal({ onClose }: ExportModalProps) {
                 <div className="flex items-center gap-1">
                   <input value={fileName} onChange={(e) => setFileName(e.target.value)}
                     className="flex-1 rounded bg-white/10 px-2 py-1 text-xs text-white outline-none focus:ring-1 focus:ring-white/30" />
-                  <span className="text-[10px] text-white/30">.webm</span>
+                  <span className="text-[10px] text-white/30">.{format === "MP4" ? "mp4" : "webm"}</span>
                 </div>
               </Field>
               <Field label="Format">
@@ -265,7 +399,11 @@ export function ExportModal({ onClose }: ExportModalProps) {
                     </button>
                   ))}
                 </div>
-                <p className="mt-0.5 text-[9px] text-white/25">Browser MediaRecorder outputs WebM regardless of format selection.</p>
+                <p className="mt-0.5 text-[9px] text-white/25">
+                  {format === "MP4"
+                    ? "Encodes H.264/AAC via the browser's MediaRecorder (Chrome 130+, Safari 14.1+). Export will fail loudly if MP4 is unavailable — no silent WebM fallback."
+                    : "Universal browser support. Use this if MP4 isn't available."}
+                </p>
               </Field>
               <Field label="Render Range">
                 <div className="flex gap-1">

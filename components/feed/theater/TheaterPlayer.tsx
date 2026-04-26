@@ -86,6 +86,15 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
   const isScrubbingRef    = useRef(false);
   const wasPlayingBeforeScrubRef = useRef(false);
   const idleTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Seek-to-Zero guard — closes the gap between pointerup and the underlying
+   * `seeked` event. The tick fires every rAF; without this guard it reads
+   * v.currentTime *during* the seek (which can briefly be 0 in some browsers),
+   * latches that into phRef, and the playhead snaps back to 0:00 even though
+   * the user clicked elsewhere on the playbar. Cleared on `seeked` or after a
+   * fallback timeout in case the event never arrives (codec error, etc).
+   */
+  const seekLockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [progress, setProgress]               = useState(0);
   const [isPlaying, setIsPlaying]             = useState(false);
@@ -119,6 +128,7 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
       // Unregister GlobalTicker callbacks on unmount to prevent stale tick access
       if (tickIdRef.current !== null)     { unregisterTickCallback(tickIdRef.current);     tickIdRef.current     = null; }
       if (animTickIdRef.current !== null) { unregisterTickCallback(animTickIdRef.current); animTickIdRef.current = null; }
+      if (seekLockTimeoutRef.current)     { clearTimeout(seekLockTimeoutRef.current);      seekLockTimeoutRef.current = null; }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -508,34 +518,56 @@ export function TheaterCell({ post, cellRef, onRemix, onCreator, onHashtagClick,
     seekFromPointer(e.clientX, e.currentTarget, false);
   }, [seekFromPointer]);
 
+  /**
+   * Hold the scrub lock open until the underlying <video> reports it has
+   * finished seeking. Without this the tick fires once between pointerup and
+   * the browser's internal seek completion, reads a transient v.currentTime of
+   * ~0, and we slam the playhead to 0:00. A 250ms fallback timer also clears
+   * the lock so a missed `seeked` event (codec failure, src cleared) doesn't
+   * leave the player frozen.
+   */
+  const finalizeScrub = useCallback(() => {
+    const v = videoRef.current;
+    if (seekLockTimeoutRef.current) { clearTimeout(seekLockTimeoutRef.current); seekLockTimeoutRef.current = null; }
+    const release = () => {
+      isScrubbingRef.current = false;
+      if (seekLockTimeoutRef.current) { clearTimeout(seekLockTimeoutRef.current); seekLockTimeoutRef.current = null; }
+      if (wasPlayingBeforeScrubRef.current) {
+        const vv = videoRef.current;
+        if (vv) vv.play().catch(() => {});
+        setIsPlaying(true);
+      }
+      wasPlayingBeforeScrubRef.current = false;
+    };
+    if (!v || !v.seeking) { release(); return; }
+    const onSeeked = () => {
+      v.removeEventListener("seeked", onSeeked);
+      release();
+    };
+    v.addEventListener("seeked", onSeeked);
+    seekLockTimeoutRef.current = setTimeout(() => {
+      v.removeEventListener("seeked", onSeeked);
+      release();
+    }, 250);
+  }, []);
+
   const onSeekPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     // One authoritative commit at pointer-up — latches correct src + currentTime
     // before playback resumes, without the mid-drag src reloads that cause stalls.
     if (isScrubbingRef.current) seekFromPointer(e.clientX, e.currentTarget, true);
-    isScrubbingRef.current = false;
     e.currentTarget.releasePointerCapture(e.pointerId);
-    // Resume playback only if it was playing before the scrub began
-    if (wasPlayingBeforeScrubRef.current) {
-      const v = videoRef.current;
-      if (v) v.play().catch(() => {});
-      setIsPlaying(true);
-    }
-    wasPlayingBeforeScrubRef.current = false;
-  }, [seekFromPointer]);
+    // isScrubbingRef stays TRUE here on purpose — finalizeScrub releases it
+    // once the <video> finishes the seek (or after a 250ms safety timeout).
+    finalizeScrub();
+  }, [seekFromPointer, finalizeScrub]);
 
   const onSeekPointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     // Cancel still needs an authoritative sync at the last known pointer position
     // so the player doesn't resume against a half-seeked frame.
     if (isScrubbingRef.current) seekFromPointer(e.clientX, e.currentTarget, true);
-    isScrubbingRef.current = false;
     e.currentTarget.releasePointerCapture(e.pointerId);
-    if (wasPlayingBeforeScrubRef.current) {
-      const v = videoRef.current;
-      if (v) v.play().catch(() => {});
-      setIsPlaying(true);
-    }
-    wasPlayingBeforeScrubRef.current = false;
-  }, [seekFromPointer]);
+    finalizeScrub();
+  }, [seekFromPointer, finalizeScrub]);
 
   // ── Boot: load first clip or simple videoUrl ───────────────────────────────
 

@@ -301,6 +301,7 @@ export const FeedPostSchema = z.object({
   likes:       z.number().nonnegative().int(),
   comments:    z.number().nonnegative().int(),
   featured:    z.boolean(),
+  pinnedAt:    z.number().nonnegative().optional(),
   videoUrl:    z.string().optional(),
   presetData:  PresetDataSchema.optional(),
   projectSnapshot:     ProjectSnapshotSchema.optional(),

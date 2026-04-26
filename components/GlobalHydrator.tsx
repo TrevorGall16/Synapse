@@ -120,7 +120,12 @@ export function GlobalHydrator() {
         const s = useProjectStore.getState();
         if (!s.projectId) return;
 
-        await Promise.all([
+        // Each save returns boolean — `idbSafeSet` already toasts on failure.
+        // We collect the booleans so a quota-exceeded write (or any IDB error)
+        // keeps `isDirty` true; the previous code unconditionally cleared dirty
+        // even when writes had silently rejected, which let the user keep
+        // editing under the false impression their work was being saved.
+        const results = await Promise.all([
           // Active project — mediaPool always included for GC symmetry (ref-counts must survive restart)
           saveProjectToIDB({
             projectId: s.projectId, name: s.name, tracks: s.tracks, duration: s.duration,
@@ -145,13 +150,17 @@ export function GlobalHydrator() {
             })
           ),
         ]);
+        const allSaved = results.every(Boolean);
         // Sync projectStatus to the lightweight registry so /projects page
         // can filter without loading full IDB records.
         if (s.projectId) {
           const status = (s as unknown as { projectStatus?: "draft" | "published" }).projectStatus ?? "draft";
           useProjectsRegistry.getState().updateProject(s.projectId, { projectStatus: status });
         }
-        setDirty(false);
+        // Only clear dirty when every IDB write succeeded — otherwise the user
+        // still has unsaved work and the save-barrier nav guard must hold.
+        if (allSaved) setDirty(false);
+        else console.error("[GlobalHydrator] doSave: one or more IDB writes failed; leaving project dirty");
       } finally {
         useSaveBarrierStore.getState().setFlushing(false);
       }

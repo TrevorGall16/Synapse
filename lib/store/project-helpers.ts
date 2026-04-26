@@ -100,29 +100,42 @@ export function computeMove(
   // computeMove receives the already-snapped deltaTime — no double-snap here.
   const snappedDeltaTime = deltaTime;
 
+  // ── Track Leash anchor ────────────────────────────────────────────────────
+  // The DRAGGED clip's destination same-type index is the anchor every other
+  // grouped member (audio half of a video, etc.) must lock onto. Without this
+  // a video dragged from V1 to V3 (deltaTrack = 2) would only push the audio
+  // from A1 to A3 if A3 already exists; if A2 doesn't, the relative-offset
+  // math drifted, dropping audio onto the wrong row. The leash now resolves
+  // by matching positional index instead — so V3 always pairs with A3.
+  const draggedTargetType = state.tracks[target.trackIndex].type;
+  const draggedSameType = sameTypeIndices(tracks, draggedTargetType);
+  const draggedCurrentSameTypeIdx = draggedSameType.indexOf(target.trackIndex);
+  if (draggedCurrentSameTypeIdx === -1) return null;
+  const draggedTargetSameTypeIdx = draggedCurrentSameTypeIdx + deltaTrack;
+  if (draggedTargetSameTypeIdx < 0) return null;
+
   for (const member of groupMembers) {
     // Use exact integer microseconds — quantizeToFrame is intentionally bypassed here
     // because it can shift a hard-snapped position off the target edge by ≤16,666µs,
     // which creates a micro-overlap even after a "Perfect Cut" snap.
     const newStartTime = Math.max(0, Math.round(member.clip.startTime + snappedDeltaTime));
     const clipType = state.tracks[member.trackIndex].type;
-    const sameType = sameTypeIndices(tracks, clipType);
-    const currentSameTypeIdx = sameType.indexOf(member.trackIndex);
-    if (currentSameTypeIdx === -1) return null;
 
-    const targetSameTypeIdx = currentSameTypeIdx + deltaTrack;
+    // Members of the SAME type as the dragged clip use the absolute
+    // destination index. Members of a DIFFERENT type (the audio paired with a
+    // video drag) lock onto the SAME positional index as the video — that's
+    // the leash. If the matching audio row doesn't exist yet, synthesize it.
+    const targetSameTypeIdx = clipType === draggedTargetType
+      ? draggedTargetSameTypeIdx + (sameTypeIndices(tracks, clipType).indexOf(member.trackIndex) - draggedCurrentSameTypeIdx)
+      : draggedTargetSameTypeIdx;
+
     if (targetSameTypeIdx < 0) return null;
 
-    let toIdx: number;
-    if (targetSameTypeIdx < sameType.length) {
-      toIdx = sameType[targetSameTypeIdx];
-    } else {
-      while (sameTypeIndices(tracks, clipType).length <= targetSameTypeIdx) {
-        const count = tracks.filter((t) => t.type === clipType).length + 1;
-        tracks.push(createTrack(clipType, count));
-      }
-      toIdx = sameTypeIndices(tracks, clipType)[targetSameTypeIdx];
+    while (sameTypeIndices(tracks, clipType).length <= targetSameTypeIdx) {
+      const count = tracks.filter((t) => t.type === clipType).length + 1;
+      tracks.push(createTrack(clipType, count));
     }
+    const toIdx = sameTypeIndices(tracks, clipType)[targetSameTypeIdx];
 
     moves.push({ clipId: member.clip.id, fromIdx: member.trackIndex, toIdx, newStartTime });
     affectedTrackIndices.add(member.trackIndex);
