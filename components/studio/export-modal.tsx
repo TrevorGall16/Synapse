@@ -7,7 +7,8 @@ import { useProjectStore } from "@/lib/store/project-store";
 import { PROJECT_PRESETS } from "@/lib/store/types";
 import { audioEngine } from "@/lib/audio/audio-engine";
 import { exportProject, MAX_CLIP_DURATION_MICROS } from "@/lib/engine/export-pipeline";
-import { buildTextStyle } from "@/lib/utils/preview-helpers";
+import fixWebmDuration from "fix-webm-duration";
+import { fixMp4Duration } from "@/lib/utils/fix-mp4-duration";
 
 type ExportTab = "general" | "video" | "audio";
 type Format = "MP4" | "WebM";
@@ -35,15 +36,71 @@ function triggerDownload(blob: Blob, fileName: string) {
 }
 
 /**
- * Composite every visible preview video element + active text overlays into a flat
- * 2D canvas at project resolution. Called per rAF tick while the export is
- * recording, so the canvas's MediaStream tracks all layers — not just the
+ * Split a CSS shadow list on top-level commas. rgb()/rgba() colours contain
+ * commas internally, so a naive `.split(",")` corrupts them.
+ */
+function splitShadowList(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let buf = "";
+  for (const ch of s) {
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    if (ch === "," && depth === 0) { out.push(buf.trim()); buf = ""; }
+    else buf += ch;
+  }
+  if (buf.trim()) out.push(buf.trim());
+  return out;
+}
+
+interface ParsedShadow { color: string; offsetX: number; offsetY: number; blur: number }
+
+/**
+ * Parse every entry of a CSS computed `text-shadow` into discrete shadow records.
+ *
+ * Canvas's `ctx.shadow*` API only supports a SINGLE shadow per fill. The earlier
+ * implementation collapsed the list to its largest-blur entry, which is why
+ * glow + drop-shadow combinations rendered as just the glow (or just the drop
+ * shadow). We now return the full list so the caller can render one shadow per
+ * fillText pass and stack them visually — matching what the user sees in the
+ * preview. CSS paints shadows back-to-front (last in the list draws under),
+ * so we reverse the list to keep that order on canvas.
+ */
+function parseShadowList(textShadow: string): ParsedShadow[] {
+  if (!textShadow || textShadow === "none") return [];
+  const out: ParsedShadow[] = [];
+  for (const part of splitShadowList(textShadow)) {
+    const colorMatch = part.match(/rgba?\([^)]+\)|#[0-9a-fA-F]{3,8}/);
+    const numbers    = part.match(/-?\d+(?:\.\d+)?/g);
+    if (!numbers || numbers.length < 2) continue;
+    out.push({
+      offsetX: parseFloat(numbers[0]),
+      offsetY: parseFloat(numbers[1]),
+      blur:    numbers[2] != null ? parseFloat(numbers[2]) : 0,
+      color:   colorMatch?.[0] ?? "rgba(0,0,0,0.6)",
+    });
+  }
+  // CSS paints later shadows behind earlier ones; reverse so the first parsed
+  // shadow paints last (on top), preserving the layered look.
+  return out.reverse();
+}
+
+/**
+ * Composite every visible preview video element + active text overlays into a
+ * flat 2D canvas at project resolution. Called per rAF tick while the export
+ * is recording, so the canvas's MediaStream carries every layer — not just the
  * topmost <video> as the prior captureStream(videoEl) path did.
  *
- * Effect filters are inherited via `video.style.filter` (already maintained by
- * the preview-monitor FX loop). Text overlays are drawn via Canvas 2D using the
- * same `buildTextStyle` helper the preview pipeline uses, so the exported
- * frame matches what the user sees.
+ * Coordinate origin is the **preview stage** ([data-preview-stage]) — the
+ * aspect-locked rectangle the user sees inside the Monitor — NOT the outer
+ * preview container, which can be wider than the stage when the project is
+ * vertical (9:16) and letterboxed inside a horizontal pane. Using the outer
+ * container as origin caused the "vertical squish" bug where text drifted to
+ * the left edge and shrank because we divided by the wider container width.
+ *
+ * Each text span's centre is expressed as a percentage of the stage rect, then
+ * multiplied by canvas.width/height. Font size and shadow blur are scaled by
+ * the same vertical factor so visual proportions match exactly.
  */
 function compositePreviewIntoCanvas(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D): void {
   const previewContainer = document.querySelector<HTMLElement>("[data-preview-container]");
@@ -53,16 +110,30 @@ function compositePreviewIntoCanvas(canvas: HTMLCanvasElement, ctx: CanvasRender
 
   // Layer 1: video frames in DOM z-order. drawImage() is decoder-cheap and
   // honors the per-clip `filter`/`transform` strings the FX loop already wrote.
+  // Aspect-fill (object-fit: cover) math: scale the source by the larger of
+  // the two ratios so the canvas fills, then center-crop the overflow. The
+  // previous path passed `0,0,canvas.width,canvas.height` which stretched a
+  // 16:9 source horizontally squished onto a 9:16 canvas — the visible bug
+  // the user reported as "vertical squish".
   const videos = previewContainer.querySelectorAll<HTMLVideoElement>("video");
   for (const video of videos) {
     if (video.readyState < 2 || video.videoWidth === 0) continue;
     const dataOpacity = parseFloat(video.dataset.clipOpacity ?? "1");
     if (!Number.isFinite(dataOpacity) || dataOpacity < 0.001) continue;
+
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const scale = Math.max(canvas.width / vw, canvas.height / vh);
+    const dw = vw * scale;
+    const dh = vh * scale;
+    const dx = (canvas.width - dw) / 2;
+    const dy = (canvas.height - dh) / 2;
+
     ctx.save();
     ctx.globalAlpha = Math.min(1, dataOpacity);
     ctx.filter = video.style.filter || "none";
     try {
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, dx, dy, dw, dh);
     } catch {
       // Tainted canvas (e.g. cross-origin video) — skip this layer instead of
       // poisoning the whole frame. The MediaStream will still flush.
@@ -70,34 +141,82 @@ function compositePreviewIntoCanvas(canvas: HTMLCanvasElement, ctx: CanvasRender
     ctx.restore();
   }
 
-  // Layer 2: active text overlays. Reading store state here keeps export
-  // deterministic against the live timeline without DOM scraping.
-  const projectState = useProjectStore.getState();
-  const playhead = usePlaybackStore.getState().playheadPosition;
-  const textClips: { startTime: number; duration: number; fxParams?: unknown }[] = [];
-  for (const t of projectState.tracks) {
-    if (t.type === "text") {
-      for (const c of t.clips) textClips.push(c);
-    }
-    if (t.type === "video") {
-      for (const vc of t.clips) {
-        for (const tc of vc.embeddedTextClips ?? []) textClips.push(tc);
-      }
-    }
-  }
-  for (const tc of textClips) {
-    if (playhead < tc.startTime || playhead >= tc.startTime + tc.duration) continue;
-    const styled = buildTextStyle(tc as Parameters<typeof buildTextStyle>[0], playhead);
-    if (!styled) continue;
-    const fontSize = Math.round(canvas.height * 0.06);
+  // Layer 2: text overlays. Anchor coordinates to the aspect-locked stage so
+  // 9:16 / portrait projects don't squish to the left of a 16:9 preview pane.
+  const stage = previewContainer.querySelector<HTMLElement>("[data-preview-stage]") ?? previewContainer;
+  const stageRect = stage.getBoundingClientRect();
+  if (stageRect.width === 0 || stageRect.height === 0) return;
+  const sx = canvas.width  / stageRect.width;
+  const sy = canvas.height / stageRect.height;
+
+  const overlaySpans = previewContainer.querySelectorAll<HTMLElement>("[data-text-overlay-span]");
+  for (const span of overlaySpans) {
+    const text = span.textContent;
+    if (!text) continue;
+    const cs   = window.getComputedStyle(span);
+    const rect = span.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) continue;
+
+    // Span centre as a percentage of the stage, then mapped onto the canvas.
+    const pctX = (rect.left + rect.width  / 2 - stageRect.left) / stageRect.width;
+    const pctY = (rect.top  + rect.height / 2 - stageRect.top ) / stageRect.height;
+    const cx = pctX * canvas.width;
+    const cy = pctY * canvas.height;
+
+    const fontPx     = parseFloat(cs.fontSize) * sy;
+    const fontFamily = cs.fontFamily || "ui-sans-serif, system-ui, sans-serif";
+    const fontWeight = cs.fontWeight || "bold";
+
     ctx.save();
-    ctx.font = `bold ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.fillStyle = (styled.style.color as string) ?? "#ffffff";
-    ctx.textAlign = "center";
+    ctx.font         = `${fontWeight} ${fontPx}px ${fontFamily}`;
+    ctx.fillStyle    = cs.color || "#ffffff";
+    ctx.textAlign    = "center";
     ctx.textBaseline = "middle";
-    ctx.shadowColor = "rgba(0,0,0,0.6)";
-    ctx.shadowBlur = 6;
-    ctx.fillText(styled.displayText, canvas.width / 2, canvas.height / 2);
+
+    // CSS `filter` (e.g. blur(npx)) is independent of text-shadow and was
+    // missing from the export entirely — text-blur sliders did nothing in the
+    // recorded MP4/WebM. Canvas honors it via ctx.filter, so wire it through.
+    if (cs.filter && cs.filter !== "none") {
+      ctx.filter = cs.filter;
+    }
+
+    // Outline (-webkit-text-stroke). Canvas has no paint-order primitive, so
+    // stroke first (under the glow), matching CSS paint-order: stroke fill.
+    // Stroke is drawn before the shadow passes so it anchors the glow rings.
+    const strokeWidthPx = parseFloat(cs.webkitTextStrokeWidth || "0");
+    const strokeColor   = cs.webkitTextStrokeColor;
+    const hasStroke     = strokeWidthPx > 0 && strokeColor && strokeColor !== "rgba(0, 0, 0, 0)";
+    if (hasStroke) {
+      ctx.lineWidth   = strokeWidthPx * sy * 2; // CSS stroke is centred; doubling gives visual parity
+      ctx.strokeStyle = strokeColor;
+      ctx.lineJoin    = "round";
+      ctx.miterLimit  = 2;
+      ctx.strokeText(text, cx, cy);
+    }
+
+    // Multi-pass shadow rendering. Canvas's ctx.shadow* API only supports ONE
+    // shadow per draw call, so a stacked glow + drop-shadow combo (which the
+    // text inspector emits as up to 4 entries) needs one fillText pass per
+    // shadow. Each pass overlays the previous, recreating the layered CSS
+    // text-shadow look. Final un-shadowed pass below paints crisp glyphs over
+    // the rings so the text edge doesn't smear into the blur halo.
+    const shadows = parseShadowList(cs.textShadow);
+    for (const sh of shadows) {
+      ctx.save();
+      ctx.shadowColor   = sh.color;
+      ctx.shadowBlur    = sh.blur    * sy;
+      ctx.shadowOffsetX = sh.offsetX * sx;
+      ctx.shadowOffsetY = sh.offsetY * sy;
+      ctx.fillText(text, cx, cy);
+      ctx.restore();
+    }
+
+    // Crisp text on top — no shadow set, so glyphs render as solid.
+    ctx.shadowColor   = "transparent";
+    ctx.shadowBlur    = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.fillText(text, cx, cy);
     ctx.restore();
   }
 }
@@ -155,10 +274,22 @@ export function ExportModal({ onClose }: ExportModalProps) {
     compositeCanvasRef.current = null;
   }, []);
 
+  // Any change that affects the encoded output must drop the cached blob, or
+  // "Download Again" will hand back a stale file matching the previous settings.
+  const invalidateExportCache = () => {
+    setLastBlob(null);
+    setIsDone(false);
+  };
+
   const applyPreset = (key: keyof typeof VIDEO_PRESETS) => {
     setPreset(key);
     const p = VIDEO_PRESETS[key];
-    if (p) { setExportWidth(p.width); setExportHeight(p.height); setExportFps(p.fps); }
+    if (p) {
+      setExportWidth(p.width);
+      setExportHeight(p.height);
+      setExportFps(p.fps);
+    }
+    invalidateExportCache();
   };
 
   const stopEverything = () => {
@@ -299,7 +430,7 @@ export function ExportModal({ onClose }: ExportModalProps) {
           setCurrentSec(Math.round(p * totalSecs));
         },
       },
-    ).then((result) => {
+    ).then(async (result) => {
       if (cancelled) return;
       clearTimeout(watchdogRef.current ?? undefined);
       if (compositorRafRef.current !== null) {
@@ -308,15 +439,37 @@ export function ExportModal({ onClose }: ExportModalProps) {
       }
       if (pb.isPlaying) pb.togglePlayback();
       const ext = result.encoding.extension;
-      // 0-byte safety net — better to surface the failure than auto-download a
-      // corrupted shell.
       if (result.blob.size === 0) {
         setIsRendering(false);
         setRenderError("Export produced an empty file (0 KB). Try playing the project once in the Preview Monitor before exporting.");
         return;
       }
-      setLastBlob(result.blob); setLastExt(ext);
-      triggerDownload(result.blob, `${fileName}.${ext}`);
+      // MediaRecorder produces files with broken duration metadata in BOTH
+      // formats:
+      //   - WebM: missing Duration in the EBML Segment Info → fixed via
+      //     fix-webm-duration, which rewrites the section in-place.
+      //   - MP4 (Chrome 130+): mvhd / tkhd / mdhd duration fields are 0 →
+      //     fixed via our local fixMp4Duration patcher, which walks the box
+      //     tree and rewrites those fields with the known runtime. Without
+      //     this, VLC/Quicktime/WMP show a frozen 0:00 playbar even though
+      //     the audio/video is decodable.
+      let finalBlob = result.blob;
+      const durationMs = exportMicros / 1000;
+      if (ext === "webm") {
+        try {
+          finalBlob = await fixWebmDuration(result.blob, durationMs, { logger: false });
+        } catch (e) {
+          console.warn("[Export] WebM duration patch failed; downloading unpatched blob:", e);
+        }
+      } else if (ext === "mp4") {
+        try {
+          finalBlob = await fixMp4Duration(result.blob, durationMs);
+        } catch (e) {
+          console.warn("[Export] MP4 duration patch failed; downloading unpatched blob:", e);
+        }
+      }
+      setLastBlob(finalBlob); setLastExt(ext);
+      triggerDownload(finalBlob, `${fileName}.${ext}`);
       setIsRendering(false); setIsDone(true);
     }).catch((err: unknown) => {
       if (cancelled) return;
@@ -393,7 +546,7 @@ export function ExportModal({ onClose }: ExportModalProps) {
               <Field label="Format">
                 <div className="flex gap-1">
                   {(["MP4","WebM"] as Format[]).map((f) => (
-                    <button key={f} onClick={() => setFormat(f)}
+                    <button key={f} onClick={() => { setFormat(f); invalidateExportCache(); }}
                       className={`flex-1 rounded px-2 py-1 text-xs font-medium transition-colors ${format === f ? "bg-white/20 text-white" : "bg-white/5 text-white/50 hover:bg-white/10"}`}>
                       {f}
                     </button>
@@ -427,13 +580,13 @@ export function ExportModal({ onClose }: ExportModalProps) {
                 </select>
               </Field>
               <div className="flex gap-2">
-                <Field label="Width"><input type="number" value={exportWidth} onChange={(e) => { setExportWidth(+e.target.value); setPreset("Custom"); }}
+                <Field label="Width"><input type="number" value={exportWidth} onChange={(e) => { setExportWidth(+e.target.value); setPreset("Custom"); invalidateExportCache(); }}
                   className="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none" /></Field>
-                <Field label="Height"><input type="number" value={exportHeight} onChange={(e) => { setExportHeight(+e.target.value); setPreset("Custom"); }}
+                <Field label="Height"><input type="number" value={exportHeight} onChange={(e) => { setExportHeight(+e.target.value); setPreset("Custom"); invalidateExportCache(); }}
                   className="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none" /></Field>
               </div>
               <Field label="Frame Rate">
-                <select value={exportFps} onChange={(e) => setExportFps(+e.target.value)}
+                <select value={exportFps} onChange={(e) => { setExportFps(+e.target.value); invalidateExportCache(); }}
                   className="w-full rounded bg-white/10 px-2 py-1 text-xs text-white outline-none">
                   {[24, 30, 60].map((f) => <option key={f} value={f} className="text-black">{f} fps</option>)}
                 </select>

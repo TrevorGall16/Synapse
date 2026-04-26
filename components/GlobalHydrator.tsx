@@ -5,6 +5,7 @@ import { useProjectStore } from "@/lib/store/project-store";
 import { useFeedStore } from "@/lib/store/feed-store";
 import { useHydrationStore } from "@/lib/store/hydration-store";
 import { saveProjectToIDB, loadProjectFromIDB, saveHistoryToIDB, loadHistoryFromIDB } from "@/lib/store/project-idb";
+import { hydrateMediaPool } from "@/lib/store/media-pool-db";
 import { validateSerializedProject, validateHistoryData } from "@/lib/schema";
 import { registerFlush, deregisterFlush, flushProjectToIDB } from "@/lib/store/flush-registry";
 import { useSaveBarrierStore } from "@/lib/store/save-barrier-store";
@@ -48,10 +49,18 @@ export function GlobalHydrator() {
           ? validateSerializedProject(rawProjectData, `active project ${projectId}`)
           : null;
         if (projectData && projectData.tracks.length > 0) {
+          // F5 black-screen fix: blob: URLs created by URL.createObjectURL in
+          // the previous page session are revoked the moment that document
+          // unloads. The mediaPool we just loaded from IDB carries those dead
+          // URLs verbatim — leaving the timeline pointing at nothing and the
+          // monitor fully black. Re-issue fresh ObjectURLs from the raw bytes
+          // stored in IDB BEFORE we publish the pool to React, so the very
+          // first render after refresh has live blob handles.
+          const freshPool = await hydrateMediaPool(projectData.mediaPool ?? []);
           useProjectStore.setState({
             tracks: projectData.tracks,
             duration: projectData.duration,
-            mediaPool: projectData.mediaPool ?? [],
+            mediaPool: freshPool,
           });
         }
         const validatedHistory = historyData
@@ -76,6 +85,10 @@ export function GlobalHydrator() {
           ? validateHistoryData(historyData, `tab project history ${id}`)
           : null;
         if (projectData) {
+          // Re-issue fresh ObjectURLs for the tab's mediaPool too. Without this
+          // the moment the user clicks a saved tab after F5, the monitor would
+          // turn black exactly the way the active project did pre-fix.
+          const tabPool = await hydrateMediaPool(projectData.mediaPool ?? []);
           useProjectStore.setState((s) => ({
             savedProjects: {
               ...s.savedProjects,
@@ -87,7 +100,9 @@ export function GlobalHydrator() {
                 duration: projectData.duration,
                 markers: projectData.markers ?? [],
                 projectSettings: projectData.projectSettings,
-                mediaPool: projectData.mediaPool ?? s.savedProjects[id]?.mediaPool ?? [],
+                mediaPool: tabPool.length > 0
+                  ? tabPool
+                  : (s.savedProjects[id]?.mediaPool ?? []),
                 parentProjectId: projectData.parentProjectId,
                 remixedFromHandle: projectData.remixedFromHandle,
                 rootParentId: projectData.rootParentId,

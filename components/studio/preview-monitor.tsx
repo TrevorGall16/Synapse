@@ -51,8 +51,23 @@ function PreviewMonitorInner() {
   const projectSettings = useProjectStore((s) => s.projectSettings);
   const aspectRatio = `${projectSettings.width}/${projectSettings.height}`;
   const zoomFactor = zoom === "Fit" ? null : parseFloat(zoom) / 100;
+  // The stage rect is the aspect-locked rectangle text/FX coordinates are
+  // expressed against. In Fit mode it's centered inside the container, sized
+  // by `aspectRatio` with both max-dimensions clamped to 100% so a 9:16
+  // project inside a 16:9 pane shows letterbox bars **outside** the stage —
+  // not inside it. Without this clamp, text dragged to x=110% landed in the
+  // black bars and the export compositor inherited the wrong origin, which is
+  // what caused the "vertical squish" bug.
   const canvasStyle: React.CSSProperties = zoomFactor === null
-    ? { position: "absolute", inset: 0 }
+    ? {
+        position: "absolute",
+        inset: 0,
+        margin: "auto",
+        aspectRatio,
+        maxWidth: "100%",
+        maxHeight: "100%",
+        overflow: "hidden",
+      }
     : {
         position: "absolute",
         top: "50%",
@@ -430,8 +445,11 @@ function PreviewMonitorInner() {
           </svg>
         )}
 
-        {/* Canvas: zoom-controlled. Fit = fills container; pixel modes = exact project dimensions. */}
-        <div style={canvasStyle}>
+        {/* Canvas: zoom-controlled. Fit = fills container; pixel modes = exact project dimensions.
+            data-preview-stage marks the aspect-locked rectangle that the export compositor uses
+            as its coordinate origin — without this the compositor would divide by the outer
+            preview-container width and squish vertical (9:16) exports to the left edge. */}
+        <div data-preview-stage style={canvasStyle}>
           {layersWithOpacity.length > 0 ? (
             layersWithOpacity.map((layer) => {
               const pcResult = buildPanCropStyle(layer.clip.panCrop, layer.clip.id);
@@ -485,7 +503,7 @@ function PreviewMonitorInner() {
           {activeTextClips.map((tc) => {
             const result = buildTextStyle(tc, playheadPosition);
             if (!result) return null;
-            return <div key={tc.id} className="pointer-events-none absolute inset-0" style={{ zIndex: videoTracks.length + 1 }}><span style={result.style}>{result.displayText}</span></div>;
+            return <div key={tc.id} data-text-overlay className="pointer-events-none absolute inset-0" style={{ zIndex: videoTracks.length + 1 }}><span data-text-overlay-span style={result.style}>{result.displayText}</span></div>;
           })}
         </div>
       </div>

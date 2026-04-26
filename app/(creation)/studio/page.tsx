@@ -84,14 +84,19 @@ export default function StudioPage() {
     if (!isHydrating && projectId) setProjectStarted(true);
   }, [isHydrating, projectId]);
 
-  // Auto-open project settings for new projects created from dashboard
+  // Auto-open project settings for genuinely new projects ONLY.
+  // Previously this fired whenever init=new appeared in the URL — but the param
+  // survives reload, so F5 on an in-progress project re-popped the resolution
+  // dialog and clobbered the user's edits. Gate it on "tracks have no clips":
+  // the moment any clip exists this is no longer a fresh canvas.
   useEffect(() => {
-    if (isNewInit && !isHydrating && projectId) {
-      setShowSettings(true);
-    }
-  // Only run once on mount when init=new is set
+    if (!isNewInit || isHydrating || !projectId) return;
+    const fresh = useProjectStore.getState().tracks.every((t) => t.clips.length === 0);
+    if (fresh) setShowSettings(true);
+  // Run-once on mount when init=new — intentionally omit `tracks` from deps so
+  // adding a clip later doesn't retro-trigger the modal.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isNewInit, isHydrating]);
+  }, [isNewInit, isHydrating, projectId]);
 
   // NOTE: A previous "Silently re-hydrate stale media when switching tabs"
   // useEffect lived here and matched `m.previewUrl.startsWith("blob:")`.

@@ -453,15 +453,20 @@ export const useProjectStore = create<ProjectState>()(persist((set) => ({
 }), {
   name: "synapse-project",
   skipHydration: true,
-  // Tracks and history are heavy — stored in IDB via project-idb.ts / GlobalHydrator subscribe.
-  // Only lightweight registry fields live in localStorage.
+  // localStorage holds ONLY lightweight registry pointers. Heavy / churn-y data
+  // lives in IDB via GlobalHydrator. Anything bigger than a few KB here will
+  // QuotaExceededError on the very next write and hard-break drag/drop and
+  // delete actions, since Zustand's persist middleware re-syncs on each set().
   partialize: (s: ProjectState) => ({
     projectId: s.projectId, duration: s.duration, name: s.name, markers: s.markers,
     parentProjectId: s.parentProjectId, remixedFromHandle: s.remixedFromHandle,
     rootParentId: s.rootParentId, rootParentHandle: s.rootParentHandle,
     projectSettings: s.projectSettings, openProjectIds: s.openProjectIds,
-    mediaPool: s.mediaPool.map((m) => ({ ...m, previewUrl: "" })),
-    // savedProjects excluded — tracks, history, and mediaPool saved to IDB via GlobalHydrator.
+    // Excluded on purpose — see GlobalHydrator for the IDB-backed source of truth:
+    //   mediaPool         peakManifest waveforms can be MB-scale per asset.
+    //   historyPast/Future undo/redo stacks grow to MAX_HISTORY full snapshots.
+    //   selectedClipIds, inspectingClipId, activeUISection  transient UI state.
+    //   savedProjects     full per-tab snapshots; rebuilt from IDB on mount.
   }),
 }));
 

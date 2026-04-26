@@ -165,6 +165,11 @@ export function PreviewVideoLayer({
           src={media.previewUrl}
           className="absolute inset-0 h-full w-full"
           style={{
+            // object-fit:cover: aspect-fill the source into the project's aspect-locked
+            // box. A 16:9 source on a 9:16 project gets cropped left/right instead of
+            // squished narrow — matching what the export compositor now bakes. Without
+            // this the preview lied: it stretched, but exports cropped (or vice versa).
+            objectFit: "cover",
             ...panCropStyle,
             // During crossfade: push the video element itself onto a dedicated compositor layer.
             // will-change alone promotes it without altering the panCrop transform value.
